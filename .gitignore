@@ -1,0 +1,23 @@
+# 渲染预览图（可随时重新生成）
+.previews/
+render_output/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# 测试缓存
+.pytest_cache/
+
+# 标签数据库（运行时生成）
+*.db
+*.db-shm
+*.db-wal
+tag_store/
+
+# Agent 运行时数据
+.ta_agent/
+
+# Claude Code 本地配置
+.claude/
