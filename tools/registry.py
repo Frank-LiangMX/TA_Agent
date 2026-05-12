@@ -33,6 +33,10 @@ from tools.asset_operations import (
     SUGGEST_RENAME_DEF, RENAME_ASSET_DEF, BATCH_RENAME_DEF,
     CREATE_DIRECTORY_DEF, MOVE_ASSET_DEF,
 )
+from tools.intake import (
+    intake_asset, intake_batch, intake_approved,
+    INTAKE_ASSET_DEF, INTAKE_BATCH_DEF, INTAKE_APPROVED_DEF,
+)
 
 
 # ========== Schema 注册 ==========
@@ -88,6 +92,9 @@ TOOLS = [
     BATCH_RENAME_DEF,
     CREATE_DIRECTORY_DEF,
     MOVE_ASSET_DEF,
+    INTAKE_ASSET_DEF,
+    INTAKE_BATCH_DEF,
+    INTAKE_APPROVED_DEF,
 ]
 
 
@@ -127,6 +134,9 @@ TOOL_FUNCTIONS = {
     "batch_rename":           batch_rename,
     "create_directory":       create_directory,
     "move_asset":             move_asset,
+    "intake_asset":           intake_asset,
+    "intake_batch":           intake_batch,
+    "intake_approved":        intake_approved,
 }
 
 
