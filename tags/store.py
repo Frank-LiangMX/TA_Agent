@@ -260,6 +260,41 @@ class TagStore:
         self.save(tags)
         return True
 
+    def batch_update_status(self, asset_ids: list[str], status: str, reviewer: str = "") -> dict:
+        """
+        批量更新资产审核状态（优化版，减少数据库往返）。
+
+        返回:
+            {"success": int, "failed": int, "not_found": list}
+        """
+        conn = self._get_conn()
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        success = 0
+        not_found = []
+
+        for asset_id in asset_ids:
+            # 读取 full_data
+            row = conn.execute("SELECT full_data FROM assets WHERE asset_id = ?", (asset_id,)).fetchone()
+            if row is None:
+                not_found.append(asset_id)
+                continue
+
+            # 修改状态
+            data = json.loads(row["full_data"])
+            data.setdefault("meta", {})["status"] = status
+            if reviewer:
+                data["meta"]["reviewer"] = reviewer
+
+            # 写回
+            conn.execute(
+                "UPDATE assets SET status = ?, full_data = ? WHERE asset_id = ?",
+                (status, json.dumps(data, ensure_ascii=False), asset_id),
+            )
+            success += 1
+
+        conn.commit()
+        return {"success": success, "failed": len(not_found), "not_found": not_found[:20]}
+
     def delete(self, asset_id: str) -> bool:
         """
         删除一张资产身份证。

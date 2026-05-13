@@ -268,6 +268,68 @@ def _get_config_instructions(name: str, engine: str) -> str:
 """
 
 
+ADD_CUSTOM_RULE_DEF = {
+    "type": "function",
+    "function": {
+        "name": "add_custom_rule",
+        "description": "向项目配置中添加自定义规则并持久化保存。当用户说明了项目的特殊规则（如某种前缀代表什么类型）时，调用此工具记录到配置文件，下次启动时自动生效。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "pattern": {
+                    "type": "string",
+                    "description": "文件名匹配模式（如 '@*.*', 'SK_*.*'）",
+                },
+                "asset_type": {
+                    "type": "string",
+                    "description": "对应的资产类型（如 animation, skeletal_mesh, static_mesh）",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "规则说明（如 '@前缀是动画文件'）",
+                },
+                "project_config_name": {
+                    "type": "string",
+                    "description": "项目配置名称（可选）",
+                },
+            },
+            "required": ["pattern", "asset_type", "description"],
+        },
+    },
+}
+
+
+def add_custom_rule(pattern: str, asset_type: str, description: str, project_config_name: str = None) -> dict:
+    """添加自定义规则到项目配置"""
+    config_path = find_project_config(project_config_name)
+    if not config_path:
+        return {"error": "未找到项目配置文件，请先创建配置"}
+
+    config = ProjectConfig.load(config_path)
+
+    # 检查是否已存在相同规则
+    for rule in config.custom_rules:
+        if rule.get("pattern") == pattern and rule.get("type") == asset_type:
+            return {"message": f"规则已存在：{pattern} → {asset_type}", "existed": True}
+
+    # 添加规则
+    config.custom_rules.append({
+        "pattern": pattern,
+        "type": asset_type,
+        "description": description,
+    })
+
+    # 保存
+    config.save()
+
+    return {
+        "success": True,
+        "rule": {"pattern": pattern, "type": asset_type, "description": description},
+        "total_rules": len(config.custom_rules),
+        "message": f"已添加规则：{description}。下次分析时自动生效。",
+    }
+
+
 # ========== 注册到 Agent ==========
 
 CONFIG_TOOLS = [
@@ -275,6 +337,7 @@ CONFIG_TOOLS = [
     LIST_PROJECT_CONFIGS_DEF,
     CREATE_PROJECT_CONFIG_DEF,
     LOAD_PROJECT_CONFIG_DEF,
+    ADD_CUSTOM_RULE_DEF,
 ]
 
 CONFIG_TOOL_FUNCTIONS = {
@@ -282,4 +345,5 @@ CONFIG_TOOL_FUNCTIONS = {
     "list_project_configs": list_project_configs_tool,
     "create_project_config": create_project_config_tool,
     "load_project_config": load_project_config_tool,
+    "add_custom_rule": add_custom_rule,
 }

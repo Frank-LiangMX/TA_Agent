@@ -8,6 +8,7 @@ tools/review.py - 人工审核工作流
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime
 from typing import Optional
 
@@ -18,12 +19,12 @@ from tools.memory_tools import get_memory_provider
 
 # ========== 工具实现 ==========
 
-def get_pending_reviews(store_dir: str, confidence_threshold: float = 0.9, include_animation: bool = False) -> dict:
+def get_pending_reviews(store_dir: str = None, confidence_threshold: float = 0.9, include_animation: bool = False) -> dict:
     """
     获取待审核列表，按置信度分组。
 
     参数:
-        store_dir: 数据库目录
+        store_dir: 数据库目录（可选，默认使用 tag_store）
         confidence_threshold: 置信度阈值
         include_animation: 是否包含动画文件（默认 False，动画不需要审核）
 
@@ -35,6 +36,8 @@ def get_pending_reviews(store_dir: str, confidence_threshold: float = 0.9, inclu
             "summary": str,
         }
     """
+    if store_dir is None:
+        store_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tag_store")
     store = TagStore(store_dir)
 
     # 查询所有 pending 状态的资产
@@ -88,23 +91,32 @@ def get_pending_reviews(store_dir: str, confidence_threshold: float = 0.9, inclu
 
     total = len(high_conf) + len(low_conf)
 
+    # 截断：只返回前 20 个详情，避免上下文过大导致 LLM 响应慢
+    MAX_DETAIL = 20
     return {
         "total_pending": total,
         "high_confidence_count": len(high_conf),
         "low_confidence_count": len(low_conf),
-        "high_confidence": high_conf,
-        "low_confidence": low_conf,
-        "summary": f"共 {total} 个待审核资产：{len(high_conf)} 个高置信度（建议批量通过），{len(low_conf)} 个低置信度（需逐个确认）",
+        "high_confidence": high_conf[:MAX_DETAIL],
+        "high_confidence_truncated": len(high_conf) > MAX_DETAIL,
+        "low_confidence": low_conf[:MAX_DETAIL],
+        "low_confidence_truncated": len(low_conf) > MAX_DETAIL,
+        "high_confidence_ids": [a["asset_id"] for a in high_conf],  # 全量 ID 供批量操作用
+        "summary": f"共 {total} 个待审核：{len(high_conf)} 高置信度，{len(low_conf)} 低置信度" + (
+            f"（高置信度仅显示前 {MAX_DETAIL} 个）" if len(high_conf) > MAX_DETAIL else ""
+        ),
     }
 
 
-def get_review_detail(asset_id: str, store_dir: str) -> dict:
+def get_review_detail(asset_id: str, store_dir: str = None) -> dict:
     """
     获取单个资产的完整审核详情。
 
     返回:
         资产完整信息 + 置信度 + 审核建议
     """
+    if store_dir is None:
+        store_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tag_store")
     store = TagStore(store_dir)
     tags = store.load(asset_id)
 
@@ -189,7 +201,7 @@ def get_review_detail(asset_id: str, store_dir: str) -> dict:
 def submit_review(
     asset_id: str,
     action: str,
-    store_dir: str,
+    store_dir: str = None,
     corrections: dict = None,
     reviewer: str = "",
     notes: str = "",
@@ -208,6 +220,8 @@ def submit_review(
     返回:
         审核结果
     """
+    if store_dir is None:
+        store_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tag_store")
     store = TagStore(store_dir)
     tags = store.load(asset_id)
 
@@ -264,7 +278,7 @@ def submit_review(
 
 def batch_approve(
     asset_ids: list[str],
-    store_dir: str,
+    store_dir: str = None,
     reviewer: str = "",
 ) -> dict:
     """
@@ -273,36 +287,19 @@ def batch_approve(
     返回:
         批量审核结果
     """
+    if store_dir is None:
+        store_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tag_store")
     store = TagStore(store_dir)
 
-    results = []
-    success_count = 0
-    fail_count = 0
-
-    for asset_id in asset_ids:
-        tags = store.load(asset_id)
-        if tags is None:
-            results.append({"asset_id": asset_id, "success": False, "error": "资产不存在"})
-            fail_count += 1
-            continue
-
-        tags.meta.status = "approved"
-        tags.meta.reviewer = reviewer
-        store.save(tags)
-
-        results.append({
-            "asset_id": asset_id,
-            "asset_name": tags.asset_name,
-            "success": True,
-        })
-        success_count += 1
+    # 使用批量更新（单次事务，比逐个 load+save 快得多）
+    result = store.batch_update_status(asset_ids, "approved", reviewer)
 
     return {
         "total": len(asset_ids),
-        "success_count": success_count,
-        "fail_count": fail_count,
-        "results": results,
-        "message": f"批量通过完成：{success_count} 成功，{fail_count} 失败",
+        "approved": result["success"],
+        "failed": result["failed"],
+        "not_found": result["not_found"],
+        "message": f"批量审核完成：{result['success']} 个通过，{result['failed']} 个失败",
     }
 
 

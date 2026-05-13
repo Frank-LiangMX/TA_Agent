@@ -36,14 +36,26 @@ def read_fbx(fbx_path: str) -> dict:
     mesh_objects = [obj for obj in bpy.context.scene.objects if obj.type == 'MESH']
     armature_objects = [obj for obj in bpy.context.scene.objects if obj.type == 'ARMATURE']
 
+    # 先记录骨架信息（动画文件可能没有网格，但有骨架）
+    result["has_skeleton"] = len(armature_objects) > 0
+    result["armature_count"] = len(armature_objects)
+    if armature_objects:
+        bone_info = []
+        for arm in armature_objects:
+            bone_info.append({
+                "name": arm.name,
+                "bone_count": len(arm.data.bones),
+            })
+        result["skeleton_info"] = bone_info
+
     if not mesh_objects:
         result["error"] = "文件中没有找到网格数据"
+        result["total_faces"] = 0
+        result["total_vertices"] = 0
         return result
 
     result["is_scene"] = len(mesh_objects) > 1
     result["sub_mesh_count"] = len(mesh_objects)
-    result["has_skeleton"] = len(armature_objects) > 0
-    result["armature_count"] = len(armature_objects)
 
     # 汇总数据
     total_vertices = 0
@@ -118,16 +130,6 @@ def read_fbx(fbx_path: str) -> dict:
         result["bbox_min"] = [round(v, 3) for v in bbox_min]
         result["bbox_max"] = [round(v, 3) for v in bbox_max]
         result["bbox_size"] = [round(v, 3) for v in bbox_size]
-
-    # 骨骼信息
-    if armature_objects:
-        bone_info = []
-        for arm in armature_objects:
-            bone_info.append({
-                "name": arm.name,
-                "bone_count": len(arm.data.bones),
-            })
-        result["skeleton_info"] = bone_info
 
     result["mesh_details"] = mesh_details[:20]  # 最多 20 个
 

@@ -50,6 +50,48 @@ class AssetIdentityAnalyzer:
         self.store = TagStore(self.store_dir)
         self.blender_path = blender_path
         self.memory = memory or NullMemoryProvider()
+        self.checkpoint_dir = os.path.join(os.path.dirname(self.store_dir), ".ta_agent", "checkpoints")
+        os.makedirs(self.checkpoint_dir, exist_ok=True)
+
+    def _checkpoint_path(self, dir_path: str) -> str:
+        """根据目录路径生成 checkpoint 文件路径"""
+        import hashlib
+        dir_hash = hashlib.md5(os.path.abspath(dir_path).encode()).hexdigest()[:12]
+        return os.path.join(self.checkpoint_dir, f"{dir_hash}.json")
+
+    def _save_checkpoint(self, dir_path: str, phase: str, data: dict):
+        """保存 checkpoint"""
+        cp = {
+            "dir_path": os.path.abspath(dir_path),
+            "phase": phase,
+            "timestamp": time.time(),
+            "data": data,
+        }
+        cp_path = self._checkpoint_path(dir_path)
+        with open(cp_path, "w", encoding="utf-8") as f:
+            json.dump(cp, f, ensure_ascii=False, default=str)
+
+    def _load_checkpoint(self, dir_path: str) -> Optional[dict]:
+        """加载 checkpoint，如果存在且未过期（24 小时内）"""
+        cp_path = self._checkpoint_path(dir_path)
+        if not os.path.exists(cp_path):
+            return None
+        try:
+            with open(cp_path, "r", encoding="utf-8") as f:
+                cp = json.load(f)
+            # 24 小时过期
+            if time.time() - cp.get("timestamp", 0) > 86400:
+                os.remove(cp_path)
+                return None
+            return cp
+        except (json.JSONDecodeError, KeyError):
+            return None
+
+    def _clear_checkpoint(self, dir_path: str):
+        """清除 checkpoint"""
+        cp_path = self._checkpoint_path(dir_path)
+        if os.path.exists(cp_path):
+            os.remove(cp_path)
 
     def analyze_directory(
         self,
@@ -59,6 +101,7 @@ class AssetIdentityAnalyzer:
         conventions_context: str = "",
         render_previews: bool = False,
         clean_orphans: bool = False,
+        custom_rules: list[dict] = None,
         on_progress: Optional[callable] = None,
     ) -> dict:
         """
@@ -85,6 +128,7 @@ class AssetIdentityAnalyzer:
         if not os.path.exists(dir_path):
             return {"error": f"目录不存在: {dir_path}"}
 
+        self._custom_rules = custom_rules or []
         start_time = time.time()
 
         def _elapsed():
@@ -103,72 +147,123 @@ class AssetIdentityAnalyzer:
             print(f"\n  === {msg} ===  [{_fmt(_elapsed())}]")
             import sys; sys.stdout.flush()
 
+        # 检查是否有可恢复的 checkpoint
+        checkpoint = self._load_checkpoint(dir_path)
+        resume_phase = None
+        if checkpoint:
+            cp_phase = checkpoint.get("phase", "")
+            cp_data = checkpoint.get("data", {})
+            print(f"\n  发现上次中断的分析（阶段：{cp_phase}），自动从中断处继续...")
+            import sys; sys.stdout.flush()
+            resume_phase = cp_phase
+
         # 0. 清理孤儿预览图（可选，在扫描前执行）
         orphan_cleanup = None
         if clean_orphans:
             orphan_cleanup = clean_orphan_previews(dir_path)
 
         # 1. 扫描目录
-        _phase("扫描目录")
-        scan_result = scan_directory(dir_path, recursive=True)
-        if "error" in scan_result:
-            return scan_result
+        if resume_phase and resume_phase in ("textures", "fbx", "inference", "done"):
+            # 从 checkpoint 恢复扫描结果
+            scan_result = checkpoint["data"]["scan_result"]
+            fbx_files = checkpoint["data"]["fbx_files"]
+            texture_files = checkpoint["data"]["texture_files"]
+            print(f"  [恢复] 跳过扫描，已有 {len(fbx_files)} 个 FBX, {len(texture_files)} 张贴图")
+        else:
+            _phase("扫描目录")
+            scan_result = scan_directory(dir_path, recursive=True)
+            if "error" in scan_result:
+                return scan_result
 
-        # 2. 获取文件列表（排除 .previews 目录）
-        files = [
-            f for f in scan_result.get("files", [])
-            if ".previews" not in f.get("path", "").replace("\\", "/")
-        ]
-        fbx_files = [f for f in files if f.get("extension") == ".fbx"]
-        texture_files = [
-            f for f in files
-            if f.get("extension") in (".png", ".jpg", ".jpeg", ".tga", ".tiff", ".bmp")
-        ]
-        print(f"  找到 {len(fbx_files)} 个 FBX, {len(texture_files)} 张贴图")
-        import sys; sys.stdout.flush()
+            # 2. 获取文件列表（排除 .previews 目录）
+            files = [
+                f for f in scan_result.get("files", [])
+                if ".previews" not in f.get("path", "").replace("\\", "/")
+            ]
+            fbx_files = [f for f in files if f.get("extension") == ".fbx"]
+            texture_files = [
+                f for f in files
+                if f.get("extension") in (".png", ".jpg", ".jpeg", ".tga", ".tiff", ".bmp")
+            ]
+            print(f"  找到 {len(fbx_files)} 个 FBX, {len(texture_files)} 张贴图")
+            import sys; sys.stdout.flush()
+            # 存 checkpoint
+            self._save_checkpoint(dir_path, "scan", {
+                "scan_result": scan_result,
+                "fbx_files": fbx_files,
+                "texture_files": texture_files,
+            })
 
         # 3. 批量分析贴图
-        if texture_files:
-            _phase(f"分析贴图 ({len(texture_files)} 张)")
-        texture_by_stem = {}  # 贴图按去掉后缀的名称分组
-        texture_results = []
-        total_textures = len(texture_files)
-        for idx, tex_file in enumerate(texture_files):
-            if on_progress:
-                on_progress("textures", idx + 1, total_textures, tex_file["filename"], _elapsed())
-            tex_path = os.path.join(dir_path, tex_file["filename"])
-            tex_result = check_texture_info(tex_path)
-            tex_result["file"] = tex_file["filename"]
-            texture_results.append(tex_result)
+        if resume_phase and resume_phase in ("fbx", "inference", "done"):
+            # 从 checkpoint 恢复贴图结果
+            texture_by_stem = checkpoint["data"]["texture_by_stem"]
+            texture_results = checkpoint["data"]["texture_results"]
+            print(f"  [恢复] 跳过贴图分析，已有 {len(texture_results)} 张结果")
+        else:
+            if texture_files:
+                _phase(f"分析贴图 ({len(texture_files)} 张)")
+            texture_by_stem = {}  # 贴图按去掉后缀的名称分组
+            texture_results = []
+            total_textures = len(texture_files)
+            for idx, tex_file in enumerate(texture_files):
+                if on_progress:
+                    on_progress("textures", idx + 1, total_textures, tex_file["filename"], _elapsed())
+                tex_path = os.path.join(dir_path, tex_file["filename"])
+                tex_result = check_texture_info(tex_path)
+                tex_result["file"] = tex_file["filename"]
+                texture_results.append(tex_result)
 
-            # 按 stem 分组（去掉 _D, _N, _R 等后缀）
-            stem = self._texture_stem(tex_file["filename"])
-            texture_by_stem.setdefault(stem, []).append(tex_result)
+                # 按基础名称分组（去掉前缀和贴图后缀）
+                stem = self._asset_base_name(tex_file["filename"])
+                texture_by_stem.setdefault(stem, []).append(tex_result)
+
+            # 存 checkpoint（序列化 texture_by_stem）
+            cp_data = checkpoint["data"] if checkpoint else {}
+            cp_data.update({
+                "texture_by_stem": texture_by_stem,
+                "texture_results": texture_results,
+            })
+            self._save_checkpoint(dir_path, "textures", cp_data)
 
         # 4. 逐个分析 FBX 资产
-        if fbx_files:
-            _phase(f"分析 FBX 模型 ({len(fbx_files)} 个)")
-        all_tags: list[AssetTags] = []
-        animation_count = 0
-        total_fbx = len(fbx_files)
-        for idx, fbx_file in enumerate(fbx_files):
-            if on_progress:
-                on_progress("assets", idx + 1, total_fbx, fbx_file["filename"], _elapsed())
-            fbx_path = os.path.join(dir_path, fbx_file["filename"])
-            tags = self._analyze_single_asset(
-                fbx_path=fbx_path,
-                naming_config=naming_config,
-                texture_results=texture_by_stem.get(
-                    self._texture_stem(fbx_file["filename"]), []
-                ),
-                render_preview=render_previews,
-            )
-            all_tags.append(tags)
-            if tags.asset_type == "animation":
-                animation_count += 1
+        if resume_phase and resume_phase in ("inference", "done"):
+            # 从 checkpoint 恢复 FBX 分析结果
+            all_tags = [AssetTags.from_dict(d) for d in checkpoint["data"]["all_tags"]]
+            animation_count = checkpoint["data"].get("animation_count", 0)
+            print(f"  [恢复] 跳过 FBX 分析，已有 {len(all_tags)} 个结果")
+        else:
+            if fbx_files:
+                _phase(f"分析 FBX 模型 ({len(fbx_files)} 个)")
+            all_tags: list[AssetTags] = []
+            animation_count = 0
+            total_fbx = len(fbx_files)
+            for idx, fbx_file in enumerate(fbx_files):
+                if on_progress:
+                    on_progress("assets", idx + 1, total_fbx, fbx_file["filename"], _elapsed())
+                fbx_path = os.path.join(dir_path, fbx_file["filename"])
+                tags = self._analyze_single_asset(
+                    fbx_path=fbx_path,
+                    naming_config=naming_config,
+                    texture_results=texture_by_stem.get(
+                        self._asset_base_name(fbx_file["filename"]), []
+                    ),
+                    render_preview=render_previews,
+                )
+                all_tags.append(tags)
+                if tags.asset_type == "animation":
+                    animation_count += 1
+
+            # 存 checkpoint
+            cp_data = checkpoint["data"] if checkpoint else {}
+            cp_data.update({
+                "all_tags": [t.to_dict() for t in all_tags],
+                "animation_count": animation_count,
+            })
+            self._save_checkpoint(dir_path, "fbx", cp_data)
 
         # 5. 分析没有 FBX 的贴图（可能是独立贴图资产）
-        matched_stems = {self._texture_stem(f["filename"]) for f in fbx_files}
+        matched_stems = {self._asset_base_name(f["filename"]) for f in fbx_files}
         orphan_stems = set(texture_by_stem.keys()) - matched_stems
         for stem in orphan_stems:
             tex_group = texture_by_stem[stem]
@@ -242,6 +337,9 @@ class AssetIdentityAnalyzer:
         if on_progress:
             on_progress("done", len(all_tags), len(all_tags), dir_path, _elapsed())
 
+        # 分析完成，清除 checkpoint
+        self._clear_checkpoint(dir_path)
+
         return result
 
     def _analyze_single_asset(
@@ -304,8 +402,19 @@ class AssetIdentityAnalyzer:
         filename = os.path.basename(fbx_path)
         prefix = naming_result.get("prefix", "")
 
+        # 0. 自定义规则优先（来自项目配置）
+        import fnmatch
+        for rule in getattr(self, '_custom_rules', []):
+            pattern = rule.get("pattern", "")
+            if pattern and fnmatch.fnmatch(filename, pattern):
+                return rule.get("type", "unknown")
+
         # 1. 命名前缀判断
         if prefix == "AN_":
+            return "animation"
+
+        # 1.5 文件名以 @ 开头 → 动画文件（常见于 Unity/UE 动画命名规范）
+        if filename.startswith("@"):
             return "animation"
 
         # 2. FBX 内容判断：有骨架但没有网格 → 纯动画
@@ -352,12 +461,43 @@ class AssetIdentityAnalyzer:
             for j, tag_b in enumerate(all_tags):
                 if i == j:
                     continue
-                # 同一目录下，名称前缀相同的是关联资产
-                stem_a = self._texture_stem(tag_a.asset_name)
-                stem_b = self._texture_stem(tag_b.asset_name)
-                if stem_a == stem_b and tag_a.asset_id not in tag_b.spatial.related_assets:
+                # 同一目录下，基础名称相同的是关联资产
+                base_a = self._asset_base_name(tag_a.asset_name)
+                base_b = self._asset_base_name(tag_b.asset_name)
+                if base_a == base_b and tag_a.asset_id not in tag_b.spatial.related_assets:
                     tag_a.spatial.related_assets.append(tag_b.asset_id)
                     tag_b.spatial.related_assets.append(tag_a.asset_id)
+
+    def _asset_base_name(self, name: str) -> str:
+        """
+        提取资产的基础名称，去掉类型前缀和贴图后缀。
+
+        例:
+          M_C5_Body_1   → C5_Body_1    (去 M_ 前缀)
+          SK_C5_Body_1  → C5_Body_1    (去 SK_ 前缀)
+          P_C5_Body_1   → C5_Body_1    (去 P_ 前缀)
+          T_Building_01_D → Building_01 (去 T_ 前缀和 _D 后缀)
+          SM_Sword_01   → Sword_01     (去 SM_ 前缀)
+        """
+        import re
+        base = os.path.splitext(name)[0]
+
+        # 去掉贴图后缀 (_D, _N, _R, _O, _E, _AO, _ORM, _MT, _NM, _DM)
+        tex_match = re.match(r"^(.+?)_(D|N|R|M|O|E|AO|ORM|MT|NM|DM)$", base, re.IGNORECASE)
+        if tex_match:
+            base = tex_match.group(1)
+
+        # 去掉资产类型前缀
+        prefixes = ["SM_", "SK_", "T_", "M_", "MI_", "AN_", "BP_", "S_", "FX_", "P_"]
+        for prefix in prefixes:
+            if base.upper().startswith(prefix):
+                base = base[len(prefix):]
+                break
+        # 去掉动画前缀 @
+        if base.startswith("@"):
+            base = base[1:]
+
+        return base
 
     def _texture_stem(self, name: str) -> str:
         """

@@ -20,6 +20,7 @@ from typing import Optional
 from tags.store import TagStore
 from tags.schema import AssetTags
 from core.project_config import ProjectConfig, find_project_config
+from tools.naming import check_naming
 
 
 # ========== Schema 定义 ==========
@@ -162,6 +163,7 @@ def intake_asset(
 
     # 执行入库步骤
     steps = []
+    original_name = tags.asset_name  # 保存原始名称用于审计日志
     try:
         # 步骤 1：确定资产分类
         category = _determine_category(tags)
@@ -170,6 +172,17 @@ def intake_asset(
         # 步骤 2：生成规范名称
         new_name = _generate_new_name(tags, category, config)
         steps.append({"step": "generate_name", "status": "success", "detail": new_name})
+
+        # 步骤 2.5：命名规范校验
+        naming_result = check_naming(f"{new_name}.fbx")
+        if not naming_result.get("is_valid"):
+            steps.append({
+                "step": "naming_check",
+                "status": "warning",
+                "detail": f"命名不合规: {naming_result.get('issues', [])}",
+            })
+        else:
+            steps.append({"step": "naming_check", "status": "success", "detail": "命名合规"})
 
         # 步骤 3：确定目标路径
         engine_path = _get_engine_path(category, config)
@@ -221,7 +234,7 @@ def intake_asset(
         if not dry_run:
             _log_intake(store_dir, {
                 "asset_id": asset_id,
-                "original_name": os.path.basename(tags.file_path) if dry_run else f"{new_name}{fbx_ext}",
+                "original_name": original_name,
                 "final_name": f"{new_name}{fbx_ext}",
                 "source_path": tags.file_path,
                 "target_path": new_fbx_path,
@@ -384,6 +397,9 @@ def _determine_category(tags: AssetTags) -> str:
         "M_": "material",
         "MI_": "material",
         "AN_": "animation",
+        "BP_": "blueprint",
+        "S_": "sound",
+        "FX_": "effect",
     }
     name = tags.asset_name.upper()
     for prefix, cat in prefix_map.items():
@@ -429,7 +445,7 @@ def _extract_base_name(name: str) -> str:
       SK_Character_Hero_A → Hero
     """
     # 去掉已知前缀
-    prefixes = ["SM_", "SK_", "T_", "M_", "MI_", "AN_"]
+    prefixes = ["SM_", "SK_", "T_", "M_", "MI_", "AN_", "BP_", "S_", "FX_"]
     for prefix in prefixes:
         if name.upper().startswith(prefix):
             name = name[len(prefix):]

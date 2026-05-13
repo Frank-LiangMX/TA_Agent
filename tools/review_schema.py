@@ -22,12 +22,8 @@ GET_PENDING_REVIEWS_DEF = {
                     "description": "是否包含动画文件（默认 false，动画不需要审核）",
                     "default": False,
                 },
-                "store_dir": {
-                    "type": "string",
-                    "description": "标签数据库目录路径",
-                },
             },
-            "required": ["store_dir"],
+            "required": [],
         },
     },
 }
@@ -44,12 +40,8 @@ GET_REVIEW_DETAIL_DEF = {
                     "type": "string",
                     "description": "资产 ID",
                 },
-                "store_dir": {
-                    "type": "string",
-                    "description": "标签数据库目录路径",
-                },
             },
-            "required": ["asset_id", "store_dir"],
+            "required": ["asset_id"],
         },
     },
 }
@@ -85,12 +77,8 @@ SUBMIT_REVIEW_DEF = {
                     "description": "审核备注",
                     "default": "",
                 },
-                "store_dir": {
-                    "type": "string",
-                    "description": "标签数据库目录路径",
-                },
             },
-            "required": ["asset_id", "action", "store_dir"],
+            "required": ["asset_id", "action"],
         },
     },
 }
@@ -113,12 +101,8 @@ BATCH_APPROVE_DEF = {
                     "description": "审核人名称",
                     "default": "",
                 },
-                "store_dir": {
-                    "type": "string",
-                    "description": "标签数据库目录路径",
-                },
             },
-            "required": ["asset_ids", "store_dir"],
+            "required": ["asset_ids"],
         },
     },
 }

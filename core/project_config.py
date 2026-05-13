@@ -95,6 +95,10 @@ class ProjectConfig:
     # 导入预设
     import_presets: dict = field(default_factory=dict)
 
+    # 自定义规则（用户通过对话告诉 Agent 的规则，持久化到配置文件）
+    # 格式：[{"pattern": "@*.*", "type": "animation", "description": "@前缀是动画文件"}, ...]
+    custom_rules: list[dict] = field(default_factory=list)
+
     # 面数预算
     mesh_budgets: dict = field(default_factory=lambda: {
         "character": 30000,
@@ -228,6 +232,9 @@ class ProjectConfig:
                            if k not in ('import_scale', 'generate_lod', 'lod_levels', 'collision', 'material_import')},
                 )
 
+        # 自定义规则
+        config.custom_rules = data.get('custom_rules', [])
+
         return config
 
     def save(self, path: str = None):
@@ -273,6 +280,7 @@ class ProjectConfig:
             "texture_budgets": self.texture_budgets,
             "asset_types": [at.to_dict() for at in self.asset_types],
             "import_presets": {k: v.to_dict() for k, v in self.import_presets.items()},
+            "custom_rules": self.custom_rules,
         }
 
     # ========== 查询方法 ==========

@@ -9,6 +9,91 @@ import io
 import os
 import time
 
+from rich.console import Console
+from rich.markdown import Markdown
+
+from prompt_toolkit import PromptSession
+from prompt_toolkit.history import InMemoryHistory
+from prompt_toolkit.completion import Completer, Completion
+from prompt_toolkit.key_binding import KeyBindings
+
+# 动态命令补全
+class _AgentCompleter(Completer):
+    def get_completions(self, document, complete_event):
+        text = document.text_before_cursor.lower()
+
+        # 一级命令
+        commands = [
+            ("/mode ", "切换工作流模式"),
+            ("/mode step_by_step", "切换到逐步模式"),
+            ("/mode auto", "切换到自动模式"),
+            ("/status", "查看当前状态"),
+            ("/plugins", "查看插件列表"),
+            ("/install ", "安装插件"),
+            ("/uninstall ", "卸载插件"),
+            ("/help", "显示帮助"),
+            ("quit", "退出"),
+        ]
+
+        # 如果输入 /install 后面跟了部分名称，补全可安装的插件
+        if text.startswith("/install "):
+            partial = text[len("/install "):]
+            for name in self._available_plugins():
+                if name.lower().startswith(partial):
+                    yield Completion(name, start_position=-len(partial), display_meta="可安装")
+            return
+
+        # 如果输入 /uninstall 后面跟了部分名称，补全已安装的插件
+        if text.startswith("/uninstall "):
+            partial = text[len("/uninstall "):]
+            for name in self._enabled_plugins():
+                if name.lower().startswith(partial):
+                    yield Completion(name, start_position=-len(partial), display_meta="已安装")
+            return
+
+        # 如果输入 /mode 后面，补全模式
+        if text.startswith("/mode "):
+            partial = text[len("/mode "):]
+            for mode in ["step_by_step", "auto"]:
+                if mode.startswith(partial):
+                    yield Completion(mode, start_position=-len(partial))
+            return
+
+        # 一级命令补全
+        for cmd, desc in commands:
+            if cmd.lower().startswith(text) or text == "":
+                yield Completion(cmd, start_position=-len(document.text_before_cursor), display_meta=desc)
+
+    def _available_plugins(self):
+        """可安装的插件（在 plugins_available 但不在 plugins 中）"""
+        plugins_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools", "plugins")
+        available_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools", "plugins_available")
+        enabled = set(os.listdir(plugins_dir)) if os.path.isdir(plugins_dir) else set()
+        available = set(os.listdir(available_dir)) if os.path.isdir(available_dir) else set()
+        return sorted(
+            f[:-3] for f in (available - enabled)
+            if f.endswith(".py") and not f.startswith("_")
+        )
+
+    def _enabled_plugins(self):
+        """已安装的插件"""
+        plugins_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools", "plugins")
+        if not os.path.isdir(plugins_dir):
+            return []
+        return sorted(
+            f[:-3] for f in os.listdir(plugins_dir)
+            if f.endswith(".py") and not f.startswith("_") and f != "count_assets.py"
+        )
+
+# 全局 console 实例（延迟初始化，确保 UTF-8 设置后创建）
+_console = None
+
+def _get_console():
+    global _console
+    if _console is None:
+        _console = Console()
+    return _console
+
 from openai import OpenAI
 from config import get_llm_config
 from tools import TOOLS, execute_tool
@@ -20,6 +105,56 @@ from tools.memory_tools import set_memory_provider
 
 
 # ========== System Prompt ==========
+
+# 工作流模式
+#   "step_by_step" - 逐步模式：每完成一个阶段，建议用户进入下一阶段（适合新用户）
+#   "auto"         - 自动模式：分析后自动走完整个流程（适合熟悉 Agent 的用户）
+WORKFLOW_MODE = "step_by_step"
+
+MODE_INSTRUCTIONS = {
+    "step_by_step": """
+## 工作流模式：逐步模式
+当前为逐步模式，每完成一个阶段后，你需要：
+1. 汇报本阶段的结果
+2. 询问用户是否进入下一阶段
+3. 等待用户确认后再继续
+
+### 阶段一完成后：
+"分析完成，共发现 X 个资产。是否进入审核阶段？"
+
+### 阶段二完成后：
+"审核完成，X 个资产已通过，Y 个待确认。是否进入入库阶段？如果入库，请提供 UE5 Content 目录路径。"
+
+### 阶段三完成后：
+"入库完成。导入清单和脚本已生成，请在 UE5 Python Console 中运行脚本完成最终导入。"
+
+**注意：不要自动跳到下一阶段，必须等用户确认。**
+""",
+
+    "auto": """
+## 工作流模式：自动模式
+当前为自动模式，分析完成后自动执行后续阶段：
+
+### 完整流程（自动串联）：
+1. 分析资产（analyze_assets）
+2. 获取待审核列表（get_pending_reviews）
+3. 高置信度资产自动批量通过（batch_approve）
+4. 如果有低置信度资产：列出并询问用户是否通过，等待确认后继续
+5. 如果全部高置信度：自动调用 intake_approved 入库
+6. 入库前需要用户提供 UE5 Content 目录路径（如果对话中还没提供）
+
+### 入库路径：
+- 如果用户在请求时已提供目标路径，直接使用
+- 如果未提供，在入库前询问一次
+
+### 低置信度处理：
+- 列出低置信度资产详情
+- 询问用户："以下 X 个资产置信度较低，是否全部通过？还是逐个确认？"
+- 用户确认后继续入库
+
+**注意：高置信度资产自动通过，低置信度资产必须等用户确认。**
+""",
+}
 
 BASE_SYSTEM_PROMPT = """你是一个游戏技术美术（TA）AI 助手，专门负责游戏资产的质检、分类和管理。
 
@@ -46,21 +181,44 @@ BASE_SYSTEM_PROMPT = """你是一个游戏技术美术（TA）AI 助手，专门
 
 ## 项目配置（重要）
 - 使用 **check_project_config** 检查项目是否有配置文件
-- 如果没有配置文件，提示用户并询问是否创建
+- 如果没有配置文件，**必须先询问用户**："未找到项目配置文件，是否创建？"，**等用户明确同意后**才能调用 create_project_config
+- **禁止**在用户未确认的情况下自动调用 create_project_config
 - 使用 **create_project_config** 创建示例配置，创建后告诉用户如何填写
 - 使用 **load_project_config** 加载配置，后续检查基于配置执行
+
+## 路径解析（重要）
+用户可能会用中文描述路径（如"桌面"、"文档"、"下载"），你需要根据当前系统用户信息解析为实际路径。
+
+{system_context}
+
+### 常见中文路径映射：
+- "桌面" → {user_home}/Desktop
+- "文档" → {user_home}/Documents
+- "下载" → {user_home}/Downloads
+- "图片" → {user_home}/Pictures
+- "视频" → {user_home}/Videos
+- "音乐" → {user_home}/Music
+
+### 注意事项：
+- 不要假设用户名是 Administrator，使用上面提供的实际用户主目录
+- 如果用户给的路径不存在，提示用户确认，不要猜测
 
 ## 完整工作流程（重要）
 当用户要求分析或检查一个目录中的资产时，按以下流程执行：
 
 ### 阶段一：分析
 1. 调用 **check_project_config** 检查是否有项目配置
-   - 如果没有配置，提示用户："未找到项目配置文件，是否创建？"
+   - 如果没有配置，**必须停下来**提示用户："未找到项目配置文件，是否创建？"
+   - **等用户明确回答"是"或"好"后**，才能调用 **create_project_config** 创建配置
+   - **绝对禁止**跳过询问直接创建配置
    - 用户同意后，调用 **create_project_config** 创建配置
 2. 调用 **load_project_config** 加载项目配置
 3. 调用 **discover_conventions** 扫描该目录，发现项目规范文档
 4. 展示候选文档给用户确认，然后调用 **load_conventions** 加载规范
 5. 调用 **analyze_assets** 分析资产（设置 enable_ai_inference=true 启用 AI 推断）
+   - 如果返回 `need_inference_confirm: true`，说明资产数较多，**必须先汇报基础分析结果，询问用户是否继续 AI 推断**
+   - 用户确认后，调用 **run_ai_inference** 执行 AI 推断
+   - 资产数较少时（< 50），analyze_assets 会自动完成推断，无需额外确认
 
 ### 阶段二：审核
 6. 调用 **get_pending_reviews** 获取待审核列表
@@ -120,9 +278,43 @@ BASE_SYSTEM_PROMPT = """你是一个游戏技术美术（TA）AI 助手，专门
 """
 
 
-def build_system_prompt() -> str:
-    """构建完整的系统提示（基础 + 已加载的规范文档）"""
-    prompt = BASE_SYSTEM_PROMPT
+def _get_system_context() -> tuple[str, str]:
+    """获取系统上下文信息，返回 (system_context, user_home)"""
+    user_home = os.path.expanduser("~")
+    username = os.path.basename(user_home)
+
+    # 检测常见桌面路径
+    desktop_path = os.path.join(user_home, "Desktop")
+    if not os.path.isdir(desktop_path):
+        # Windows 中文系统可能用"桌面"而非"Desktop"
+        desktop_cn = os.path.join(user_home, "桌面")
+        if os.path.isdir(desktop_cn):
+            desktop_path = desktop_cn
+
+    system_context = f"""### 当前系统信息：
+- 操作系统：{sys.platform}
+- 用户名：{username}
+- 用户主目录：{user_home}
+- 桌面路径：{desktop_path}"""
+
+    return system_context, user_home
+
+
+def build_system_prompt(workflow_mode: str = None) -> str:
+    """构建完整的系统提示（基础 + 工作流模式 + 已加载的规范文档）"""
+    mode = workflow_mode or WORKFLOW_MODE
+    system_context, user_home = _get_system_context()
+
+    # 注入系统上下文到基础提示
+    prompt = BASE_SYSTEM_PROMPT.format(
+        system_context=system_context,
+        user_home=user_home,
+    )
+
+    # 注入工作流模式指令
+    mode_instruction = MODE_INSTRUCTIONS.get(mode, "")
+    if mode_instruction:
+        prompt += mode_instruction
 
     conventions = get_conventions_context()
     if conventions:
@@ -150,10 +342,15 @@ def create_client():
     ), config["model"]
 
 
-def agent_loop(user_message: str, history: list = None):
+def agent_loop(user_message: str, history: list = None, workflow_mode: str = None):
     """
     Agent 主循环
     接收用户消息，调用 LLM，处理工具调用，返回最终结果
+
+    参数:
+        user_message: 用户消息
+        history: 对话历史
+        workflow_mode: 工作流模式（"step_by_step" 或 "auto"），None 使用默认值
     """
     client, model = create_client()
 
@@ -161,7 +358,7 @@ def agent_loop(user_message: str, history: list = None):
         history = []
 
     # 构建消息列表
-    messages = [{"role": "system", "content": build_system_prompt()}]
+    messages = [{"role": "system", "content": build_system_prompt(workflow_mode)}]
     messages.extend(history)
     messages.append({"role": "user", "content": user_message})
 
@@ -178,16 +375,88 @@ def agent_loop(user_message: str, history: list = None):
         print(f"\n--- Agent 思考中... (第 {iteration} 轮) ---")
         sys.stdout.flush()
 
+        # 启动后台计时线程，每 10 秒打印一次等待提示
+        import threading
+        _stop_timer = threading.Event()
+
+        def _wait_indicator():
+            elapsed = 10
+            while not _stop_timer.wait(10):
+                print(f"  ⏳ 仍在等待 LLM 响应... ({elapsed}s)")
+                sys.stdout.flush()
+                elapsed += 10
+
+        timer_thread = threading.Thread(target=_wait_indicator, daemon=True)
+        timer_thread.start()
+
         # 调用 LLM
         try:
             llm_start = time.time()
-            response = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                tools=TOOLS,
-                tool_choice="auto",  # 让 LLM 自动决定是否调用工具
-                temperature=0.1,     # 低温度，保证稳定性
-            )
+
+            # 重试机制：最多重试 3 次，指数退避
+            max_retries = 3
+            response = None
+            for attempt in range(max_retries):
+                try:
+                    response = client.chat.completions.create(
+                        model=model,
+                        messages=messages,
+                        tools=TOOLS,
+                        tool_choice="auto",
+                        temperature=0.1,
+                        stream=True,  # 流式输出
+                    )
+                    break  # 成功，跳出重试循环
+                except Exception as api_err:
+                    err_msg = str(api_err)
+                    is_retryable = any(k in err_msg for k in ["504", "502", "503", "timeout", "Timeout", "overloaded", "rate_limit", "429"])
+                    if is_retryable and attempt < max_retries - 1:
+                        wait = (attempt + 1) * 10  # 10s, 20s, 30s
+                        print(f"  ⚠️ API 调用失败（{err_msg[:80]}），{wait}秒后重试 ({attempt + 1}/{max_retries})...")
+                        sys.stdout.flush()
+                        time.sleep(wait)
+                    else:
+                        raise  # 不可重试或最后一次重试，抛出异常
+
+            _stop_timer.set()  # 停止等待提示
+
+            # 流式读取响应
+            content_buffer = ""
+            tool_calls_buffer = {}  # {index: {id, function: {name, arguments}}}
+            finish_reason = None
+
+            for chunk in response:
+                delta = chunk.choices[0].delta if chunk.choices else None
+                if not delta:
+                    continue
+
+                # 内容流式输出
+                if delta.content:
+                    content_buffer += delta.content
+                    # 实时打印（不换行，最后统一渲染 markdown）
+                    print(delta.content, end="", flush=True)
+
+                # 工具调用累积
+                if delta.tool_calls:
+                    for tc in delta.tool_calls:
+                        idx = tc.index
+                        if idx not in tool_calls_buffer:
+                            tool_calls_buffer[idx] = {"id": "", "function": {"name": "", "arguments": ""}}
+                        if tc.id:
+                            tool_calls_buffer[idx]["id"] = tc.id
+                        if tc.function:
+                            if tc.function.name:
+                                tool_calls_buffer[idx]["function"]["name"] = tc.function.name
+                            if tc.function.arguments:
+                                tool_calls_buffer[idx]["function"]["arguments"] += tc.function.arguments
+
+                if chunk.choices[0].finish_reason:
+                    finish_reason = chunk.choices[0].finish_reason
+
+            # 内容输出后换行
+            if content_buffer:
+                print()  # 换行
+
             llm_elapsed = time.time() - llm_start
             if llm_elapsed >= 60:
                 m = int(llm_elapsed) // 60
@@ -196,17 +465,42 @@ def agent_loop(user_message: str, history: list = None):
             else:
                 print(f"  (LLM 思考耗时: {llm_elapsed:.1f}s)")
             sys.stdout.flush()
+
+            # 构造模拟的 response message 对象
+            from openai.types.chat import ChatCompletionMessage
+            from openai.types.chat.chat_completion import ChatCompletion, Choice
+
+            # 构造 tool_calls 对象
+            parsed_tool_calls = None
+            if tool_calls_buffer:
+                from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageToolCall, Function
+                parsed_tool_calls = []
+                for idx in sorted(tool_calls_buffer.keys()):
+                    tc = tool_calls_buffer[idx]
+                    parsed_tool_calls.append(ChatCompletionMessageToolCall(
+                        id=tc["id"],
+                        type="function",
+                        function=Function(
+                            name=tc["function"]["name"],
+                            arguments=tc["function"]["arguments"],
+                        ),
+                    ))
+
+            message = ChatCompletionMessage(
+                role="assistant",
+                content=content_buffer if content_buffer else None,
+                tool_calls=parsed_tool_calls,
+            )
         except Exception as e:
+            _stop_timer.set()  # 停止等待提示
             print(f"\n❌ LLM API 调用失败: {e}")
             sys.stdout.flush()
             return f"LLM API 调用失败: {e}", history
 
-        message = response.choices[0].message
-
         # 情况1：LLM 直接回复（不需要调用工具）
         if message.tool_calls is None:
             final_answer = message.content or "(LLM 返回了空回复)"
-            print(f"\n🤖 Agent 回复:\n{final_answer}")
+            # 内容已在流式输出中打印，此处只更新历史
             sys.stdout.flush()
 
             # 更新历史
@@ -216,9 +510,15 @@ def agent_loop(user_message: str, history: list = None):
             return final_answer, history
 
         # 情况2：LLM 要调用工具
-        print(f"\n🔧 Agent 需要调用工具:")
-        sys.stdout.flush()
         tool_calls = message.tool_calls
+
+        # 思考内容已在流式输出中打印，此处只加分隔
+        if message.content:
+            print()  # 换行分隔
+            sys.stdout.flush()
+
+        print(f"\n🔧 Agent 调用工具:")
+        sys.stdout.flush()
 
         # 把 LLM 的回复（包含 tool_calls）加入消息
         messages.append(message)
@@ -274,7 +574,7 @@ def agent_loop(user_message: str, history: list = None):
                     if conv_result.get("combined_context"):
                         set_conventions_context(conv_result["combined_context"])
                         # 更新系统提示，让后续 LLM 调用能看到新规范
-                        messages[0] = {"role": "system", "content": build_system_prompt()}
+                        messages[0] = {"role": "system", "content": build_system_prompt(workflow_mode)}
                         print(f"  ✓ 已加载 {conv_result.get('loaded', 0)} 份规范文档到上下文")
                 except (json.JSONDecodeError, KeyError):
                     pass
@@ -344,6 +644,8 @@ def _print_status():
 
     # 可配置参数
     print(f"\n  --- 配置参数 ---")
+    mode_name = {"step_by_step": "逐步模式", "auto": "自动模式"}.get(WORKFLOW_MODE, WORKFLOW_MODE)
+    print(f"  工作流:  {mode_name}")
     print(f"  视觉分析: {'ON' if USE_VISION else 'OFF'}")
     print(f"  FBX 超时: {FBX_PARSE_TIMEOUT}s")
     print(f"  渲染超时: {RENDER_TIMEOUT}s")
@@ -389,13 +691,48 @@ def main():
         set_memory_provider(NullMemoryProvider())
 
     print(f"\n{'='*60}")
-    print("输入消息与 Agent 对话，输入 'quit' 退出\n")
+    print("输入消息与 Agent 对话，输入 'quit' 退出")
+    print("输入 / 后按 Tab 可自动补全命令，/help 查看所有命令")
+    print(f"当前模式：{WORKFLOW_MODE}\n")
 
     history = []
+    current_mode = WORKFLOW_MODE
+
+    # 自定义按键
+    bindings = KeyBindings()
+
+    @bindings.add("enter")
+    def _(event):
+        """回车：关闭补全菜单并发送"""
+        event.current_buffer.complete_state = None
+        event.current_buffer.validate_and_handle()
+
+    @bindings.add("tab")
+    def _(event):
+        """Tab：接受当前选中的候选"""
+        buffer = event.current_buffer
+        if buffer.complete_state:
+            # 有候选菜单时，接受当前选中项
+            completion = buffer.complete_state.current_completion
+            if completion:
+                buffer.apply_completion(completion)
+            else:
+                buffer.complete_next()
+        else:
+            # 没有候选菜单时，触发补全
+            buffer.start_completion(select_first=True)
+
+    # 使用 prompt_toolkit 处理输入
+    prompt_session = PromptSession(
+        history=InMemoryHistory(),
+        completer=_AgentCompleter(),
+        complete_while_typing=True,
+        key_bindings=bindings,
+    )
 
     while True:
         try:
-            user_input = input("你: ").strip()
+            user_input = prompt_session.prompt("你: ").strip()
         except (EOFError, KeyboardInterrupt):
             print("\n再见！")
             break
@@ -406,8 +743,88 @@ def main():
             print("再见！")
             break
 
+        # 命令处理
+        if user_input.startswith('/'):
+            cmd = user_input.lower().strip()
+            if cmd.startswith('/mode'):
+                parts = cmd.split()
+                if len(parts) >= 2 and parts[1] in ('step_by_step', 'auto'):
+                    current_mode = parts[1]
+                    mode_name = {"step_by_step": "逐步模式", "auto": "自动模式"}[current_mode]
+                    print(f"[系统] 已切换到：{mode_name}")
+                else:
+                    print("[系统] 用法：/mode step_by_step 或 /mode auto")
+            elif cmd == '/status':
+                mode_name = {"step_by_step": "逐步模式", "auto": "自动模式"}[current_mode]
+                print(f"[系统] 当前模式：{mode_name}")
+            elif cmd == '/plugins':
+                # 列出可用插件和已启用插件
+                plugins_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools", "plugins")
+                available_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools", "plugins_available")
+                enabled = [f for f in os.listdir(plugins_dir) if f.endswith(".py") and not f.startswith("_")] if os.path.isdir(plugins_dir) else []
+                available = [f for f in os.listdir(available_dir) if f.endswith(".py") and not f.startswith("_")] if os.path.isdir(available_dir) else []
+                print(f"\n[系统] 已启用插件 ({len(enabled)}):")
+                for f in enabled:
+                    print(f"  ✓ {f}")
+                not_installed = [f for f in available if f not in enabled]
+                if not_installed:
+                    print(f"\n[系统] 可安装插件 ({len(not_installed)}):")
+                    for f in not_installed:
+                        print(f"  ○ {f}  (安装: /install {f[:-3]})")
+                else:
+                    print("\n[系统] 所有可用插件已启用")
+            elif cmd.startswith('/install'):
+                parts = cmd.split()
+                if len(parts) < 2:
+                    print("[系统] 用法：/install <插件名>（不含 .py 后缀）")
+                else:
+                    plugin_name = parts[1]
+                    if not plugin_name.endswith(".py"):
+                        plugin_name += ".py"
+                    available_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools", "plugins_available")
+                    plugins_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools", "plugins")
+                    src = os.path.join(available_dir, plugin_name)
+                    dst = os.path.join(plugins_dir, plugin_name)
+                    if not os.path.exists(src):
+                        print(f"[系统] 未找到插件：{plugin_name}")
+                    elif os.path.exists(dst):
+                        print(f"[系统] 插件已启用：{plugin_name}")
+                    else:
+                        import shutil
+                        shutil.copy2(src, dst)
+                        print(f"[系统] 已安装插件：{plugin_name}（重启后生效）")
+            elif cmd.startswith('/uninstall'):
+                parts = cmd.split()
+                if len(parts) < 2:
+                    print("[系统] 用法：/uninstall <插件名>（不含 .py 后缀）")
+                else:
+                    plugin_name = parts[1]
+                    if not plugin_name.endswith(".py"):
+                        plugin_name += ".py"
+                    plugins_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools", "plugins")
+                    target = os.path.join(plugins_dir, plugin_name)
+                    if os.path.exists(target):
+                        os.remove(target)
+                        print(f"[系统] 已卸载插件：{plugin_name}（重启后生效）")
+                    else:
+                        print(f"[系统] 插件未安装：{plugin_name}")
+            elif cmd == '/help':
+                print("\n[系统] 可用命令：")
+                print("  /mode step_by_step   切换到逐步模式")
+                print("  /mode auto           切换到自动模式")
+                print("  /status              查看当前模式")
+                print("  /plugins             查看已启用和可安装的插件")
+                print("  /install <name>      安装插件")
+                print("  /uninstall <name>    卸载插件")
+                print("  /help                显示此帮助")
+                print("  quit                 退出")
+                print("\n  输入 / 后按 Tab 可自动补全命令")
+            else:
+                print("[系统] 未知命令。输入 /help 查看可用命令")
+            continue
+
         try:
-            answer, history = agent_loop(user_input, history)
+            answer, history = agent_loop(user_input, history, workflow_mode=current_mode)
         except Exception as e:
             print(f"\n❌ 错误: {e}")
             print("请检查 API 配置是否正确（config.py）")
