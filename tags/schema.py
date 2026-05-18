@@ -34,8 +34,10 @@ class MeshInfo:
     vertex_count: int = 0
     has_skeleton: bool = False
     bone_count: int = 0
+    constraint_count: int = 0  # 骨骼约束数量
     has_skin: bool = False
     has_uv: bool = False
+    uv_channel_count: int = 0
     has_vertex_color: bool = False
     material_count: int = 0
     material_names: list[str] = field(default_factory=list)
@@ -50,8 +52,10 @@ class MeshInfo:
             "vertex_count": self.vertex_count,
             "has_skeleton": self.has_skeleton,
             "bone_count": self.bone_count,
+            "constraint_count": self.constraint_count,
             "has_skin": self.has_skin,
             "has_uv": self.has_uv,
+            "uv_channel_count": self.uv_channel_count,
             "has_vertex_color": self.has_vertex_color,
             "material_count": self.material_count,
             "material_names": self.material_names,
@@ -244,8 +248,10 @@ class AssetTags:
             vertex_count=mesh_d.get("vertex_count", 0),
             has_skeleton=mesh_d.get("has_skeleton", False),
             bone_count=mesh_d.get("bone_count", 0),
+            constraint_count=mesh_d.get("constraint_count", 0),
             has_skin=mesh_d.get("has_skin", False),
             has_uv=mesh_d.get("has_uv", False),
+            uv_channel_count=mesh_d.get("uv_channel_count", 0),
             has_vertex_color=mesh_d.get("has_vertex_color", False),
             material_count=mesh_d.get("material_count", 0),
             material_names=mesh_d.get("material_names", []),

@@ -68,6 +68,10 @@ ANALYZE_ASSETS_DEF = {
                     "type": "string",
                     "description": "要分析的资产目录路径",
                 },
+                "file_pattern": {
+                    "type": "string",
+                    "description": "文件名过滤模式（可选），支持通配符如 'SK_*.fbx'、'*.fbx'、'@*.*'。不填则分析所有文件。",
+                },
                 "naming_prefix": {
                     "type": "string",
                     "description": "命名规范前缀（如 SM_、SK_、T_），用于命名合规检查。不填则使用默认规则。",
@@ -168,7 +172,7 @@ LIST_ASSETS_DEF = {
 # 工具实现（接收关键字参数）
 # ============================================================
 
-def analyze_assets(dir_path: str, naming_prefix: str = None, enable_ai_inference: bool = True, ai_inference_threshold: int = 50) -> dict:
+def analyze_assets(dir_path: str, naming_prefix: str = None, enable_ai_inference: bool = True, ai_inference_threshold: int = 50, file_pattern: str = None) -> dict:
     """
     分析目录中的资产，生成身份证。
 
@@ -177,10 +181,10 @@ def analyze_assets(dir_path: str, naming_prefix: str = None, enable_ai_inference
         naming_prefix: 命名规范前缀（可选）
         enable_ai_inference: 是否启用 AI 推断层（默认 true）
         ai_inference_threshold: AI 推断资产数超过此阈值时，先返回基础分析结果，不执行推断（默认 50）
+        file_pattern: 文件名过滤模式（可选），如 'SK_*.fbx'
 
     返回:
-        分析结果汇总。如果资产数超过阈值且 enable_ai_inference=True，
-        返回中会包含 "need_inference_confirm": True，提示需要确认后再跑 AI 推断。
+        分析结果汇总。
     """
     if not dir_path:
         return {"error": "必须提供 dir_path 参数"}
@@ -246,6 +250,7 @@ def analyze_assets(dir_path: str, naming_prefix: str = None, enable_ai_inference
             conventions_context=conventions_context,
             custom_rules=custom_rules,
             on_progress=_print_progress,
+            file_pattern=file_pattern,
         )
         # 统计可推断的资产数（排除动画、纯贴图、无网格）
         inferable_count = sum(
@@ -276,6 +281,7 @@ def analyze_assets(dir_path: str, naming_prefix: str = None, enable_ai_inference
         conventions_context=conventions_context,
         custom_rules=custom_rules,
         on_progress=_print_progress,
+        file_pattern=file_pattern,
     )
 
     # 简化返回：不传完整的 assets 数据（太大），只传摘要和报告

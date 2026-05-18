@@ -6,12 +6,16 @@
 """
 
 import queue
+import threading
 
 # 全局进度事件队列（线程安全）
 _progress_queue: queue.Queue = queue.Queue()
 
 # 当前活跃的 WebSocket 会话 ID
 _active_session_id: str | None = None
+
+# 取消信号（WebSocket 断开时设置）
+_cancel_event: threading.Event = threading.Event()
 
 
 def set_active_session(session_id: str | None):
@@ -23,6 +27,17 @@ def set_active_session(session_id: str | None):
 def get_active_session() -> str | None:
     """获取当前活跃的 WebSocket 会话 ID"""
     return _active_session_id
+
+
+def set_cancel_event(event: threading.Event):
+    """设置取消信号（由 server.py 在 WebSocket 连接时调用）"""
+    global _cancel_event
+    _cancel_event = event
+
+
+def is_cancelled() -> bool:
+    """检查是否已取消（供工具内部调用）"""
+    return _cancel_event.is_set()
 
 
 def emit_progress(phase: str, current: int, total: int, detail: str, elapsed: float = 0):

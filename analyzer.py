@@ -104,6 +104,7 @@ class AssetIdentityAnalyzer:
         clean_orphans: bool = False,
         custom_rules: list[dict] = None,
         on_progress: Optional[callable] = None,
+        file_pattern: str = None,
     ) -> dict:
         """
         分析一个目录中的所有资产，生成资产身份证。
@@ -186,7 +187,15 @@ class AssetIdentityAnalyzer:
                 f for f in files
                 if f.get("extension") in (".png", ".jpg", ".jpeg", ".tga", ".tiff", ".bmp")
             ]
-            print(f"  找到 {len(fbx_files)} 个 FBX, {len(texture_files)} 张贴图")
+
+            # 按文件名模式过滤
+            if file_pattern:
+                import fnmatch
+                fbx_files = [f for f in fbx_files if fnmatch.fnmatch(f["filename"], file_pattern)]
+                texture_files = [f for f in texture_files if fnmatch.fnmatch(f["filename"], file_pattern)]
+                print(f"  过滤模式 '{file_pattern}': {len(fbx_files)} 个 FBX, {len(texture_files)} 张贴图")
+            else:
+                print(f"  找到 {len(fbx_files)} 个 FBX, {len(texture_files)} 张贴图")
             import sys; sys.stdout.flush()
             # 存 checkpoint
             self._save_checkpoint(dir_path, "scan", {
@@ -240,6 +249,15 @@ class AssetIdentityAnalyzer:
             animation_count = 0
             total_fbx = len(fbx_files)
             for idx, fbx_file in enumerate(fbx_files):
+                # 检查取消信号
+                try:
+                    from progress_hook import is_cancelled
+                    if is_cancelled():
+                        print(f"\n  [取消] 用户取消分析，已完成 {idx}/{total_fbx}")
+                        break
+                except ImportError:
+                    pass
+
                 if on_progress:
                     on_progress("assets", idx + 1, total_fbx, fbx_file["filename"], _elapsed())
                 fbx_path = fbx_file.get("path") or os.path.join(dir_path, fbx_file["filename"])
@@ -334,18 +352,29 @@ class AssetIdentityAnalyzer:
         for tags in all_tags:
             self.store.save(tags)
 
-        # 6.7 自动生成贴图缩略图
+        # 6.7 自动生成贴图缩略图 + 复制 FBX 预览图
         preview_dir = os.path.join(self.store_dir, "previews")
         os.makedirs(preview_dir, exist_ok=True)
         thumb_count = 0
         for tags in all_tags:
+            dst_path = os.path.join(preview_dir, f"{tags.asset_id}.png")
+            if os.path.exists(dst_path):
+                continue  # 已有预览图
+
             if tags.asset_type == "texture":
-                thumb_path = os.path.join(preview_dir, f"{tags.asset_id}.png")
-                if not os.path.exists(thumb_path):
-                    if self._generate_texture_thumbnail(tags.file_path, thumb_path):
-                        thumb_count += 1
+                # 贴图：Pillow 生成缩略图
+                if self._generate_texture_thumbnail(tags.file_path, dst_path):
+                    thumb_count += 1
+            else:
+                # FBX 模型：检查 Blender 渲染的预览图
+                # blender_fbx_reader 会把预览图存在 FBX 同目录的 .previews/ 下
+                fbx_preview = tags.meta.preview_images[0] if tags.meta.preview_images else None
+                if fbx_preview and os.path.isfile(fbx_preview):
+                    import shutil
+                    shutil.copy2(fbx_preview, dst_path)
+                    thumb_count += 1
         if thumb_count:
-            print(f"  [缩略图] 生成 {thumb_count} 张贴图缩略图")
+            print(f"  [预览图] 复制/生成 {thumb_count} 张预览图")
 
         # 7. 生成汇总
         summary = self._build_summary(all_tags)
@@ -410,12 +439,17 @@ class AssetIdentityAnalyzer:
         asset_type = self._detect_asset_type(fbx_path, fbx_result, naming_result)
         tags.asset_type = asset_type
 
+        # 保存 Blender 渲染的预览图路径（解析时已顺手渲染）
+        blender_preview = fbx_result.get("preview_image")
+        if blender_preview and os.path.isfile(blender_preview):
+            tags.meta.preview_images = [blender_preview]
+
         # 动画资产跳过渲染（动画 FBX 没有有意义的网格可渲染）
         if asset_type == "animation":
             return tags
 
-        # 渲染预览图（可选）
-        if render_preview:
+        # 渲染预览图（可选，仅在 Blender 解析未生成预览时使用）
+        if render_preview and not tags.meta.preview_images:
             preview_result = render_asset_preview(fbx_path)
             if preview_result.get("success"):
                 tags.meta.preview_images = [
@@ -470,6 +504,32 @@ class AssetIdentityAnalyzer:
             return "texture"
         if prefix in ("M_", "MI_"):
             return "material"
+
+        # 4. 命名无法判断 → 用 Blender 数据 + 行业知识推断
+        if not parse_error:
+            tri_count = fbx_result.get("total_faces", 0)
+            bone_count = fbx_result.get("bone_count", fbx_result.get("armature_count", 0))
+            material_count = len(fbx_result.get("material_names", []))
+            bbox = fbx_result.get("bbox_size", [0, 0, 0])
+
+            # 有骨架 + 有网格 → 骨骼网格体
+            if has_skeleton and has_mesh:
+                return "skeletal_mesh"
+
+            # 无骨架 + 有网格 → 静态网格体
+            if has_mesh and not has_skeleton:
+                return "static_mesh"
+
+            # 有网格时，用行业数据辅助判断（供 AI 推断参考）
+            if has_mesh:
+                # 面数极高 + 材质多 → 可能是建筑/环境
+                if tri_count > 50000 and material_count > 5:
+                    return "static_mesh"
+                # 包围盒窄长 → 可能是武器
+                if bbox and len(bbox) == 3:
+                    dims = sorted(bbox)
+                    if dims[2] > 0 and dims[0] / dims[2] < 0.3:
+                        return "static_mesh"  # 窄长形状，可能是武器
 
         return "unknown"
 

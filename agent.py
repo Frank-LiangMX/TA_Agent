@@ -374,6 +374,7 @@ BASE_SYSTEM_PROMPT = """你是一个游戏技术美术（TA）AI 助手，专门
 5. 调用 **analyze_assets** 分析资产（设置 enable_ai_inference=true 启用 AI 推断）
    - **重要：不要在 analyze_assets 之前调用 scan_directory！** analyze_assets 内部已包含目录扫描，重复调用浪费迭代次数和上下文。
    - **重要：不要在 analyze_assets 之前调用 check_fbx_info！** analyze_assets 会自动调用 Blender 解析所有 FBX。
+   - **重要：如果用户指定了文件过滤条件（如"只分析 SK_ 开头的"、"只看 FBX"），使用 file_pattern 参数！** 例如：`file_pattern="SK_*.fbx"`。不要自己过滤，不要扫描全部文件再跳过。
    - 如果返回 `need_inference_confirm: true`，说明资产数较多，**必须先汇报基础分析结果，询问用户是否继续 AI 推断**
    - 用户确认后，调用 **run_ai_inference** 执行 AI 推断
    - 资产数较少时（< 50），analyze_assets 会自动完成推断，无需额外确认

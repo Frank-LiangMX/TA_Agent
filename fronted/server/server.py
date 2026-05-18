@@ -68,6 +68,8 @@ app.add_middleware(
 
 # ===== 会话管理 =====
 
+import threading
+
 class Session:
     """一个 WebSocket 连接对应一个会话"""
 
@@ -77,6 +79,7 @@ class Session:
         self.workflow_mode: str = "step_by_step"
         self.created_at: float = time.time()
         self.context_cutoff: int = 0  # 上下文分割点索引
+        self.cancel_event = threading.Event()  # 工具执行取消信号
 
     def to_dict(self) -> dict:
         return {
@@ -282,21 +285,27 @@ async def run_agent(
                 })
 
                 # 执行工具（在线程池中运行，期间定期推送进度事件）
-                from progress_hook import get_progress_events
+                from progress_hook import get_progress_events, is_cancelled
 
                 loop = asyncio.get_event_loop()
                 tool_task = loop.run_in_executor(None, execute_tool, func_name, func_args)
 
-                # 轮询进度事件，直到工具执行完成
+                # 轮询进度事件，直到工具执行完成或取消
                 while not tool_task.done():
                     await asyncio.sleep(0.3)
+                    # 检查取消信号
+                    if is_cancelled():
+                        tool_task.cancel()
+                        result = json.dumps({"error": "用户取消", "cancelled": True}, ensure_ascii=False)
+                        break
                     for evt in get_progress_events():
                         await send_event(ws, evt["type"], evt)
-
-                try:
-                    result = await tool_task
-                except Exception as e:
-                    result = json.dumps({"error": str(e)}, ensure_ascii=False)
+                else:
+                    # 正常完成（未 break）
+                    try:
+                        result = await tool_task
+                    except Exception as e:
+                        result = json.dumps({"error": str(e)}, ensure_ascii=False)
 
                 # 用量计数
                 _usage_stats["tool_calls"] += 1
@@ -396,9 +405,10 @@ async def websocket_endpoint(ws: WebSocket):
     session.history = history
     sessions[session_id] = session
 
-    # 设置活跃会话（用于进度事件路由）
-    from progress_hook import set_active_session
+    # 设置活跃会话和取消信号
+    from progress_hook import set_active_session, set_cancel_event
     set_active_session(session_id)
+    set_cancel_event(session.cancel_event)
 
     # 发送连接确认
     await send_event(ws, "connected", {
@@ -508,6 +518,9 @@ async def websocket_endpoint(ws: WebSocket):
                 await send_error(ws, request_id, f"未知方法: {method}")
 
     except WebSocketDisconnect:
+        # 触发取消信号，停止正在执行的工具
+        session.cancel_event.set()
+
         # 空会话自动清理（断开时 0 条消息）
         session_obj = sessions.get(session_id)
         if session_obj and len(session_obj.history) == 0:
@@ -891,6 +904,230 @@ async def update_permissions(payload: dict = Body(...)):
     return {"success": True, "permissions": _permission_config}
 
 
+# ===== REST 端点（活动日志 + 流水线配置） =====
+
+@app.get("/api/activity")
+async def get_activity_log(limit: int = 50):
+    """获取最近的工具调用活动日志"""
+    try:
+        # 获取最近的会话
+        sessions = session_manager.list_sessions()
+        if not sessions:
+            return {"activities": [], "count": 0}
+
+        # 从最近的会话中提取工具调用
+        activities = []
+        for session in sessions[:5]:  # 最近 5 个会话
+            messages = session_manager.get_messages(session["sessionId"])
+            for msg in messages:
+                if msg.get("role") == "assistant" and msg.get("toolCalls"):
+                    for tc in msg["toolCalls"]:
+                        func = tc.get("function", {})
+                        activities.append({
+                            "type": "tool_call",
+                            "tool": func.get("name", ""),
+                            "args": func.get("arguments", {}),
+                            "timestamp": msg.get("timestamp", ""),
+                            "sessionId": session["sessionId"],
+                            "sessionTitle": session.get("title", ""),
+                        })
+                elif msg.get("role") == "user":
+                    activities.append({
+                        "type": "user_message",
+                        "content": msg.get("content", "")[:100],
+                        "timestamp": msg.get("timestamp", ""),
+                        "sessionId": session["sessionId"],
+                    })
+
+        # 按时间排序，取最新的
+        activities.sort(key=lambda a: a.get("timestamp", ""), reverse=True)
+        return {"activities": activities[:limit], "count": len(activities)}
+    except Exception as e:
+        return {"activities": [], "count": 0, "error": str(e)}
+
+
+@app.get("/api/pipeline")
+async def get_pipeline_config():
+    """获取流水线配置"""
+    config_path = os.path.join(TA_AGENT_DIR, ".ta_agent", "pipeline.json")
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+
+    # 默认流水线配置
+    return {
+        "version": 1,
+        "core_stages": [
+            {"id": "scan", "label": "目录扫描", "icon": "FolderSearch", "description": "扫描资产目录，发现文件", "order": 1},
+            {"id": "analyze", "label": "AI 分析", "icon": "Brain", "description": "推断分类、材质、风格", "order": 2},
+            {"id": "review", "label": "人工审核", "icon": "FileCheck", "description": "审核 AI 推断结果", "order": 3},
+            {"id": "intake", "label": "资产入库", "icon": "Package", "description": "导入项目引擎", "order": 4},
+        ],
+        "custom_stages": [],
+    }
+
+
+@app.post("/api/pipeline")
+async def update_pipeline_config(payload: dict = Body(...)):
+    """更新流水线配置（添加/修改自定义阶段）"""
+    config_path = os.path.join(TA_AGENT_DIR, ".ta_agent", "pipeline.json")
+    os.makedirs(os.path.dirname(config_path), exist_ok=True)
+
+    with open(config_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+    return {"success": True, "message": "流水线配置已更新"}
+
+
+# 流水线执行记录
+_pipeline_runs_path = os.path.join(TA_AGENT_DIR, ".ta_agent", "pipeline_runs.jsonl")
+
+
+def _append_run(run: dict):
+    """追加执行记录到 JSONL"""
+    os.makedirs(os.path.dirname(_pipeline_runs_path), exist_ok=True)
+    with open(_pipeline_runs_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(run, ensure_ascii=False) + "\n")
+
+
+def _load_runs(limit: int = 50, stage_id: str = None) -> list:
+    """读取执行记录"""
+    if not os.path.exists(_pipeline_runs_path):
+        return []
+    runs = []
+    with open(_pipeline_runs_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                try:
+                    runs.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+    if stage_id:
+        runs = [r for r in runs if r.get("stageId") == stage_id]
+    runs.sort(key=lambda r: r.get("startedAt", ""), reverse=True)
+    return runs[:limit]
+
+
+@app.post("/api/pipeline/run")
+async def run_pipeline_stage(payload: dict = Body(...)):
+    """执行流水线阶段（发送 prompt 给 Agent）"""
+    stage_id = payload.get("stageId", "")
+    variables = payload.get("variables", {})
+    session_id = payload.get("sessionId")
+
+    if not stage_id:
+        return {"error": "stageId 不能为空"}
+
+    # 读取流水线配置，找到对应阶段的 prompt
+    config = await get_pipeline_config()
+    stage = None
+    for s in config.get("core_stages", []) + config.get("custom_stages", []):
+        if s.get("id") == stage_id:
+            stage = s
+            break
+
+    if not stage:
+        return {"error": f"未找到阶段: {stage_id}"}
+
+    prompt = stage.get("prompt", stage.get("description", ""))
+    # 替换变量
+    for key, value in variables.items():
+        prompt = prompt.replace(f"{{{key}}}", str(value))
+
+    # 如果没有自定义 prompt，使用默认的阶段指令
+    if not prompt or prompt == stage.get("description", ""):
+        default_prompts = {
+            "scan": f"扫描目录 {variables.get('path', '')}，列出所有资产文件，统计文件类型分布",
+            "analyze": f"对 {variables.get('path', '')} 下的资产进行 AI 推断，分析分类、材质、风格、状态",
+            "review": "展示待审核资产列表，等待用户逐个或批量确认",
+            "intake": "将已审核通过的资产导入项目引擎",
+        }
+        prompt = default_prompts.get(stage_id, f"执行 {stage['label']}")
+
+    # 通过 WebSocket 发送给 Agent 执行
+    # 找到当前活跃的 WebSocket 会话
+    target_session_id = session_id
+    if not target_session_id:
+        # 使用最近的会话
+        recent_sessions = session_manager.list_sessions()
+        if recent_sessions:
+            target_session_id = recent_sessions[0]["sessionId"]
+
+    if not target_session_id:
+        return {"error": "没有活跃的会话"}
+
+    # 记录执行
+    run_id = f"run_{uuid.uuid4().hex[:8]}"
+    run_record = {
+        "runId": run_id,
+        "stageId": stage_id,
+        "sessionId": target_session_id,
+        "status": "running",
+        "startedAt": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "prompt": prompt,
+        "variables": variables,
+    }
+    _append_run(run_record)
+
+    # 将 prompt 作为用户消息发送给 Agent
+    session_manager.append_message(target_session_id, {
+        "role": "user",
+        "content": prompt,
+    })
+
+    return {
+        "success": True,
+        "runId": run_id,
+        "stageId": stage_id,
+        "sessionId": target_session_id,
+        "prompt": prompt,
+        "message": f"已发送给 Agent 执行: {stage['label']}",
+    }
+
+
+@app.get("/api/pipeline/runs")
+async def get_pipeline_runs(stageId: str = None, limit: int = 20):
+    """获取执行记录"""
+    runs = _load_runs(limit=limit, stage_id=stageId)
+    return {"runs": runs, "count": len(runs)}
+
+
+@app.get("/api/pipeline/state")
+async def get_pipeline_state():
+    """获取流水线各阶段状态"""
+    config = await get_pipeline_config()
+    runs = _load_runs(limit=100)
+
+    # 合并 core_stages 和 custom_stages
+    all_stages = config.get("core_stages", []) + config.get("custom_stages", [])
+
+    stage_states = {}
+    for stage in all_stages:
+        sid = stage["id"]
+        # 找该阶段最近的执行记录
+        stage_runs = [r for r in runs if r.get("stageId") == sid]
+        if stage_runs:
+            latest = stage_runs[0]
+            status = latest.get("status", "pending")
+        else:
+            status = "pending"
+        stage_states[sid] = {
+            "status": status,
+            "lastRun": stage_runs[0] if stage_runs else None,
+            "runCount": len(stage_runs),
+        }
+
+    return {
+        "stages": all_stages,
+        "states": stage_states,
+        "totalRuns": len(runs),
+    }
+
+
 # ===== REST 端点（资产数据 — 直接查 SQLite） =====
 
 def _get_tag_store():
@@ -1126,9 +1363,15 @@ async def render_asset_preview_api(asset_id: str):
 
             import shutil
             src_images = result.get("images", [])
-            if src_images and os.path.isfile(src_images[0]):
-                shutil.copy2(src_images[0], dst_path)
-                return {"success": True, "message": "预览图已生成"}
+            if src_images:
+                # images 可能是 [{"angle": "front", "path": "..."}] 或 ["path"]
+                first = src_images[0]
+                src_path = first.get("path") if isinstance(first, dict) else first
+                if src_path and os.path.isfile(src_path):
+                    shutil.copy2(src_path, dst_path)
+                    return {"success": True, "message": "预览图已生成"}
+                else:
+                    return {"error": "渲染完成但未找到图片文件"}
             else:
                 return {"error": "渲染完成但未找到图片文件"}
         else:

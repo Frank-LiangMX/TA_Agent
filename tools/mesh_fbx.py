@@ -101,11 +101,16 @@ def check_fbx_info(file_path: str) -> dict:
         except ImportError:
             pass
 
+        # 预览图输出路径（与 FBX 同目录的 .previews 子目录）
+        preview_dir = os.path.join(os.path.dirname(file_path), ".previews")
+        preview_name = os.path.splitext(os.path.basename(file_path))[0] + "_preview.png"
+        preview_output = os.path.join(preview_dir, preview_name)
+
         cmd = [
             blender_path,
             "--background",
             "--python", reader_script,
-            "--", file_path
+            "--", file_path, preview_output
         ]
 
         proc = subprocess.run(

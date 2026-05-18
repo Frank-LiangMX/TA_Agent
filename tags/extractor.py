@@ -52,9 +52,18 @@ class TagExtractor:
         mesh.tri_count = fbx_result.get("total_faces", fbx_result.get("tri_count", 0))
         mesh.vertex_count = fbx_result.get("total_vertices", fbx_result.get("vertex_count", 0))
         mesh.has_skeleton = fbx_result.get("has_skeleton", False)
-        mesh.bone_count = fbx_result.get("bone_count", fbx_result.get("armature_count", 0))
+
+        # 从 skeleton_info 提取骨骼数（不是 armature_count）
+        skeleton_info = fbx_result.get("skeleton_info", [])
+        if skeleton_info:
+            mesh.bone_count = sum(s.get("bone_count", 0) for s in skeleton_info)
+        else:
+            mesh.bone_count = 0
+
+        mesh.constraint_count = fbx_result.get("constraint_count", 0)
         mesh.has_skin = fbx_result.get("has_skin", False)
         mesh.has_uv = fbx_result.get("uv_channel_count", 0) > 0
+        mesh.uv_channel_count = fbx_result.get("uv_channel_count", 0)
 
         # material_count 可能在顶层或 mesh_details 里
         material_count = fbx_result.get("material_count", 0)
