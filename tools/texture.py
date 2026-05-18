@@ -138,6 +138,18 @@ def check_texture_batch(dir_path: str, max_resolution: int = 2048, recursive: bo
 
     walker = os.walk(dir_path) if recursive else [(dir_path, [], os.listdir(dir_path))]
 
+    # 先统计总数
+    total_count = 0
+    for root, dirs, filenames in walker:
+        for fname in filenames:
+            ext = os.path.splitext(fname)[1].lower()
+            if ext in TEXTURE_EXTENSIONS:
+                total_count += 1
+
+    # 重新遍历（walk 是一次性迭代器）
+    walker = os.walk(dir_path) if recursive else [(dir_path, [], os.listdir(dir_path))]
+    processed = 0
+
     for root, dirs, filenames in walker:
         for fname in filenames:
             ext = os.path.splitext(fname)[1].lower()
@@ -148,6 +160,7 @@ def check_texture_batch(dir_path: str, max_resolution: int = 2048, recursive: bo
             if not os.path.isfile(full_path):
                 continue
 
+            processed += 1
             info = check_texture_info(full_path)
             textures.append({
                 "filename": fname,
@@ -159,6 +172,14 @@ def check_texture_batch(dir_path: str, max_resolution: int = 2048, recursive: bo
                 "size_mb": info.get("size_mb"),
                 "resolution_tier": info.get("resolution_tier"),
             })
+
+            # 报告进度
+            try:
+                from tools.identity import _active_progress_callback
+                if _active_progress_callback:
+                    _active_progress_callback("textures", processed, total_count, fname)
+            except ImportError:
+                pass
 
             # 统计格式
             fmt = info.get("format", "unknown")

@@ -5,30 +5,75 @@ TA Agent 配置文件
 
 # ========== LLM 配置 ==========
 
-# DeepSeek 配置
-DEEPSEEK_CONFIG = {
-    "base_url": "https://api.deepseek.com/v1",
-    "api_key": "sk-fa07dc15b2464cf6bfb4a6d752c865bb",  # 替换为你的 key
-    "model": "deepseek-v4-pro",           # 模型名称
+# 所有可用的 LLM 配置（云端 + 自建）
+LLM_CONFIGS = {
+    # 云端 API
+    "deepseek": {
+        "name": "DeepSeek-V4-pro",
+        "type": "cloud",
+        "base_url": "https://api.deepseek.com/v1",
+        "api_key": "sk-fa07dc15b2464cf6bfb4a6d752c865bb",
+        "model": "deepseek-v4-pro",
+    },
+    "glm": {
+        "name": "GLM-5",
+        "type": "cloud",
+        "base_url": "https://api.sfkey.cn/v1",
+        "api_key": "sk-6tO7dFcZFeuyIxYx7GRxjo7W4r7EHvhXt59YeAqpBJkLwbNn",
+        "model": "glm-5",
+    },
+    # 自建模型（按需启用）
+    # "qwen-14b": {
+    #     "name": "Qwen-14B (本地)",
+    #     "type": "local",
+    #     "base_url": "http://192.168.1.100:8000/v1",
+    #     "api_key": "none",
+    #     "model": "qwen-14b",
+    # },
 }
 
-# GLM 配置
-GLM_CONFIG = {
-    "base_url": "https://api.sfkey.cn/v1",
-    "api_key": "sk-6tO7dFcZFeuyIxYx7GRxjo7W4r7EHvhXt59YeAqpBJkLwbNn",       # 替换为你的 key
-    "model": "glm-5",                     # 模型名称
-}
-
-# 当前使用的 LLM（切换时改这里）
-ACTIVE_LLM = "glm"  # 可选: "deepseek" 或 "glm"
+# 当前使用的 LLM
+ACTIVE_LLM = "glm"  # 可选: LLM_CONFIGS 中的任意 key
 
 def get_llm_config():
     """获取当前活跃的 LLM 配置"""
-    configs = {
-        "deepseek": DEEPSEEK_CONFIG,
-        "glm": GLM_CONFIG,
+    if ACTIVE_LLM not in LLM_CONFIGS:
+        raise ValueError(f"未知的 LLM: {ACTIVE_LLM}，可用: {list(LLM_CONFIGS.keys())}")
+    return LLM_CONFIGS[ACTIVE_LLM]
+
+def list_llm_configs():
+    """列出所有可用的 LLM 配置（不暴露 api_key）"""
+    result = []
+    for key, cfg in LLM_CONFIGS.items():
+        result.append({
+            "key": key,
+            "name": cfg.get("name", key),
+            "type": cfg.get("type", "cloud"),
+            "base_url": cfg["base_url"],
+            "model": cfg["model"],
+            "active": key == ACTIVE_LLM,
+        })
+    return result
+
+def set_active_llm(name: str) -> dict:
+    """切换当前活跃的 LLM"""
+    global ACTIVE_LLM
+    if name not in LLM_CONFIGS:
+        return {"error": f"未知的 LLM: {name}，可用: {list(LLM_CONFIGS.keys())}"}
+    ACTIVE_LLM = name
+    cfg = LLM_CONFIGS[name]
+    return {"success": True, "active": name, "name": cfg.get("name", name)}
+
+def add_llm_config(key: str, name: str, base_url: str, model: str, api_key: str = "none", llm_type: str = "local") -> dict:
+    """添加自定义 LLM 配置"""
+    LLM_CONFIGS[key] = {
+        "name": name,
+        "type": llm_type,
+        "base_url": base_url,
+        "api_key": api_key,
+        "model": model,
     }
-    return configs[ACTIVE_LLM]
+    return {"success": True, "key": key, "message": f"已添加 {name}，使用 /llm switch {key} 切换"}
 
 # ========== Blender 配置 ==========
 
@@ -67,6 +112,29 @@ VISION_CONFIG = {
 def get_vision_config():
     """获取视觉分析的 LLM 配置（独立于文本 LLM）"""
     return VISION_CONFIG
+
+# ========== 用户配置 ==========
+
+# 当前用户（本地模式只需要 name，中心模式需要 token）
+USER_CONFIG = {
+    "name": "",           # 用户名（首次运行自动提示设置）
+    "token": "",          # 认证 token（中心模式使用，本地模式留空）
+    "group": "",          # 分组（可选：角色组、场景组等）
+}
+
+def get_user_config():
+    """获取当前用户配置"""
+    return USER_CONFIG
+
+def set_user_config(name: str = None, token: str = None, group: str = None) -> dict:
+    """更新用户配置"""
+    if name is not None:
+        USER_CONFIG["name"] = name
+    if token is not None:
+        USER_CONFIG["token"] = token
+    if group is not None:
+        USER_CONFIG["group"] = group
+    return {"success": True, "user": USER_CONFIG.copy()}
 
 # ========== 项目规范配置 ==========
 

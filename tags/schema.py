@@ -39,6 +39,7 @@ class MeshInfo:
     has_vertex_color: bool = False
     material_count: int = 0
     material_names: list[str] = field(default_factory=list)
+    material_textures: dict = field(default_factory=dict)  # {材质名: [贴图名列表]}
     has_materials: bool = True  # False 表示模型没有材质（资源缺失）
     bounding_box: BoundingBox = field(default_factory=BoundingBox)
     export_mode: str = ""  # MECHA/NPC/PILOT/STATIC/DEFAULT
@@ -54,6 +55,7 @@ class MeshInfo:
             "has_vertex_color": self.has_vertex_color,
             "material_count": self.material_count,
             "material_names": self.material_names,
+            "material_textures": self.material_textures,
             "has_materials": self.has_materials,
             "bounding_box": self.bounding_box.to_dict(),
             "export_mode": self.export_mode,
@@ -146,12 +148,14 @@ class MetaInfo:
     naming_suggestion: str = ""   # AI 建议的命名
     naming_compliant: bool = True # 当前命名是否合规
     naming_issues: list[str] = field(default_factory=list)
-    engine_path: str = ""         # 建议的引擎目录
+    engine_path: str = ""         # UE5 中的实际路径（导入成功后填写）
     source_path: str = ""         # 源文件路径
+    target_engine_dir: str = ""   # 目标 UE5 Content 目录
+    target_engine_path: str = ""  # 目标引擎子路径（如 /Game/Weapons）
     intake_date: str = ""         # 入库日期
     analyzed_at: str = ""         # 分析时间
     reviewer: str = ""            # 入库责任人
-    status: str = "pending"       # pending / approved / rejected
+    status: str = "pending"       # pending / approved / imported / rejected
     preview_images: list[str] = field(default_factory=list)  # 渲染预览图路径
 
 
@@ -213,6 +217,8 @@ class AssetTags:
                 "naming_issues": self.meta.naming_issues,
                 "engine_path": self.meta.engine_path,
                 "source_path": self.meta.source_path,
+                "target_engine_dir": self.meta.target_engine_dir,
+                "target_engine_path": self.meta.target_engine_path,
                 "intake_date": self.meta.intake_date,
                 "analyzed_at": self.meta.analyzed_at,
                 "reviewer": self.meta.reviewer,
@@ -243,6 +249,7 @@ class AssetTags:
             has_vertex_color=mesh_d.get("has_vertex_color", False),
             material_count=mesh_d.get("material_count", 0),
             material_names=mesh_d.get("material_names", []),
+            material_textures=mesh_d.get("material_textures", {}),
             bounding_box=BoundingBox.from_dict(mesh_d.get("bounding_box", {})),
             export_mode=mesh_d.get("export_mode", ""),
         )
@@ -293,6 +300,8 @@ class AssetTags:
             naming_issues=meta_d.get("naming_issues", []),
             engine_path=meta_d.get("engine_path", ""),
             source_path=meta_d.get("source_path", ""),
+            target_engine_dir=meta_d.get("target_engine_dir", ""),
+            target_engine_path=meta_d.get("target_engine_path", ""),
             intake_date=meta_d.get("intake_date", ""),
             analyzed_at=meta_d.get("analyzed_at", ""),
             reviewer=meta_d.get("reviewer", ""),

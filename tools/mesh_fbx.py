@@ -80,6 +80,7 @@ def check_fbx_info(file_path: str) -> dict:
     blender_path = _get_blender_path()
     if not blender_path:
         result["error"] = "未找到 Blender 安装，请在 config.py 中设置 BLENDER_PATH"
+        print(f"  [FBX解析] 错误: 未找到 Blender")
         return result
 
     # Blender reader 脚本路径
@@ -121,6 +122,9 @@ def check_fbx_info(file_path: str) -> dict:
             stderr_tail = proc.stderr[-500:] if proc.stderr else ""
             result["error"] = f"Blender 执行失败 (code {proc.returncode})"
             result["blender_stderr"] = stderr_tail
+            print(f"  [FBX解析] Blender 返回非零退出码 {proc.returncode}: {os.path.basename(file_path)}")
+            if stderr_tail:
+                print(f"  [FBX解析] stderr (末尾): {stderr_tail[-200:]}")
             return result
 
         # 解析 JSON 输出（Blender 输出中可能混有日志，找到 JSON 部分）
@@ -138,15 +142,23 @@ def check_fbx_info(file_path: str) -> dict:
 
         # 合并结果
         result.update(parsed)
+
+        # 检查 Blender 侧报告的错误（如"文件中没有找到网格数据"）
+        if result.get("error"):
+            print(f"  [FBX解析] Blender 报告: {result['error']} ({os.path.basename(file_path)})")
+
         return result
 
     except subprocess.TimeoutExpired:
         result["error"] = f"Blender 解析超时（{timeout}秒），文件可能过大"
+        print(f"  [FBX解析] 超时 ({timeout}s): {os.path.basename(file_path)}")
         return result
     except json.JSONDecodeError as e:
         result["error"] = f"解析 Blender 输出失败: {str(e)}"
         result["raw_output"] = proc.stdout[-500:] if proc else ""
+        print(f"  [FBX解析] JSON 解析失败: {os.path.basename(file_path)} - {e}")
         return result
     except Exception as e:
         result["error"] = f"调用 Blender 失败: {str(e)}"
+        print(f"  [FBX解析] 异常: {os.path.basename(file_path)} - {e}")
         return result

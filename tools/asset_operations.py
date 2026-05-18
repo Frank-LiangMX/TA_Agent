@@ -303,8 +303,9 @@ def batch_rename(
     results = []
     success_count = 0
     fail_count = 0
+    total = len(rename_list)
 
-    for item in rename_list:
+    for i, item in enumerate(rename_list):
         result = rename_asset(
             file_path=item["file_path"],
             new_name=item["new_name"],
@@ -315,6 +316,14 @@ def batch_rename(
             success_count += 1
         else:
             fail_count += 1
+
+        # 报告进度
+        try:
+            from tools.identity import _active_progress_callback
+            if _active_progress_callback:
+                _active_progress_callback("rename", i + 1, total, item.get("new_name", ""))
+        except ImportError:
+            pass
 
     return {
         "total": len(rename_list),

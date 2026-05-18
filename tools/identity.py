@@ -15,14 +15,34 @@ from conventions.context import get_conventions_context
 # 全局分析器实例（复用同一个存储目录）
 _analyzer: AssetIdentityAnalyzer | None = None
 
+# 模块级进度回调（由 agent.py 注入，用于 rich 进度面板）
+_active_progress_callback = None
+
+
+def set_progress_callback(fn):
+    """设置进度回调（agent.py 在执行 analyze_assets 前调用）"""
+    global _active_progress_callback
+    _active_progress_callback = fn
+
+
+def clear_progress_callback():
+    """清除进度回调（agent.py 在工具执行完成后调用）"""
+    global _active_progress_callback
+    _active_progress_callback = None
+
 
 def _get_analyzer():
     global _analyzer
     if _analyzer is None:
         from analyzer import AssetIdentityAnalyzer
+        from tools.memory import NullMemoryProvider
+        from tools.memory_tools import get_memory_provider
         store_dir = os.path.join(os.path.dirname(__file__), "..", "tag_store")
+        # 使用全局记忆提供器（由 agent.py 或 server.py 初始化）
+        mem = get_memory_provider() or NullMemoryProvider()
         _analyzer = AssetIdentityAnalyzer(
             store_dir=os.path.abspath(store_dir),
+            memory=mem,
         )
     return _analyzer
 
@@ -197,15 +217,19 @@ def analyze_assets(dir_path: str, naming_prefix: str = None, enable_ai_inference
             return f"{m}m {s:.1f}s"
         return f"{sec:.1f}s"
 
-    # 进度回调：打印到控制台
+    # 进度回调：优先使用外部注入的 rich 回调，降级为 print
+    progress_cb = _active_progress_callback  # 由 agent.py 注入
+
     def _print_progress(phase, current, total, detail, elapsed=0):
         import sys
+        if progress_cb:
+            progress_cb(phase, current, total, detail, elapsed)
+            return
         if phase == "textures":
             print(f"  [贴图分析] {current}/{total} - {detail}  [{_fmt(elapsed)}]")
         elif phase == "assets":
             print(f"  [FBX 分析] {current}/{total} - {detail}  [{_fmt(elapsed)}]")
         elif phase == "inference":
-            # inference 阶段由 inferrer.py 内部的动态计时处理，这里不再重复打印
             pass
         elif phase == "done":
             print(f"  [完成] 共分析 {current} 个资产  总耗时: {_fmt(elapsed)}")
@@ -223,10 +247,12 @@ def analyze_assets(dir_path: str, naming_prefix: str = None, enable_ai_inference
             custom_rules=custom_rules,
             on_progress=_print_progress,
         )
-        # 统计可推断的资产数（排除动画和纯贴图）
+        # 统计可推断的资产数（排除动画、纯贴图、无网格）
         inferable_count = sum(
             1 for a in result.get("assets", [])
-            if a.get("asset_type") != "animation" and a.get("asset_type") != "texture"
+            if a.get("asset_type") != "animation"
+            and a.get("asset_type") != "texture"
+            and a.get("mesh", {}).get("tri_count", 0) > 0
         )
         if inferable_count > ai_inference_threshold:
             # 超过阈值，先返回基础结果，等用户确认
@@ -306,8 +332,8 @@ def run_ai_inference(dir_path: str) -> dict:
     if not dir_assets:
         return {"error": f"数据库中没有找到 {dir_path} 下的资产，请先运行 analyze_assets"}
 
-    # 过滤掉动画资产
-    inferable = [a for a in dir_assets if a.asset_type != "animation"]
+    # 过滤掉动画资产和无网格资产
+    inferable = [a for a in dir_assets if a.asset_type != "animation" and a.mesh.tri_count > 0]
     skip_count = len(dir_assets) - len(inferable)
 
     if not inferable:
@@ -320,7 +346,7 @@ def run_ai_inference(dir_path: str) -> dict:
     conventions_context = get_conventions_context() or ""
 
     # 构建记忆上下文
-    from tags.memory_utils import build_memory_context, extract_asset_features
+    from tools.memory.memory_tools import build_memory_context, extract_asset_features
     memory_context = None
     first_tag = inferable[0]
     asset_features = extract_asset_features(
@@ -337,7 +363,9 @@ def run_ai_inference(dir_path: str) -> dict:
     memory_context = build_memory_context(analyzer.memory, asset_features)
 
     def _progress(current, total, name, elapsed=0):
-        pass  # inferrer 内部有进度打印
+        if _active_progress_callback:
+            _active_progress_callback("inference", current, total, name, elapsed)
+        # else: inferrer 内部有进度打印
 
     # 执行推断
     from tags.inferrer import infer_batch

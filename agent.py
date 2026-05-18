@@ -11,6 +11,10 @@ import time
 
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TaskProgressColumn, TimeElapsedColumn
+from rich.panel import Panel
+from rich.table import Table
+from rich.live import Live
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import InMemoryHistory
@@ -31,6 +35,10 @@ class _AgentCompleter(Completer):
             ("/plugins", "查看插件列表"),
             ("/install ", "安装插件"),
             ("/uninstall ", "卸载插件"),
+            ("/sessions", "查看会话列表"),
+            ("/new", "创建新会话"),
+            ("/switch ", "切换会话"),
+            ("/delete ", "删除会话"),
             ("/help", "显示帮助"),
             ("quit", "退出"),
         ]
@@ -102,6 +110,154 @@ from conventions.context import get_conventions_context, set_conventions_context
 # 导入记忆模块
 from tools.memory import FileMemoryProvider, NullMemoryProvider
 from tools.memory_tools import set_memory_provider
+
+# 导入会话管理模块
+import session_manager
+
+
+def _truncate_tool_result(result: str, max_chars: int = 2000) -> str:
+    """
+    截断过大的工具结果，避免上下文窗口溢出。
+
+    策略：
+    - 超过 max_chars 时截断，保留前半部分 + 截断提示
+    - JSON 格式尽量保留结构完整性
+    - Markdown 格式保留摘要部分，截掉详情
+    """
+    if len(result) <= max_chars:
+        return result
+
+    # 尝试作为 JSON 处理
+    try:
+        data = json.loads(result)
+        # JSON 结果：保留关键字段，去掉大字段
+        truncated = {}
+        for key, value in data.items():
+            val_str = json.dumps(value, ensure_ascii=False)
+            if len(val_str) > 1000:
+                # 大字段截断
+                if isinstance(value, str):
+                    truncated[key] = value[:500] + f"\n... [截断，原长 {len(value)} 字符]"
+                elif isinstance(value, list):
+                    truncated[key] = value[:5] + [f"... 共 {len(value)} 项，已截断"]
+                elif isinstance(value, dict):
+                    truncated[key] = {k: v for k, v in list(value.items())[:5]}
+                    truncated[key]["_truncated"] = f"共 {len(value)} 个字段，已截断"
+                else:
+                    truncated[key] = val_str[:500] + "... [截断]"
+            else:
+                truncated[key] = value
+        return json.dumps(truncated, ensure_ascii=False)
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    # 非 JSON（如 Markdown 报告）：保留前面部分
+    return result[:max_chars] + f"\n\n... [结果已截断，原长 {len(result)} 字符]"
+
+
+# ========== 分析进度面板 ==========
+
+# 阶段配置：显示名、emoji
+_PHASE_CONFIG = {
+    "scan":      ("扫描目录", ""),
+    "textures":  ("分析贴图", ""),
+    "assets":    ("分析 FBX", ""),
+    "inference": ("AI 推断", ""),
+    "done":      ("完成", ""),
+}
+
+# 阶段顺序
+_PHASE_ORDER = ["scan", "textures", "assets", "inference", "done"]
+
+
+def _create_analysis_progress():
+    """
+    创建资产分析的 rich 进度面板。
+
+    返回 (progress, callback) 元组：
+    - progress: rich.progress.Progress 实例（with 上下文管理器）
+    - callback: 传给 analyze_assets 的进度回调函数
+
+    用法：
+        progress, callback = _create_analysis_progress()
+        with progress:
+            set_progress_callback(callback)
+            result = execute_tool("analyze_assets", args)
+            clear_progress_callback()
+    """
+    progress = Progress(
+        TextColumn("  {task.description}"),
+        BarColumn(bar_width=30),
+        TaskProgressColumn(),
+        TimeElapsedColumn(),
+        console=Console(),
+        transient=False,  # 完成后保留显示
+    )
+
+    # 阶段状态跟踪
+    phase_tasks = {}  # phase -> task_id
+    phase_status = {}  # phase -> "pending" | "running" | "done"
+    current_phase = None
+
+    def _ensure_task(phase):
+        """确保阶段的 task 已创建"""
+        if phase in phase_tasks:
+            return
+        name, _ = _PHASE_CONFIG.get(phase, (phase, ""))
+        task_id = progress.add_task(name, total=None, visible=True)
+        phase_tasks[phase] = task_id
+        phase_status[phase] = "pending"
+
+    def _callback(phase, current, total, detail, elapsed=0):
+        nonlocal current_phase
+
+        # "done" 阶段：标记所有完成
+        if phase == "done":
+            for p, tid in phase_tasks.items():
+                if phase_status.get(p) != "done":
+                    t = progress.tasks[tid]
+                    progress.update(tid, completed=t.total or 1, total=t.total or 1)
+                    phase_status[p] = "done"
+            return
+
+        # 确保 task 存在
+        _ensure_task(phase)
+
+        # 标记之前的阶段为完成
+        if phase != current_phase:
+            for p in _PHASE_ORDER:
+                if p == phase:
+                    break
+                if phase_status.get(p) == "running":
+                    tid = phase_tasks[p]
+                    t = progress.tasks[tid]
+                    progress.update(tid, completed=t.total or 1)
+                    phase_status[p] = "done"
+            current_phase = phase
+            phase_status[phase] = "running"
+
+        # 更新当前阶段进度
+        tid = phase_tasks[phase]
+        if total and total > 0:
+            progress.update(tid, completed=current, total=total)
+
+        # 更新描述（加上当前文件名）
+        name, _ = _PHASE_CONFIG.get(phase, (phase, ""))
+        if detail:
+            short_name = os.path.basename(detail) if len(detail) > 30 else detail
+            progress.update(tid, description=f"{name}  {current}/{total}  {short_name}")
+        else:
+            progress.update(tid, description=f"{name}  {current}/{total}")
+
+    # 预创建所有阶段 task（保证显示顺序）
+    for phase in _PHASE_ORDER:
+        _ensure_task(phase)
+    # 扫描阶段瞬时完成（无回调）
+    scan_tid = phase_tasks["scan"]
+    progress.update(scan_tid, completed=1, total=1, description="扫描目录  ✓")
+    phase_status["scan"] = "done"
+
+    return progress, _callback
 
 
 # ========== System Prompt ==========
@@ -216,6 +372,8 @@ BASE_SYSTEM_PROMPT = """你是一个游戏技术美术（TA）AI 助手，专门
 3. 调用 **discover_conventions** 扫描该目录，发现项目规范文档
 4. 展示候选文档给用户确认，然后调用 **load_conventions** 加载规范
 5. 调用 **analyze_assets** 分析资产（设置 enable_ai_inference=true 启用 AI 推断）
+   - **重要：不要在 analyze_assets 之前调用 scan_directory！** analyze_assets 内部已包含目录扫描，重复调用浪费迭代次数和上下文。
+   - **重要：不要在 analyze_assets 之前调用 check_fbx_info！** analyze_assets 会自动调用 Blender 解析所有 FBX。
    - 如果返回 `need_inference_confirm: true`，说明资产数较多，**必须先汇报基础分析结果，询问用户是否继续 AI 推断**
    - 用户确认后，调用 **run_ai_inference** 执行 AI 推断
    - 资产数较少时（< 50），analyze_assets 会自动完成推断，无需额外确认
@@ -230,10 +388,11 @@ BASE_SYSTEM_PROMPT = """你是一个游戏技术美术（TA）AI 助手，专门
 10. 调用 **intake_approved** 一键入库所有已审核通过的资产
     - 需要用户提供 UE5 Content 目录路径（target_engine_dir）
     - 支持 dry_run=true 先预览入库结果
-11. 入库完成后，告知用户：
-    - 导入清单路径（import_manifest.json）
-    - 导入脚本路径（import_assets.py）
-    - 提示用户在 UE5 Python Console 中运行导入脚本完成最终导入
+11. 入库完成后，**优先使用 UE5 HTTP Server 直接导入**：
+    - 先调用 **ue5_health_check** 检查 UE5 Server 是否在线
+    - 如果在线：对每个资产调用 **ue5_import_asset** 直接导入到 UE5
+    - 如果不在线：告知用户导入脚本路径（import_assets.py），提示在 UE5 Python Console 中运行
+12. **不要生成脚本让用户手动执行**，除非 UE5 Server 不可用
 
 ### 单资产入库
 如果用户只需要入库单个资产（而非批量），可以：
@@ -270,6 +429,15 @@ BASE_SYSTEM_PROMPT = """你是一个游戏技术美术（TA）AI 助手，专门
 - 前缀含义：SM=静态网格体, SK=骨骼网格体, M=材质, MI=材质实例, T=贴图, BP=蓝图
 - 面数预算：角色<30K, 武器<10K, 道具<5K, 建筑<20K, 自然<8K
 - 贴图规范：最大 2048x2048，必须是 2 的幂次，推荐正方形
+
+## 工具失败处理
+当工具调用返回错误时：
+1. 分析错误原因（API 不兼容、参数错误、环境问题等）
+2. **插件工具**（tools/plugins/ 下的文件）：可以直接修改代码，修复后询问用户是否保存
+3. **核心工具**（tools/ 下的其他文件）：**不要直接修改**，只报告问题和修复建议，等用户确认后再改
+4. 如果是外部环境问题（如 UE5 API 版本变化），建议修改对应的桥接工具或生成新的适配代码
+5. 修复完成后，询问用户是否将修复后的工具保存到插件目录（tools/plugins/）
+6. 不要只是报错然后放弃，要有主动解决问题的能力
 
 ## 输出风格
 - 简洁专业，使用 TA 术语
@@ -342,24 +510,81 @@ def create_client():
     ), config["model"]
 
 
-def agent_loop(user_message: str, history: list = None, workflow_mode: str = None):
+def _compress_history(history: list, keep_recent: int = 12) -> list:
+    """
+    智能压缩对话历史，避免请求体过大同时保留关键上下文。
+
+    策略：
+    - 保留前 2 条（初始上下文）
+    - 保留最近 keep_recent 条（近期上下文）
+    - 中间部分只保留 user 消息和非工具调用的 assistant 消息（关键决策）
+    - tool 消息和工具调用中间过程丢弃
+    - 对保留的消息中的大内容也做截断
+    """
+    if len(history) <= keep_recent + 4:
+        return history
+
+    # 前 2 条（初始上下文）
+    head = history[:2]
+
+    # 中间部分：只保留 user 消息和 assistant 的最终回复（非工具调用）
+    middle_raw = history[2:-keep_recent]
+    middle = []
+    for msg in middle_raw:
+        if msg.get("role") == "user":
+            middle.append(msg)
+        elif msg.get("role") == "assistant" and msg.get("content") and not msg.get("tool_calls"):
+            # 只保留有内容且不是工具调用的 assistant 消息
+            # 截断过长的回复
+            content = msg["content"]
+            if len(content) > 2000:
+                msg = {**msg, "content": content[:2000] + "\n... [历史消息已截断]"}
+            middle.append(msg)
+
+    # 最近的消息：也截断过大的 tool 结果
+    tail = []
+    for msg in history[-keep_recent:]:
+        if msg.get("role") == "tool" and msg.get("content") and len(msg["content"]) > 2000:
+            msg = {**msg, "content": _truncate_tool_result(msg["content"])}
+        tail.append(msg)
+
+    compressed = head + middle + tail
+
+    # 如果压缩后还是太长，进一步丢弃中间部分
+    if len(compressed) > 30:
+        compressed = head + tail
+
+    return compressed
+
+
+def agent_loop(user_message: str, history: list = None, workflow_mode: str = None, interrupt_event=None, context_cutoff: int = 0):
     """
     Agent 主循环
     接收用户消息，调用 LLM，处理工具调用，返回最终结果
 
     参数:
         user_message: 用户消息
-        history: 对话历史
+        history: 对话历史（完整）
         workflow_mode: 工作流模式（"step_by_step" 或 "auto"），None 使用默认值
+        interrupt_event: threading.Event，设置后中断当前 Agent 循环
+        context_cutoff: 上下文分割点，history[:context_cutoff] 不发送给 LLM（保留用于持久化）
     """
     client, model = create_client()
 
     if history is None:
         history = []
 
-    # 构建消息列表
+    # 构建消息列表（只发送 cutoff 之后的历史）
     messages = [{"role": "system", "content": build_system_prompt(workflow_mode)}]
-    messages.extend(history)
+
+    # 智能压缩历史：保留关键消息，丢弃中间过程
+    active_history = history[context_cutoff:]
+    if len(active_history) > 20:
+        compressed = _compress_history(active_history)
+        messages.extend(compressed)
+    else:
+        messages.extend(active_history)
+
     messages.append({"role": "user", "content": user_message})
 
     print(f"\n{'='*60}")
@@ -367,11 +592,18 @@ def agent_loop(user_message: str, history: list = None, workflow_mode: str = Non
     print(f"{'='*60}")
 
     # Agent 循环：LLM 可能需要多次调用工具
-    max_iterations = 10  # 防止无限循环
+    max_iterations = 15  # 防止无限循环
     iteration = 0
 
     while iteration < max_iterations:
         iteration += 1
+
+        # 检查是否被打断
+        if interrupt_event and interrupt_event.is_set():
+            print(f"\n⏹️ Agent 已中断（用户打断）")
+            sys.stdout.flush()
+            return "（已中断）", history
+
         print(f"\n--- Agent 思考中... (第 {iteration} 轮) ---")
         sys.stdout.flush()
 
@@ -409,6 +641,14 @@ def agent_loop(user_message: str, history: list = None, workflow_mode: str = Non
                     break  # 成功，跳出重试循环
                 except Exception as api_err:
                     err_msg = str(api_err)
+                    # 输入过长：压缩历史后重试（不计入重试次数）
+                    if "InvalidParameter" in err_msg or "input length" in err_msg or "202745" in err_msg:
+                        print(f"  ⚠️ 输入过长，压缩历史后重试...")
+                        sys.stdout.flush()
+                        # 保留 system + 最近 6 条消息
+                        if len(messages) > 8:
+                            messages = messages[:1] + _compress_history(messages[1:], keep_recent=6)
+                        continue  # 不计入重试次数
                     is_retryable = any(k in err_msg for k in ["504", "502", "503", "timeout", "Timeout", "overloaded", "rate_limit", "429"])
                     if is_retryable and attempt < max_retries - 1:
                         wait = (attempt + 1) * 10  # 10s, 20s, 30s
@@ -491,6 +731,9 @@ def agent_loop(user_message: str, history: list = None, workflow_mode: str = Non
                 content=content_buffer if content_buffer else None,
                 tool_calls=parsed_tool_calls,
             )
+        except KeyboardInterrupt:
+            _stop_timer.set()
+            raise  # 向上传递给 main() 处理
         except Exception as e:
             _stop_timer.set()  # 停止等待提示
             print(f"\n❌ LLM API 调用失败: {e}")
@@ -551,12 +794,27 @@ def agent_loop(user_message: str, history: list = None, workflow_mode: str = Non
                     continue
 
             print(f"  → {func_name}({json.dumps(func_args, ensure_ascii=False)})")
-            print(f"  ⏳ 执行中...")
             sys.stdout.flush()
 
-            # 执行工具
+            # 执行工具（分析类工具使用 rich 进度面板）
             tool_start = time.time()
-            result = execute_tool(func_name, func_args)
+            _ANALYSIS_TOOLS = ("analyze_assets", "run_ai_inference")
+
+            if func_name in _ANALYSIS_TOOLS:
+                # 创建进度面板
+                progress, progress_cb = _create_analysis_progress()
+                with progress:
+                    from tools.identity import set_progress_callback, clear_progress_callback
+                    set_progress_callback(progress_cb)
+                    try:
+                        result = execute_tool(func_name, func_args)
+                    finally:
+                        clear_progress_callback()
+            else:
+                print(f"  ⏳ 执行中...")
+                sys.stdout.flush()
+                result = execute_tool(func_name, func_args)
+
             tool_elapsed = time.time() - tool_start
             print(f"  ← 结果: {result[:200]}{'...' if len(result) > 200 else ''}")
             if tool_elapsed >= 60:
@@ -579,17 +837,38 @@ def agent_loop(user_message: str, history: list = None, workflow_mode: str = Non
                 except (json.JSONDecodeError, KeyError):
                     pass
 
-            # 把工具结果加入消息
+            # 把工具结果加入消息（截断过大的结果避免上下文溢出）
             messages.append({
                 "role": "tool",
                 "tool_call_id": tool_call.id,
-                "content": result,
+                "content": _truncate_tool_result(result),
             })
 
     # 如果循环次数用完
     final_answer = "抱歉，处理过程中遇到了问题，请尝试简化您的请求。"
     print(f"\n⚠️ 达到最大迭代次数")
     return final_answer, history
+
+
+def _session_msgs_to_history(messages: list) -> list:
+    """将会话 JSONL 消息转为 agent_loop 需要的 history 格式"""
+    history = []
+    for msg in messages:
+        role = msg.get("role")
+        if role == "user":
+            history.append({"role": "user", "content": msg.get("content", "")})
+        elif role == "assistant":
+            entry = {"role": "assistant", "content": msg.get("content") or ""}
+            if msg.get("toolCalls"):
+                entry["tool_calls"] = msg["toolCalls"]
+            history.append(entry)
+        elif role == "tool":
+            history.append({
+                "role": "tool",
+                "tool_call_id": msg.get("toolCallId", ""),
+                "content": msg.get("content", ""),
+            })
+    return history
 
 
 def _print_status():
@@ -690,12 +969,37 @@ def main():
         print("  将使用空记忆（不记录纠正）")
         set_memory_provider(NullMemoryProvider())
 
+    # 初始化会话管理器
+    session_manager.init(os.path.join(project_root, ".ta_agent"))
+    session_stats = session_manager.get_stats()
+    print(f"\n  会话管理: OK")
+    print(f"  存储位置: {os.path.join(project_root, '.ta_agent', 'sessions')}")
+    print(f"  历史会话: {session_stats['active_sessions']} 个, {session_stats['total_messages']} 条消息")
+
+    # 加载最近的活跃会话，或创建新会话
+    active_sessions = session_manager.list_sessions()
+    # 过滤掉草稿
+    non_draft = [s for s in active_sessions if not s.get("isDraft")]
+    if non_draft:
+        current_session = non_draft[0]
+        # 从会话恢复历史（转为 agent_loop 需要的格式）
+        raw_messages = session_manager.get_messages(current_session["sessionId"], limit=50)
+        history = _session_msgs_to_history(raw_messages)
+        print(f"  当前会话: {current_session['title']}")
+        print(f"  历史消息: {len(history)} 条")
+    else:
+        current_session = session_manager.create_session()
+        history = []
+        print(f"  当前会话: 新建 (草稿)")
+
+    current_session_id = current_session["sessionId"]
+    context_cutoff = 0  # 上下文分割点（history 中从此位置开始发送给 LLM）
+
     print(f"\n{'='*60}")
     print("输入消息与 Agent 对话，输入 'quit' 退出")
     print("输入 / 后按 Tab 可自动补全命令，/help 查看所有命令")
     print(f"当前模式：{WORKFLOW_MODE}\n")
 
-    history = []
     current_mode = WORKFLOW_MODE
 
     # 自定义按键
@@ -816,15 +1120,128 @@ def main():
                 print("  /plugins             查看已启用和可安装的插件")
                 print("  /install <name>      安装插件")
                 print("  /uninstall <name>    卸载插件")
+                print("  /sessions            查看会话列表")
+                print("  /new                 创建新会话")
+                print("  /switch <id>         切换到指定会话")
+                print("  /delete <id>         删除会话")
+                print("  /clear               清空上下文（保留历史，LLM 不再看到之前的消息）")
+                print("  /llm                 查看当前 LLM 配置")
+                print("  /llm switch <name>   切换 LLM")
+                print("  /llm add <key> <url> <model>  添加自建模型")
                 print("  /help                显示此帮助")
                 print("  quit                 退出")
                 print("\n  输入 / 后按 Tab 可自动补全命令")
+            elif cmd == '/clear':
+                context_cutoff = len(history)
+                print(f"[系统] 上下文已清空（保留 {len(history)} 条历史，后续消息不发送旧上下文给 LLM）")
+            elif cmd.startswith('/llm'):
+                from config import list_llm_configs, set_active_llm, add_llm_config, ACTIVE_LLM
+                parts = cmd.split()
+                if len(parts) == 1:
+                    # 显示当前 LLM 状态
+                    configs = list_llm_configs()
+                    print(f"\n[系统] 当前 LLM: {ACTIVE_LLM}")
+                    for c in configs:
+                        marker = "→" if c["active"] else " "
+                        type_tag = f"({c['type']})" if c.get("type") else ""
+                        print(f"  {marker} {c['key']:15s} {c['name']:20s} {type_tag}")
+                    print(f"\n  用法: /llm switch <name> 或 /llm add <key> <url> <model>")
+                elif len(parts) >= 2 and parts[1] == "switch":
+                    if len(parts) < 3:
+                        print("[系统] 用法: /llm switch <name>")
+                    else:
+                        result = set_active_llm(parts[2])
+                        if result.get("success"):
+                            print(f"[系统] 已切换到: {result['name']}")
+                        else:
+                            print(f"[系统] {result.get('error')}")
+                elif len(parts) >= 2 and parts[1] == "add":
+                    if len(parts) < 5:
+                        print("[系统] 用法: /llm add <key> <base_url> <model>")
+                    else:
+                        result = add_llm_config(key=parts[2], name=parts[2], base_url=parts[3], model=parts[4])
+                        print(f"[系统] {result.get('message')}")
+                else:
+                    print("[系统] 用法: /llm | /llm switch <name> | /llm add <key> <url> <model>")
+            elif cmd == '/sessions':
+                sessions = session_manager.list_sessions()
+                if not sessions:
+                    print("[系统] 没有历史会话")
+                else:
+                    print(f"\n[系统] 会话列表 ({len(sessions)} 个):")
+                    for s in sessions:
+                        marker = "→" if s["sessionId"] == current_session_id else " "
+                        pin = "📌" if s.get("isPinned") else "  "
+                        draft = " (草稿)" if s.get("isDraft") else ""
+                        print(f"  {marker} {pin} {s['sessionId'][:8]}  {s['title']}{draft}  [{s['messageCount']}条]")
+                    print(f"\n  当前会话: {current_session_id[:8]}")
+            elif cmd == '/new':
+                current_session = session_manager.create_session()
+                current_session_id = current_session["sessionId"]
+                history = []
+                context_cutoff = 0
+                print(f"[系统] 已创建新会话: {current_session_id[:8]}")
+            elif cmd.startswith('/switch'):
+                parts = cmd.split()
+                if len(parts) < 2:
+                    print("[系统] 用法：/switch <会话ID前缀>")
+                else:
+                    prefix = parts[1]
+                    sessions = session_manager.list_sessions(include_archived=True)
+                    matches = [s for s in sessions if s["sessionId"].startswith(prefix)]
+                    if not matches:
+                        print(f"[系统] 未找到匹配的会话: {prefix}")
+                    elif len(matches) > 1:
+                        print(f"[系统] 多个匹配，请提供更长的前缀:")
+                        for s in matches:
+                            print(f"  {s['sessionId'][:12]}  {s['title']}")
+                    else:
+                        current_session = matches[0]
+                        current_session_id = current_session["sessionId"]
+                        raw_msgs = session_manager.get_messages(current_session_id, limit=50)
+                        history = _session_msgs_to_history(raw_msgs)
+                        context_cutoff = 0
+                        print(f"[系统] 已切换到: {current_session['title']} ({len(history)} 条消息)")
+            elif cmd.startswith('/delete'):
+                parts = cmd.split()
+                if len(parts) < 2:
+                    print("[系统] 用法：/delete <会话ID前缀>")
+                else:
+                    prefix = parts[1]
+                    sessions = session_manager.list_sessions(include_archived=True)
+                    matches = [s for s in sessions if s["sessionId"].startswith(prefix)]
+                    if not matches:
+                        print(f"[系统] 未找到匹配的会话: {prefix}")
+                    elif len(matches) > 1:
+                        print(f"[系统] 多个匹配，请提供更长的前缀:")
+                        for s in matches:
+                            print(f"  {s['sessionId'][:12]}  {s['title']}")
+                    else:
+                        target = matches[0]
+                        if target["sessionId"] == current_session_id:
+                            print("[系统] 不能删除当前会话，请先 /switch 或 /new")
+                        else:
+                            session_manager.delete_session(target["sessionId"])
+                            print(f"[系统] 已删除: {target['title']}")
             else:
                 print("[系统] 未知命令。输入 /help 查看可用命令")
             continue
 
         try:
-            answer, history = agent_loop(user_input, history, workflow_mode=current_mode)
+            answer, history = agent_loop(user_input, history, workflow_mode=current_mode, context_cutoff=context_cutoff)
+
+            # 持久化消息到会话文件
+            session_manager.append_message(current_session_id, {
+                "role": "user",
+                "content": user_input,
+            })
+            session_manager.append_message(current_session_id, {
+                "role": "assistant",
+                "content": answer,
+            })
+        except KeyboardInterrupt:
+            print(f"\n⏹️ Agent 已中断")
+            continue
         except Exception as e:
             print(f"\n❌ 错误: {e}")
             print("请检查 API 配置是否正确（config.py）")

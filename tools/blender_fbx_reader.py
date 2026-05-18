@@ -9,6 +9,19 @@ import json
 import os
 
 
+def _extract_material_textures(material) -> list:
+    """从材质节点树中提取贴图名称"""
+    textures = []
+    if not material.use_nodes or not material.node_tree:
+        return textures
+    for node in material.node_tree.nodes:
+        if node.type == 'TEX_IMAGE' and node.image:
+            img_name = node.image.name
+            if img_name not in textures:
+                textures.append(img_name)
+    return textures
+
+
 def read_fbx(fbx_path: str) -> dict:
     """读取 FBX 文件并提取几何数据"""
     result = {
@@ -83,11 +96,16 @@ def read_fbx(fbx_path: str) -> dict:
             co = obj.matrix_world @ v.co
             all_coords.append([co.x, co.y, co.z])
 
-        # 材质信息：名称列表 + 是否有实际材质
+        # 材质信息：名称列表 + 是否有实际材质 + 贴图映射
         mat_names = []
+        mat_textures = {}  # {材质名: [贴图名列表]}
         for slot in obj.material_slots:
             if slot.material:
                 mat_names.append(slot.material.name)
+                # 读取材质节点树中的贴图
+                textures_in_mat = _extract_material_textures(slot.material)
+                if textures_in_mat:
+                    mat_textures[slot.material.name] = textures_in_mat
             else:
                 mat_names.append(None)  # 空槽位
 
@@ -97,12 +115,14 @@ def read_fbx(fbx_path: str) -> dict:
             "faces": f_count,
             "material_count": len(obj.material_slots),
             "material_names": mat_names,
+            "material_textures": mat_textures,
             "has_materials": any(m is not None for m in mat_names),
             "has_armature_modifier": any(mod.type == 'ARMATURE' for mod in obj.modifiers),
         })
 
     # 汇总材质信息
     all_mat_names = []
+    all_mat_textures = {}  # {材质名: [贴图名列表]}
     has_any_material = False
     for detail in mesh_details:
         for name in detail.get("material_names", []):
@@ -110,6 +130,14 @@ def read_fbx(fbx_path: str) -> dict:
                 all_mat_names.append(name)
         if detail.get("has_materials"):
             has_any_material = True
+        # 合并材质贴图映射
+        for mat_name, tex_list in detail.get("material_textures", {}).items():
+            if mat_name not in all_mat_textures:
+                all_mat_textures[mat_name] = tex_list
+            else:
+                for t in tex_list:
+                    if t not in all_mat_textures[mat_name]:
+                        all_mat_textures[mat_name].append(t)
 
     result.update({
         "total_vertices": total_vertices,
@@ -117,6 +145,7 @@ def read_fbx(fbx_path: str) -> dict:
         "uv_channel_count": len(uv_layers),
         "uv_layer_names": list(uv_layers),
         "material_names": all_mat_names,
+        "material_textures": all_mat_textures,
         "has_materials": has_any_material,
     })
 

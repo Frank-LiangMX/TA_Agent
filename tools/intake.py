@@ -132,15 +132,16 @@ def intake_asset(
     """
     对单个资产执行入库流程。
 
-    流程：
+    流程（不移动源文件）：
     1. 从 TagStore 加载资产标签
     2. 确定资产类型和分类
     3. 生成规范名称
-    4. 确定目标路径
-    5. 创建目标目录
-    6. 重命名 + 移动文件（含关联贴图）
-    7. 更新 TagStore 记录
-    8. 记录审计日志
+    4. 确定目标引擎路径
+    5. 更新 TagStore（规范名称 + 目标路径，状态保持 approved）
+    6. 记录审计日志
+
+    源文件保留在原始位置，不移动。
+    等 UE5 导入成功后，再由 ue5_import_asset 更新 engine_path 和状态。
     """
     if store_dir is None:
         store_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tag_store")
@@ -163,7 +164,7 @@ def intake_asset(
 
     # 执行入库步骤
     steps = []
-    original_name = tags.asset_name  # 保存原始名称用于审计日志
+    original_name = tags.asset_name
     try:
         # 步骤 1：确定资产分类
         category = _determine_category(tags)
@@ -173,7 +174,7 @@ def intake_asset(
         new_name = _generate_new_name(tags, category, config)
         steps.append({"step": "generate_name", "status": "success", "detail": new_name})
 
-        # 步骤 2.5：命名规范校验
+        # 步骤 3：命名规范校验
         naming_result = check_naming(f"{new_name}.fbx")
         if not naming_result.get("is_valid"):
             steps.append({
@@ -184,63 +185,37 @@ def intake_asset(
         else:
             steps.append({"step": "naming_check", "status": "success", "detail": "命名合规"})
 
-        # 步骤 3：确定目标路径
+        # 步骤 4：确定目标引擎路径
         engine_path = _get_engine_path(category, config)
-        target_dir = os.path.join(target_engine_dir, engine_path.lstrip("/").replace("/", os.sep))
-        steps.append({"step": "determine_path", "status": "success", "detail": target_dir})
+        target_ue_path = engine_path  # 如 /Game/Weapons
+        steps.append({"step": "determine_path", "status": "success", "detail": target_ue_path})
 
-        # 步骤 4：查找关联贴图
+        # 步骤 5：查找关联贴图
         related_textures = _find_related_textures(tags)
-        steps.append({"step": "find_textures", "status": "success", "detail": f"{len(related_textures)} 张贴图"})
+        steps.append({"step": "find_textures", "status": "success", "detail": f"{len(related_textures)} 张关联贴图"})
 
-        # 步骤 5：创建目录 + 移动文件
+        # 步骤 6：更新 TagStore（不移动文件，只记录规范名称和目标路径）
         if not dry_run:
-            os.makedirs(target_dir, exist_ok=True)
-
-        # 移动 FBX
-        fbx_ext = os.path.splitext(tags.file_path)[1]
-        new_fbx_path = os.path.join(target_dir, f"{new_name}{fbx_ext}")
-        if not dry_run:
-            if os.path.exists(tags.file_path):
-                shutil.move(tags.file_path, new_fbx_path)
-            else:
-                steps.append({"step": "move_fbx", "status": "warning", "detail": f"源文件不存在: {tags.file_path}"})
-        steps.append({"step": "move_fbx", "status": "success", "detail": f"{tags.asset_name}{fbx_ext} → {new_name}{fbx_ext}"})
-
-        # 移动关联贴图
-        moved_textures = []
-        for tex_path in related_textures:
-            tex_name = os.path.basename(tex_path)
-            new_tex_name = _rename_texture(tex_name, tags.asset_name, new_name, config)
-            new_tex_path = os.path.join(target_dir, new_tex_name)
-            if not dry_run:
-                if os.path.exists(tex_path):
-                    shutil.move(tex_path, new_tex_path)
-            moved_textures.append({"old": tex_name, "new": new_tex_name})
-        if moved_textures:
-            steps.append({"step": "move_textures", "status": "success", "detail": moved_textures})
-
-        # 步骤 6：更新 TagStore
-        if not dry_run:
-            tags.file_path = new_fbx_path
             tags.asset_name = new_name
-            tags.meta.engine_path = os.path.join(engine_path, f"{new_name}{fbx_ext}").replace("\\", "/")
             tags.meta.intake_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            tags.meta.status = "imported"
+            tags.meta.target_engine_dir = target_engine_dir
+            tags.meta.target_engine_path = target_ue_path
+            # 状态保持 approved，等 UE5 导入成功后再改为 imported
             store.save(tags)
-        steps.append({"step": "update_store", "status": "success", "detail": "状态更新为 imported"})
+        steps.append({"step": "update_store", "status": "success", "detail": f"规范名称: {new_name}, 目标路径: {target_ue_path}"})
 
         # 步骤 7：记录审计日志
         if not dry_run:
             _log_intake(store_dir, {
                 "asset_id": asset_id,
                 "original_name": original_name,
-                "final_name": f"{new_name}{fbx_ext}",
+                "canonical_name": new_name,
                 "source_path": tags.file_path,
-                "target_path": new_fbx_path,
+                "target_engine_dir": target_engine_dir,
+                "target_engine_path": target_ue_path,
                 "category": category,
                 "action": "intake",
-                "status": "success",
+                "status": "approved",
             })
         steps.append({"step": "audit_log", "status": "success", "detail": "已记录"})
 
@@ -248,13 +223,14 @@ def intake_asset(
             "success": True,
             "dry_run": dry_run,
             "asset_id": asset_id,
-            "original_name": tags.asset_name,
-            "new_name": new_name,
-            "target_dir": target_dir,
-            "final_path": new_fbx_path,
-            "related_textures": moved_textures,
+            "original_name": original_name,
+            "canonical_name": new_name,
+            "source_path": tags.file_path,
+            "target_engine_dir": target_engine_dir,
+            "target_engine_path": target_ue_path,
+            "related_textures": len(related_textures),
             "steps": steps,
-            "message": f"{'[试运行] ' if dry_run else ''}入库成功: {new_name}",
+            "message": f"{'[试运行] ' if dry_run else ''}入库完成: {new_name}（源文件未移动，等待 UE5 导入）",
         }
 
     except Exception as e:
@@ -289,8 +265,9 @@ def intake_batch(
     results = []
     success_count = 0
     fail_count = 0
+    total = len(asset_ids)
 
-    for asset_id in asset_ids:
+    for i, asset_id in enumerate(asset_ids):
         result = intake_asset(
             asset_id=asset_id,
             target_engine_dir=target_engine_dir,
@@ -303,6 +280,15 @@ def intake_batch(
             success_count += 1
         else:
             fail_count += 1
+
+        # 报告进度
+        try:
+            from tools.identity import _active_progress_callback
+            if _active_progress_callback:
+                name = result.get("asset_name", asset_id[:8])
+                _active_progress_callback("intake", i + 1, total, name)
+        except ImportError:
+            pass
 
     # 批量入库完成后生成导入清单
     manifest_path = None
@@ -324,12 +310,15 @@ def intake_batch(
             )
             script_path = _generate_import_script(manifest_path, store_dir)
 
+    # 截断详细结果，避免上下文过大
+    MAX_RESULTS = 10
     return {
         "total": len(asset_ids),
         "success": success_count,
         "failed": fail_count,
         "dry_run": dry_run,
-        "results": results,
+        "results": results[:MAX_RESULTS],
+        "results_truncated": len(results) > MAX_RESULTS,
         "manifest_path": manifest_path,
         "script_path": script_path,
         "message": f"{'[试运行] ' if dry_run else ''}批量入库完成: {success_count} 成功, {fail_count} 失败",
@@ -662,7 +651,7 @@ def import_from_manifest(manifest_path: str):
             task.set_editor_property("replace_existing", True)
             task.set_editor_property("automated", True)
 
-            # 配置 FBX 导入参数
+            # 配置 FBX 导入参数（通用方式，兼容 UE5.x 各版本）
             fbx_ui = unreal.FbxImportUI()
             preset = asset_info["import_preset"]
 
@@ -672,13 +661,9 @@ def import_from_manifest(manifest_path: str):
 
             if asset_info.get("asset_type") == "skeletal_mesh":
                 fbx_ui.set_editor_property("import_as_skeletal", True)
-                mesh_data = unreal.SkeletalMeshImportData()
             else:
                 fbx_ui.set_editor_property("import_as_skeletal", False)
-                mesh_data = unreal.StaticMeshImportData()
 
-            mesh_data.set_editor_property("import_scale", preset.get("import_scale", 1.0))
-            fbx_ui.set_editor_property("static_mesh_import_data", mesh_data)
             task.set_editor_property("options", fbx_ui)
 
             # 执行导入

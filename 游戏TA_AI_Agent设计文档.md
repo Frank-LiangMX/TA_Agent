@@ -1,8 +1,93 @@
 # 游戏技术美术 AI Agent 设计文档
 
-> 版本：v0.13 | 创建日期：2026-05-10 | 更新日期：2026-05-12
-> 作者：技术美术团队
-> 状态：概念设计阶段
+> 版本：v0.22 | 创建日期：2026-05-10 | 更新日期：2026-05-16
+> 作者：liangmingxuan
+> 状态：开发中
+
+### 相关文档
+
+| 文档 | 路径 | 说明 |
+|------|------|------|
+| 前端设计文档 | `F:\Proma\apps\tagent-web\DESIGN.md` | 前端架构、组件、协议、设计规范、待开发任务 |
+| 开发规范 | `F:\ta_agent\CLAUDE.md` | 代码组织、工具开发规范、命名规范 |
+| 项目 README | `F:\ta_agent\README.md` | 项目简介和快速开始 |
+
+---
+
+## 项目状态看板
+
+### 里程碑进度
+
+| 里程碑 | 状态 | 说明 |
+|--------|------|------|
+| 1. 本地资产检查 | ✅ 已完成 | AI 自动质检（面数/贴图/命名/材质） |
+| 2. 资产自动入库 | ✅ 已完成 | 审核→重命名→UE5 导入→更新状态 |
+| 3. 项目级管理平台 | 🔧 进行中 | 后端完成，前端待开发 |
+| 4. 公司级资产助手 | ⬜ 远期 | 跨项目复用 + 新项目规划 |
+
+### 当前在做
+
+**后端**（ta_agent + server）：
+- ✅ 会话管理系统（session_manager.py + REST API + WebSocket）
+- ✅ 上下文分割机制（context_cutoff）
+- ✅ 分析进度面板（rich.progress）
+- ✅ 双模式 LLM 配置（云端/自建切换）
+- ✅ 用户标识（WebSocket 传用户名）
+- ✅ 材质贴图映射（Blender 读取材质节点树）
+- ✅ 贴图缩略图自动生成
+- ✅ 批量操作进度（入库/重命名/贴图检查）
+
+**前端**（fronted）：
+- ✅ 流式对话、工具可视化、资产库、审核队列、语义搜索
+- ✅ 会话管理 UI（SessionSelector + Popover）
+- ✅ 消息导航（ScrollMinimap）
+- ✅ 上下文分割线（ContextDivider）
+- ✅ 设置页面（模型/Agent/记忆/工具/规范等）
+
+### 接下来做什么
+
+| # | 任务 | 优先级 | 工作量 | 端 | 说明 | 状态 |
+|---|------|--------|--------|-----|------|------|
+| 1 | 双模式 LLM 配置 | P0 | 0.5 天 | 后端 | config.py 支持云端/自建切换 | ✅ |
+| 2 | 用户标识 | P0 | 1 天 | 后端 | WebSocket 传用户名/token，按用户隔离 | ✅ |
+| 3 | 前端会话管理 UI | P0 | 2 天 | 前端 | SessionSelector + Popover | ✅ |
+| 4 | WebSocket sessionId | P0 | 0.5 天 | 前端 | 连接时带 sessionId，切换时重连 | ✅ |
+| 5 | 会话列表完善 | P0 | 0.5 天 | 后端 | 置顶、归档、日期分组、搜索 | ✅ |
+| 6 | 消息导航 ScrollMinimap | P0 | 1 天 | 前端 | 右侧迷你导航条 | ✅ |
+| 7 | 前端设置页面 | P0 | 1 天 | 前端 | 模型/Agent/记忆等设置页 | ✅ |
+| 8 | 材质贴图映射 | P0 | 0.5 天 | 后端 | Blender 读取材质节点树 | ✅ |
+| 9 | 贴图缩略图 | P0 | 0.5 天 | 后端 | 分析时自动生成 256px PNG | ✅ |
+| 10 | 批量操作进度 | P0 | 0.5 天 | 后端 | 入库/重命名/贴图检查进度 | ✅ |
+| 11 | 清理记忆 API | P1 | 0.5 小时 | 后端 | POST /api/memory/clear | ❌ |
+| 12 | 提示词管理 API | P1 | 0.5 小时 | 后端 | GET/POST /api/config/prompt | ❌ |
+| 13 | 用量统计 API | P1 | 1 小时 | 后端 | GET /api/usage，LLM 调用计数 | ❌ |
+| 14 | 数据同步工具 | P1 | 1 天 | 后端 | tools/sync.py，分析完推送到中心 | ❌ |
+| 15 | 中心服务器 | P1 | 2 天 | 后端 | 轻量 FastAPI，CRUD + 权限 | ❌ |
+| 16 | 权限管理 | P1 | 1.5 天 | 后端 | 美术/组长/主管 + 可见范围 | ❌ |
+| 17 | 自动审核策略 | P1 | 0.5 天 | 后端 | 高置信度自动通过 | ❌ |
+| 18 | 上下文分割线 | P1 | 1 天 | 前端 | ContextDivider | ✅ |
+| 19 | 项目总览仪表盘 | P1 | 1 天 | 前端 | 资产统计、用户分布 | ❌ |
+| 20 | 修正记录收集 | P2 | 1 天 | 后端 | 审核修改后记录 | ❌ |
+| 21 | 经验聚合 | P2 | 2 天 | 后端 | 修正 → 模式 → 规则 | ❌ |
+| 22 | 入库向导 | P2 | 1.5 天 | 前端 | 分步引导 | ❌ |
+| 23 | SVN 双目录集成 | P2 | 2 天 | 后端 | ArtResources + Content | ❌ |
+| 24 | SVN post-commit 监控 | P2 | 1 天 | 后端 | 自动分析新提交的文件 | ❌ |
+| 25 | 桌面启动器 | P2 | 1 天 | 后端 | PyInstaller 打包 exe，自动开浏览器 | ❌ |
+
+**最小可用版本**：任务 1-10 全部完成 ✅ → 单人可用
+**设置页完整版**：任务 11-13 完成（约 2 小时）→ 设置页功能完整
+**团队可用版本**：任务 14-25 完成（约 10 天）→ 团队可用
+
+> 推广策略详见 `工作流程文档.md` 第八章：先帮美术省事（一键重命名、批量导入），再引入质量检查，不要一上来就当审核工具。
+
+### 最近变更
+
+| 版本 | 日期 | 关键改动 |
+|------|------|---------|
+| v0.22 | 05-16 | 双模式 LLM 配置、用户标识、材质贴图映射、贴图缩略图、批量操作进度、FBX 路径修复、会话消息截断、进度回调修复 |
+| v0.21 | 05-15 | 多会话管理、上下文分割、进度面板、路径 bug 修复、文档整理 |
+| v0.20 | 05-14 | 入库流程重构、AI 推断过滤增强、UE5 Server 修复 |
+| v0.19 | 05-14 | UE5 集成（文件通信）、Ctrl+C 打断、System Prompt 自修复 |
 
 ---
 
@@ -17,7 +102,9 @@
 
 但在**游戏技术美术（TA）**领域，Agent 化的程度极低，存在大量未被覆盖的价值空间。
 
-### 1.2 为什么 TA 需要 Agent
+### 1.2 为什么需要这个平台
+
+#### TA 层面：效率问题
 
 TA 的核心工作是**管线（Pipeline）管理和质量把控**：
 
@@ -28,6 +115,17 @@ TA 的核心工作是**管线（Pipeline）管理和质量把控**：
 - 技术规范的制定与执行
 
 这些工作**模式固定但数据量大、规则复杂且需要语义级判断**，非常适合 Agent 化。
+
+#### 公司层面：资产管理问题
+
+除 TA 效率外，更深层的问题是**公司级的资产管理缺失**：
+
+- **规范落地不一致**：公司有技术规范，但每个项目执行人不同，规范在落地过程中千差万别
+- **资产无法复用**：各项目做过的资产对公司来说都是可复用资源，但没有统一管理
+- **新项目规划靠猜**：开新项目时不清楚已有资源，工作量和成本估算不准
+- **知识随人走**：TA 离职后，项目经验和规范理解一起丢失
+
+平台的目标不仅是提升 TA 效率，更是建设**公司的美术资产基础设施**。
 
 ### 1.3 架构选择：单 Agent + 多工具
 
@@ -221,10 +319,14 @@ AssetIdentity:
   meta:
     suggested_naming: string    # Agent 建议的规范命名
     suggested_path: string      # Agent 建议的引擎目录
-    engine_path: string         # 实际入库路径
+    engine_path: string         # UE5 中的实际路径（导入成功后填写）
+    source_path: string         # 源文件路径
+    target_engine_dir: string   # 目标 UE5 Content 目录
+    target_engine_path: string  # 目标引擎子路径（如 /Game/Weapons）
     tags: [string]              # 自由标签（供搜索用）
     reviewer: string            # 入库审核人
-    review_status: string       # pending / approved / rejected
+    review_status: string       # pending / approved / imported / rejected
+    intake_date: string         # 入库日期
     notes: string               # 备注
 ```
 
@@ -356,6 +458,38 @@ ProjectConfig:
    - 身份证数据存入可搜索的数据库
    - 支持后续按任意标签组合检索
 ```
+
+#### 4.1.5.1 工作流模式
+
+Agent 支持两种工作流模式，通过 `WORKFLOW_MODE` 配置或 CLI 命令 `/mode` 切换：
+
+| 模式 | 说明 | 适用场景 |
+|------|------|----------|
+| `step_by_step` | 逐步模式（默认）：每完成一个阶段后汇报结果，等待用户确认再进入下一阶段 | 新用户、需要逐步确认的场景 |
+| `auto` | 自动模式：分析完成后自动串联后续阶段，高置信度资产自动通过，仅低置信度资产询问用户 | 熟悉 Agent 的用户、批量处理 |
+
+**逐步模式流程**：
+```
+阶段一：分析资产 → 汇报结果，询问"是否进入审核阶段？"
+    ↓ 用户确认
+阶段二：审核资产 → 汇报结果，询问"是否进入入库阶段？"
+    ↓ 用户确认
+阶段三：入库 → 完成
+```
+
+**自动模式流程**：
+```
+分析资产 → 获取待审核列表 → 高置信度自动批量通过
+    ↓ 有低置信度资产
+列出详情，询问用户 → 用户确认后入库
+    ↓ 全部高置信度
+直接入库
+```
+
+**CLI 命令**：
+- `/mode step_by_step` — 切换到逐步模式
+- `/mode auto` — 切换到自动模式
+- `/status` — 查看当前模式
 
 #### 4.1.6 标签检索：语义化资源查找
 
@@ -947,60 +1081,183 @@ client = OpenAI(
 - **GLM-5**：中文理解好，适合规范查询、报告生成等中文密集场景
 - **后续迁移**：架构已做 LLM 抽象层，切换到 Claude/GPT 只需改配置，不改业务逻辑
 
+### 5.2.1 LLM 依赖度分析
+
+Agent 的大部分工作**不需要 LLM**，LLM 只用于理解意图和推断：
+
+**按功能数**：22% 需要 LLM（5/22 个功能）
+
+| 需要 LLM | 不需要 LLM |
+|----------|-----------|
+| 对话交互（理解用户意图） | 目录扫描（os.walk） |
+| AI 推断（分类/材质/风格） | FBX 解析（Blender subprocess） |
+| 工具选择（决定调哪个工具） | 贴图检查（Pillow） |
+| 语义搜索（自然语言理解） | 命名检查（regex） |
+| 报告生成（格式化输出） | 面数检查（数值比较） |
+| | 入库操作（文件复制） |
+| | 审核操作（SQLite） |
+
+**一次完整分析的调用明细**（100 个 FBX + 50 个贴图）：
+
+```
+[LLM] 用户发消息 → 理解意图 + 选择工具          1 次
+      调用 analyze_assets → 内部执行            0 次
+        扫描目录 (1000 文件) → os.walk          0 次
+        分析贴图 (50 张) → Pillow               0 次
+        分析 FBX (100 个) → Blender             0 次
+        命名检查 → regex                        0 次
+[LLM]   AI 推断 (50 个资产) → 批量调 LLM        5 次
+[LLM] 返回结果 → 生成报告                       1 次
+[LLM] 用户确认审核 → 理解意图                    1 次
+      调用 batch_approve → SQLite               0 次
+[LLM] 用户入库 → 理解意图                        1 次
+      调用 intake_approved → 文件操作            0 次
+[LLM] 汇报结果 → 生成总结                        1 次
+```
+
+**总计**：LLM 调用 10 次，本地执行 7 次
+
+**耗时分布**：
+
+```
+Blender 解析 100 个 FBX   ████████████████████████████  50 分钟
+AI 推断 50 个资产          ███                           5 分钟
+其他 LLM 调用              █                             1 分钟
+本地检查                   ▏                            10 秒
+```
+
+**结论**：
+- LLM 调用次数少（10 次），每次轻量（1-3 秒）
+- 瓶颈在 Blender（每个 FBX 30 秒），不在 LLM
+- 多用户并发 LLM 调用：10 人同时用，峰值并发仅 10 个请求
+
+### 5.2.2 双模式 LLM 设计
+
+支持云端 API 和自建模型两种模式，通过配置切换：
+
+```python
+# config.py
+
+# 模式 1：云端 API
+CLOUD_CONFIG = {
+    "base_url": "https://api.deepseek.com/v1",
+    "api_key": "sk-xxx",
+    "model": "deepseek-v4-pro",
+}
+
+# 模式 2：自建模型（vLLM / Ollama 部署，OpenAI 兼容接口）
+LOCAL_CONFIG = {
+    "base_url": "http://192.168.1.100:8000/v1",  # 公司 GPU 服务器
+    "api_key": "none",
+    "model": "qwen-14b",
+}
+
+# 切换只需改这一行
+ACTIVE_LLM = "cloud"  # 或 "local"
+```
+
+**自建模型推荐**：
+
+| 模型规模 | 显存需求 | 硬件 | 能力 |
+|---------|---------|------|------|
+| 7B | ~14 GB | 一张 RTX 4090 | 基础对话、简单分类 |
+| 14B | ~28 GB | 一张 A100 40GB | 资产分类、材质推断（推荐） |
+| 32B | ~64 GB | 一张 A100 80GB | 复杂分析、风格识别 |
+| 70B | ~140 GB | 两张 A100 80GB | 接近商业 API 质量 |
+
+**混合模式（可选）**：按任务类型自动选择 LLM：
+
+```python
+def get_llm_config(task_type="chat"):
+    """简单任务用本地模型（快），复杂任务用云端 API（准）"""
+    if task_type == "inference":
+        return CLOUD_CONFIG      # AI 推断用大模型
+    elif task_type == "chat":
+        return LOCAL_CONFIG      # 对话用本地模型
+    else:
+        return configs[ACTIVE_LLM]
+```
+
+**统一接口**：无论云端还是自建，都用 OpenAI 兼容格式，Agent 代码零改动：
+
+```python
+client = OpenAI(base_url=config["base_url"], api_key=config["api_key"])
+# 同样的调用方式，不关心 LLM 在哪里
+response = client.chat.completions.create(model=model, messages=messages, ...)
+```
+
 ### 5.3 通信架构
 
+Agent 与引擎的通信采用**文件轮询**方式（避免 UE5 线程安全问题）：
+
 ```
-UE5 Editor  ←→ HTTP Server ←→ Agent Backend
-Blender     ←→ HTTP Server ←→ Agent Backend
-Web Console ←→ HTTP Server ←→ Agent Backend
+Agent 侧                           UE5 侧
+    │                                  │
+    ├─ 写入 commands.jsonl ──────────→│ 轮询读取
+    │   {"action":"import", ...}       │ 执行导入（主线程）
+    │                                  │ 写入 results.jsonl
+    ├─ 轮询读取 results.jsonl ←───────┤
+    │   {"success":true, ...}          │
 ```
 
-Agent Backend 可以是：
-- 本地 Python 服务（开发阶段）
-- 云服务（生产阶段，支持团队共享）
+**为什么用文件通信而非 HTTP**：
+- UE5 的 `AssetToolsHelpers` 等 API 必须在主线程调用
+- HTTP Server 运行在子线程，直接调用 UE5 API 会报线程安全错误
+- 文件通信天然在主线程执行，无需 `execute_on_game_thread`（UE5 Python 不支持此 API）
 
-**关键优势**：UE5 的 Python（unreal 模块）和 Blender 的 Python 统一后，Agent 的工具层可以用同一种语言实现，大大简化开发和维护。
+**文件结构**：
+- `ue5_server/server.py`：UE5 侧命令轮询服务
+- `ue5_server/commands.jsonl`：Agent 写入的命令队列
+- `ue5_server/results.jsonl`：UE5 返回的执行结果
+- `tools/ue5_bridge.py`：Agent 侧桥接工具（写命令、读结果）
 
 ### 5.4 UE5 集成方案
 
+#### 实现架构
+
+```
+┌─────────────────────────────────────────────────────┐
+│                    Agent 侧                          │
+│  tools/ue5_bridge.py                                │
+│  ├─ ue5_import_asset()     写入导入命令              │
+│  ├─ ue5_health_check()     检查 Server 是否在线      │
+│  └─ _send_command()        文件通信核心              │
+└──────────────────────┬──────────────────────────────┘
+                       │ commands.jsonl
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│                    UE5 侧                            │
+│  ue5_server/server.py                               │
+│  ├─ _poll_loop()           主线程轮询命令文件         │
+│  ├─ _handle_import()       执行 FBX 导入             │
+│  └─ _write_result()        写入执行结果              │
+└─────────────────────────────────────────────────────┘
+```
+
+#### UE5 Server 启动方式
+
+在 UE5 Editor 的 Python Console 中执行：
 ```python
-# UE5 Editor 中的 Agent 面板（Editor Utility Widget + Python）
-import unreal
+exec(open(r"F:/ta_agent/ue5_server/server.py").read())
+```
 
-class TAAgentWidget:
-    """UE5 Editor Utility Widget，通过 Python 与 Agent 通信"""
+Server 在后台线程轮询 `commands.jsonl`，收到命令后在主线程执行 UE5 API 调用。
 
-    def send_message(self, message: str):
-        """通过 HTTP 发送到 Agent Backend"""
-        import requests
-        response = requests.post("http://localhost:8000/chat", json={
-            "message": message,
-            "context": self.get_ue5_context()
-        })
-        result = response.json()
-        # 解析并执行工具调用
-        if result.get("tool_calls"):
-            for call in result["tool_calls"]:
-                self.execute_tool(call)
-        return result
+#### 支持的 UE5 操作
 
-    def get_ue5_context(self):
-        """收集 UE5 当前上下文（选中的资产、打开的关卡等）"""
-        selected = unreal.EditorUtilityLibrary.get_selected_assets()
-        return {
-            "selected_assets": [a.get_name() for a in selected],
-            "current_level": unreal.EditorLevelLibrary.get_editor_level(),
-        }
+| 操作 | UE5 API | 状态 |
+|------|---------|------|
+| FBX 导入 | `unreal.AssetToolsHelpers.import_asset_tasks()` | ✅ 已实现 |
+| 元数据写入 | `unreal.EditorAssetLibrary.set_metadata_tag()` | ✅ 已实现 |
+| 资产查询 | `unreal.AssetRegistryHelpers.get_asset_registry()` | 待实现 |
+| 材质检查 | `unreal.EditorAssetLibrary.find_asset_data()` | 待实现 |
 
-    def execute_tool(self, tool_call):
-        """执行 Agent 返回的工具调用"""
-        tool_name = tool_call["name"]
-        args = tool_call["arguments"]
-        if tool_name == "set_import_settings":
-            self.set_import_settings(**args)
-        elif tool_name == "create_blueprint":
-            self.create_blueprint(**args)
-        # ... 更多工具
+#### 工具失败自修复
+
+Agent 的 System Prompt 包含工具失败处理规则：
+- 插件工具（tools/plugins/）：可直接修改代码
+- 核心工具：只报告问题，等用户确认后再改
+- 外部环境问题：建议修改桥接工具或生成新适配代码
 ```
 
 ### 5.5 Blender 集成方案
@@ -1031,21 +1288,201 @@ def register_tools():
     return tools
 ```
 
+### 5.6 会话管理系统
+
+#### 设计目标
+
+- 多会话并存（如"分析角色目录"、"分析武器目录"）
+- 会话关闭后可恢复继续
+- 历史会话列表和搜索
+- 上下文分割（清空上下文但保留历史）
+
+#### 存储方案：JSONL + 索引
+
+```
+~/.ta_agent/sessions/
+├── index.json              # 会话索引（元数据列表）
+├── sess_a1b2c3.jsonl       # 每会话一个文件，每行一条消息
+└── ...
+```
+
+- **append-only 写入**：崩溃安全，每条消息立即落盘
+- **草稿机制**：新建会话为草稿，发首条消息后才出现在列表
+- **自动归档**：超过 7 天未活跃自动归档
+- **分页读取**：大文件反向扫描，只读最后 N 条
+
+#### CLI 命令
+
+| 命令 | 作用 |
+|------|------|
+| `/sessions` | 列出所有会话 |
+| `/new` | 创建新会话 |
+| `/switch <id>` | 切换到指定会话 |
+| `/delete <id>` | 删除会话 |
+| `/clear` | 清空上下文（保留历史） |
+
+#### 上下文分割
+
+`agent_loop` 新增 `context_cutoff` 参数：
+
+```
+history = [msg0, msg1, msg2, msg3, msg4, msg5]
+                    ↑ context_cutoff = 2
+
+LLM 看到: [msg2, msg3, msg4, msg5]
+持久化:   [msg0, msg1, msg2, msg3, msg4, msg5]（完整）
+```
+
+#### Server REST API
+
+- `POST /api/sessions` — 创建
+- `GET /api/sessions` — 列表
+- `GET /api/sessions/{id}/messages` — 消息
+- `PATCH /api/sessions/{id}` — 更新（标题、置顶）
+- `DELETE /api/sessions/{id}` — 删除
+- `POST /api/sessions/search` — 搜索
+
+WebSocket 支持 `?sessionId=xxx` 恢复会话。
+
+### 5.7 多用户架构
+
+#### 核心原则：一套代码，两种部署
+
+Agent 只有一种模式（跑在本机），前端和后端代码本地/中心通用，通过权限控制功能范围。
+
+```
+本地模式（单人）                    中心模式（团队）
+├── 前端（同一套）                  ├── 前端（同一套）
+├── 后端（同一套）                  ├── 后端（同一套）
+├── 本机 SQLite                    ├── 中心 SQLite/PG
+└── 无权限（单用户）                └── 有权限（多角色）
+```
+
+#### 架构
+
+```
+美术 A 的电脑                    中心服务器
+├── Agent（本机运行）             ├── 数据库（所有人的元数据）
+├── Blender                      ├── 规范文档库
+├── 资产文件                     ├── 团队知识库
+├── UE 引擎                      └── 用户管理
+└── 本机 server.py
+    ↑ 浏览器                      ↑ 浏览器
+    http://localhost:8080          http://中心服务器:8080
+```
+
+Agent 不变，分析完后多一步同步：`POST /api/sync` 推送结果到中心服务器。
+
+#### 权限模型
+
+| 角色 | 可见范围 | 可操作 |
+|------|---------|--------|
+| 美术 | 自己的资产 | 分析、提交审核、入库 |
+| 组长 | 本组所有资产 | 审核、统计、管理本组成员 |
+| 主管 | 全部资产 | 全部操作、用户管理、配置管理 |
+
+```python
+# 中心服务器权限控制
+@app.get("/api/assets")
+async def list_assets(request):
+    user = request.state.user
+    if user.role == "admin":
+        return store.list_all()                    # 主管看全部
+    elif user.role == "lead":
+        return store.list_by_group(user.group)     # 组长看本组
+    else:
+        return store.list_by_user(user.name)       # 美术看自己
+```
+
+#### 本地 vs 中心的区别
+
+| | 本地模式 | 中心模式 |
+|---|---|---|
+| 前端 | 同一套 | 同一套 |
+| 后端 | 同一套 | 同一套 |
+| 数据库 | 本机 SQLite | 中心 SQLite/PG |
+| 权限 | 无（单用户） | 有（多角色） |
+| 资产可见 | 全部（只有自己的） | 按角色过滤 |
+| 同步 | 不需要 | 自动推送到中心 |
+
+#### 知识层级
+
+| 层级 | 内容 | 来源 |
+|------|------|------|
+| L0 项目画像 | 资产分布、命名规律 | 服务器从所有资产统计 |
+| L1 推断规则 | 从修正中提炼的规则 | 服务器从修正记录提炼 |
+| L2 修正记录 | 原始修正数据 | 本机生成，推送服务器 |
+| L3 对话历史 | 个人对话 | 仅本机 |
+
+#### 部署方案
+
+**本地模式**：双击 `Start.bat`，浏览器打开 `localhost:8080`，单人使用。
+
+**中心模式**：公司服务器部署，浏览器打开 `http://中心服务器:8080`，团队使用。
+
+**网络要求**：本地模式无需网络，中心模式需局域网，LLM 需互联网。
+
 ---
 
 ## 6. 实现路线图
+
+### 里程碑总览
+
+从 TA 效率工具到公司资产基础设施，分四步走：
+
+| 里程碑 | 目标 | 核心交付 | 状态 |
+|--------|------|---------|------|
+| 1. 本地资产检查 | TA 个人效率 | AI 自动质检（面数/贴图/命名/材质） | ✅ 已完成 |
+| 2. 资产自动入库 | 入库流程自动化 | 审核→记录规范名称→UE5 导入→更新 engine_path | ✅ 已完成 |
+| 3. 项目级管理平台 | 项目团队资产管理 | 资产数据库 + Web 看板 + 多团队分组 + 插件扩展 + 多会话管理 | 进行中（后端完成，前端待开发） |
+| 4. 公司级资产助手 | 公司资产基础设施 | 跨项目复用 + 新项目规划 + 接入 AI 生产工具 | 远期 |
+
+### 当前任务清单
+
+#### 后端任务
+
+| 优先级 | 任务 | 工作量 | 说明 |
+|--------|------|--------|------|
+| P0 | 用户标识 | 1 天 | WebSocket 连接传用户名/token，按用户隔离会话 |
+| P0 | 会话列表完善 | 0.5 天 | 置顶、归档、日期分组、搜索 |
+| P1 | 自动审核策略 | 0.5 天 | 高置信度（≥90%）自动通过 |
+| P1 | 修正记录收集 | 1 天 | 审核修改后记录到服务器 |
+| P2 | 经验聚合 | 2 天 | 收集修正 → 分析模式 → 提炼规则 → 更新画像 |
+| P2 | 规范文档同步 | 1 天 | 服务器存储规范，本机启动时拉取 |
+| P2 | SVN 双目录集成 | 2 天 | ArtResources + Content 目录结构 |
+| P3 | Blender 渲染预览 | 1 天 | 3D 模型自动生成预览图 |
+
+#### 前端任务
+
+| 优先级 | 任务 | 工作量 | 说明 |
+|--------|------|--------|------|
+| P0 | 会话管理 UI | 2 天 | SessionSelector + Popover + API 集成 |
+| P0 | WebSocket sessionId | 0.5 天 | 连接时带 sessionId，切换会话时重连 |
+| P0 | 消息导航 | 1 天 | ScrollMinimap 组件 |
+| P1 | 上下文分割线 | 1 天 | ContextDivider + Ctrl+K |
+| P1 | 项目总览仪表盘 | 1 天 | 资产统计、用户分布 |
+| P2 | 入库向导 | 1.5 天 | 分步流程 |
+| P3 | 3D 预览 | 1 天 | Blender 渲染预览图 |
+
+#### 核心路径（最小可用版本）
+
+```
+后端：用户标识（1天）→ 会话列表完善（0.5天）→ 自动审核（0.5天）
+前端：会话 UI（2天）→ WebSocket sessionId（0.5天）→ 消息导航（1天）
+= 5.5 天 → 可部署给小团队试用
+```
 
 ### Phase 1：资产身份系统骨架 — 4 周
 
 **目标**：搭好身份证系统的核心框架，能对一批资产自动生成身份报告。
 
-- [ ] 项目配置系统（ProjectConfig 解析器）
-- [ ] 资产目录扫描 + 资产自动分组（同名 FBX + 贴图归为一组）
-- [ ] 确定层数据提取（面数、包围盒、贴图规格等）
-- [ ] 身份证数据结构定义（AssetIdentity Schema）
-- [ ] 身份证完整性校验（required_tags 检查）
-- [ ] 入库分析报告生成（HTML，每个资产一张身份证卡片）
-- [ ] Agent 编排层：接到"检查这个目录"后自动走完 扫描→提取→报告 全流程
+- [x] 项目配置系统（ProjectConfig 解析器）— `config_tools.py` + `core/project_config.py`
+- [x] 资产目录扫描 + 资产自动分组（同名 FBX + 贴图归为一组）— `identity.py` (`analyze_assets`)
+- [x] 确定层数据提取（面数、包围盒、贴图规格等）— `mesh.py`, `texture.py`, `mesh_fbx.py`
+- [x] 身份证数据结构定义（AssetIdentity Schema）— `tags/schema.py` + `identity.py`
+- [x] 身份证完整性校验（required_tags 检查）— `identity.py` (`analyze_assets` 内置)
+- [x] 入库分析报告生成（HTML，每个资产一张身份证卡片）— `report.py`（基础汇总版）
+- [x] Agent 编排层：接到"检查这个目录"后自动走完 扫描→提取→报告 全流程 — `agent.py` + System Prompt
 
 ### Phase 2：AI 分析层 + 记忆系统 + 标签入库 — 4 周
 
@@ -1476,15 +1913,15 @@ import_from_manifest(r"manifest_path_placeholder")
 
 #### 3.8 Phase 3 实现顺序
 
-| 步骤 | 内容 | 依赖 | 文件 |
-|---|---|---|---|
-| 1 | 入库工作流编排 | 无 | tools/intake.py |
-| 2 | 批量入库 + 清单生成 | 步骤 1 | tools/intake.py |
-| 3 | 入库审计日志 | 步骤 1 | tools/intake.py |
-| 4 | UE5 导入脚本生成 | 步骤 2 | tools/intake.py |
-| 5 | UE5 HTTP 插件（方案 B） | 步骤 1-4 | tools/ue5_bridge.py |
+| 步骤 | 内容 | 依赖 | 文件 | 状态 |
+|---|---|---|---|---|
+| 1 | 入库工作流编排 | 无 | tools/intake.py | ✅ 已完成 |
+| 2 | 批量入库 + 清单生成 | 步骤 1 | tools/intake.py | ✅ 已完成 |
+| 3 | 入库审计日志 | 步骤 1 | tools/intake.py | ✅ 已完成 |
+| 4 | UE5 导入脚本生成 | 步骤 2 | tools/intake.py | ✅ 已完成 |
+| 5 | UE5 HTTP 插件（方案 B） | 步骤 1-4 | tools/ue5_bridge.py | ❌ 待开发 |
 
-**MVP 完成标准**：步骤 1-4 完成后，用户可以在 Agent 中一键生成导入清单，然后在 UE5 中运行脚本完成批量导入。
+**MVP 完成标准**：步骤 1-4 完成后，用户可以在 Agent 中一键生成导入清单，然后在 UE5 中运行脚本完成批量导入。**MVP 已达成。**
 
 #### 3.9 Phase 3 与 Phase 4 的关系
 
@@ -1501,19 +1938,19 @@ Phase 4 串联：整个流程一条命令走完
 ```
 
 Phase 4 的核心任务调整为：
-- [ ] Workflow Engine：多步骤自动执行编排（扫描→分析→审核→入库）
-- [ ] 命名规范检查 + 自动建议修正（集成到入库流程）
-- [ ] 入库历史记录和审计日志（Phase 3 已包含）
-- [ ] 批量入库支持（Phase 3 已包含）
+- [x] Workflow Engine：多步骤自动执行编排（✅ 已实现 step_by_step / auto 两种工作流模式，通过 System Prompt 注入驱动 LLM 自动串联阶段）
+- [x] 命名规范检查 + 自动建议修正（✅ 已集成到 intake.py 入库流程，生成名称后自动调用 check_naming 校验）
+- [x] 入库历史记录和审计日志（✅ Phase 3 已实现，intake_log.jsonl）
+- [x] 批量入库支持（✅ Phase 3 已实现，intake_batch + intake_approved）
 
 ### Phase 4：工作流串联 + 命名规范 — 3 周
 
 **目标**：Agent 能一次性接到任务，自动走完 质检→分类→配置→入库 全流程。
 
-- [ ] Workflow Engine：多步骤自动执行编排
-- [ ] 命名规范检查 + 自动建议修正
-- [ ] 批量入库支持（一次处理整个目录）
-- [ ] 入库历史记录和审计日志
+- [x] Workflow Engine：多步骤自动执行编排（✅ 已实现）
+- [x] 命名规范检查 + 自动建议修正（✅ 已集成到入库流程）
+- [x] 批量入库支持（一次处理整个目录）（✅ Phase 3 已实现）
+- [x] 入库历史记录和审计日志（✅ Phase 3 已实现）
 
 ### Phase 5：进阶功能 — 长期
 
@@ -1571,7 +2008,270 @@ Agent 自动执行：
 
 ---
 
-## 7. 竞品分析
+## 7. 工具扩展性架构
+
+### 7.1 设计目标
+
+Agent 的核心工具由团队开发，但项目中往往有大量**项目特有的工具需求**（如自定义材质检查、团队报告、特定引擎操作等）。这些工具应该能由项目人员自行开发并接入 Agent，**无需修改 Agent 核心代码**。
+
+### 7.2 当前架构
+
+工具通过 `tools/registry.py` 集中注册：
+
+```python
+# 当前：硬编码注册
+TOOLS = [NAMING_SCHEMA, MESH_SCHEMA, ...]           # Schema 列表
+TOOL_FUNCTIONS = {"check_naming": check_naming, ...}  # 函数映射
+
+def execute_tool(tool_name, arguments):
+    func = TOOL_FUNCTIONS[tool_name]
+    return func(**arguments)  # 统一调用接口
+```
+
+**关键特性**：`execute_tool` 只认 `TOOL_FUNCTIONS` 字典，不关心函数来源。这意味着只要工具注册到这个字典，无论是核心工具还是外部工具，对 LLM 来说没有区别。
+
+### 7.3 三阶段扩展方案
+
+#### 阶段一：插件目录（近期实现）
+
+在 `tools/plugins/` 目录下放置 `.py` 文件，启动时自动发现并注册。
+
+```
+tools/
+├── naming.py          ← 核心工具
+├── mesh.py            ← 核心工具
+├── plugins/           ← 项目人员自定义工具
+│   ├── ue5_material_check.py
+│   ├── blender_auto_rig.py
+│   └── team_report.py
+```
+
+**插件格式**：
+
+```python
+# tools/plugins/ue5_material_check.py
+
+SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "check_ue5_material",
+        "description": "检查 UE5 材质实例参数是否符合规范",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "material_path": {"type": "string", "description": "材质路径"}
+            },
+            "required": ["material_path"]
+        }
+    }
+}
+
+def check_ue5_material(material_path: str) -> dict:
+    """项目人员自己写的检查逻辑"""
+    return {"valid": True, "issues": []}
+```
+
+**registry.py 改动**：启动时扫描 `tools/plugins/` 目录，自动 import 并注册到 `TOOLS` 和 `TOOL_FUNCTIONS`。
+
+**约束**：
+- 插件文件必须导出 `SCHEMA`（dict）和与 Schema 中 `name` 同名的函数
+- 插件之间工具名不能冲突
+- 插件与核心工具同等对待，无"二等公民"
+
+#### 插件库与 CLI 管理
+
+随项目附带一批"官方插件"，放在 `tools/plugins_available/` 目录，用户通过 CLI 命令选择性启用：
+
+```
+tools/
+├── plugins/              ← 启用的插件（自动加载）
+├── plugins_available/    ← 可用插件库（不自动加载）
+│   ├── svn_tools.py
+│   ├── plastic_tools.py
+│   └── ue5_material_check.py
+```
+
+CLI 命令：
+- `/plugins` — 查看已启用和可安装的插件
+- `/install <name>` — 从 plugins_available 复制到 plugins，重启生效
+- `/uninstall <name>` — 从 plugins 删除，重启生效
+
+#### 阶段二：HTTP 远程工具（接引擎时）
+
+当需要对接 UE5/Unity 等引擎时，引擎侧运行 HTTP Server，Agent 通过 HTTP Client 调用。
+
+```
+Agent ←→ HTTP ←→ UE5 Editor（Python HTTP Server）
+Agent ←→ HTTP ←→ Unity Editor（C# HTTP Server）
+```
+
+**实现方式**：在 `TOOL_FUNCTIONS` 中注册 HTTP 适配器包装的函数：
+
+```python
+def http_tool(url: str, schema: dict):
+    """将 HTTP 接口包装为 Agent 工具"""
+    def wrapper(**kwargs):
+        import requests
+        return requests.post(url, json=kwargs).json()
+    wrapper.__name__ = schema["function"]["name"]
+    return wrapper, schema
+
+# 注册
+TOOLS.append(IMPORT_ASSET_SCHEMA)
+TOOL_FUNCTIONS["import_asset"] = http_tool("http://localhost:8000/import_asset", IMPORT_ASSET_SCHEMA)
+```
+
+**适用场景**：UE5 材质检查、蓝图生成、Unity 资产导入等引擎内操作。
+
+#### 阶段三：MCP 协议接入（平台化时）
+
+MCP（Model Context Protocol）是 Anthropic 定义的 AI 工具调用开放标准。当需要对接多个引擎、多个 DCC、或接入第三方工具生态时引入。
+
+```
+Agent ←→ MCP Client ←→ MCP Server（UE5 工具）
+Agent ←→ MCP Client ←→ MCP Server（Maya 工具）
+Agent ←→ MCP Client ←→ MCP Server（自研引擎工具）
+```
+
+**MCP 与 HTTP 的区别**：
+
+| | HTTP | MCP |
+|---|---|---|
+| 本质 | 通用网络通信协议 | AI Agent 工具调用专用协议 |
+| 工具发现 | 无，需手动注册 | 内置 `list_tools`，自动发现 |
+| 参数描述 | 可选（Swagger/OpenAPI） | 强制 JSON Schema |
+| 适用场景 | 简单远程调用 | 多引擎/多工具生态统一接入 |
+
+**协议由 Anthropic 定义并开源**（Python/TypeScript SDK），Server 由工具提供方自行编写，暴露具体业务逻辑。
+
+**实现方式**：
+
+```python
+def mcp_tool(server_name: str, tool_name: str):
+    """将 MCP Server 上的工具包装为 Agent 工具"""
+    def wrapper(**kwargs):
+        return mcp_client.call_tool(server_name, tool_name, kwargs)
+    wrapper.__name__ = tool_name
+    return wrapper
+```
+
+### 7.4 三层共存架构
+
+三种接入方式最终注册到同一个 `TOOL_FUNCTIONS` 字典，`execute_tool` 无需修改：
+
+```python
+TOOL_FUNCTIONS = {
+    # 核心工具：进程内 Python 调用（最快）
+    "check_naming":       check_naming,
+    "analyze_assets":     analyze_assets,
+
+    # HTTP 远程工具：调引擎服务
+    "ue5_import_asset":   http_tool("http://ue5:8000/import_asset", ...),
+
+    # MCP 工具：调 MCP Server
+    "check_material":     mcp_tool("ue5-server", "check_material"),
+}
+```
+
+```
+┌─────────────────────────────────────────┐
+│           Agent（LLM + 工具调度）         │
+│         统一的 TOOL_FUNCTIONS            │
+│              ▲    ▲    ▲                │
+├──────────────┼────┼────┼────────────────┤
+│   进程内调用  │  HTTP │  MCP │           │
+│   (Python)   │ Client│ Client│           │
+│  核心工具     │  远程工具 │ AI工具生态 │     │
+│  最快         │  最通用   │ 最标准    │     │
+└──────────────┴────┴────┴────────────────┘
+```
+
+### 7.5 与引擎对接的具体方案
+
+| 引擎 | 对接方式 | 说明 |
+|------|---------|------|
+| UE5 | 进程内 Python / HTTP / MCP | UE5 有原生 Python 支持（unreal 模块），可直接调用或起 HTTP Server |
+| Unity | HTTP / MCP | Unity 用 C#，需在 Editor 内起 HTTP Server 或 MCP Server |
+| 自研引擎 | HTTP / MCP / 命令行 | 取决于引擎暴露的接口类型 |
+| Blender | 进程内 Python / HTTP | Blender 有原生 Python 支持（bpy 模块） |
+| Maya | HTTP / MCP | Maya 有 Python 支持（maya.cmds），但通常独立进程运行 |
+
+### 7.6 实现路线
+
+| 阶段 | 内容 | 时机 | 改动范围 |
+|------|------|------|---------|
+| 1 | 插件目录 + 自动发现 | **现在** | 改 registry.py，加扫描逻辑 |
+| 2 | HTTP Client 适配器 | 接引擎时 | 加 http_tool 包装函数 |
+| 3 | MCP Client 集成 | 多引擎/平台化时 | 加 MCP SDK 依赖 + mcp_tool 包装函数 |
+
+**核心原则**：`execute_tool` 不变，只扩展接入层。核心工具和外部工具对 LLM 无区别。
+
+### 7.7 可靠性机制
+
+#### 断点续传
+
+分析大量资产时，如果中途断开（窗口关闭、电脑死机），所有进度会丢失。为此在 `analyzer.py` 中实现了 checkpoint 机制：
+
+- 每完成一个阶段（扫描→贴图→FBX→AI 推断），将中间结果存入 `.ta_agent/checkpoints/` 目录
+- 再次运行时自动检测 checkpoint，提示用户"发现上次中断的分析，自动继续"
+- 分析完成后自动清除 checkpoint
+- Checkpoint 24 小时后自动过期
+
+#### AI 推断阈值确认
+
+当启用 AI 推断且资产数较多时，先只跑基础分析（几何/贴图/命名），汇报结果后再询问用户是否继续 AI 推断：
+
+- 阈值默认 50 个资产（`ai_inference_threshold` 参数）
+- 超过阈值：返回 `need_inference_confirm: true`，等用户确认后调用 `run_ai_inference`
+- 未超过阈值：自动完成推断，无需确认
+
+#### 自定义规则持久化
+
+用户通过对话告诉 Agent 的规则（如"@前缀是动画文件"）会持久化到项目配置文件：
+
+- `ProjectConfig` 新增 `custom_rules` 字段
+- `add_custom_rule` 工具：将规则写入 project.yaml
+- `analyzer._detect_asset_type` 优先匹配自定义规则
+- 规则重启不丢失，项目间隔离
+
+#### API 调用重试
+
+LLM API 可能因超时、限流、服务过载而失败。在 `agent_loop` 中实现自动重试：
+
+- 最多重试 3 次
+- 等待时间：10s → 20s → 30s（指数退避）
+- 可重试错误：504、502、503、timeout、overloaded、429
+- 不可恢复错误（如 API Key 无效）直接报错
+
+#### 动画文件识别
+
+支持多种动画文件识别方式：
+- 命名前缀 `AN_` → 动画
+- 文件名以 `@` 开头 → 动画（常见于 Unity/UE 动画命名规范）
+- FBX 有骨架但无网格 → 纯动画文件
+- 自定义规则匹配 → 按项目配置
+
+#### AI 推断过滤
+
+AI 推断前自动过滤不适合分析的资产：
+- 动画文件（asset_type == "animation"）
+- 面数为 0 的 FBX（解析失败或空文件）
+- 纯贴图资产（无 FBX 的独立贴图）
+
+过滤结果会打印跳过原因和数量，如：`跳过 45 个资产（38 个动画，7 个无网格）`
+
+#### 对话历史智能压缩
+
+长时间对话会导致请求体超过 API 限制（413 错误）。实现智能压缩机制：
+
+- 前 2 条消息保留（初始上下文）
+- 最近 12 条消息完整保留（近期对话连贯）
+- 中间部分只保留 user 消息和 assistant 的最终回复（关键决策），丢弃工具调用的中间过程
+- 压缩后仍超过 30 条，则只保留首尾
+
+---
+
+## 8. 竞品分析
 
 ### 7.1 通用 Coding Agent
 
@@ -1601,6 +2301,39 @@ Agent 自动执行：
 | Perforce | 版本管理 | 不理解资产内容 |
 
 **我们的差异化**：传统工具管理"文件"，我们管理"资产质量"。
+
+### 8.4 通用技能平台 vs 垂直领域 Agent
+
+当前市面上的 Agent 平台（Coze、AgentGPT、Manus 等）主打"技能市场"模式，用户可以给 Agent 装各种插件覆盖通用场景。
+
+| 维度 | 技能型 Agent（通用平台） | 本平台（垂直领域） |
+|------|----------------------|----------------|
+| 覆盖范围 | 广泛，多行业多场景 | 窄而深，只做游戏美术资产 |
+| 核心价值 | 技能数量多 | 领域知识深 |
+| 工具来源 | 用户自己装插件 | 内置 30 个领域专用工具 |
+| 记忆能力 | 通用键值对存储 | 针对资产特征的三层记忆架构 |
+| 数据资产 | 无 | 结构化资产数据库，越用越有价值 |
+
+**行业趋势**：2025 年行业报告指出，"99% 的通用 Agent 产品在泛用方向上很快会死亡"，而垂直领域 Agent 因为有深度领域知识和工作流整合能力，B 端落地更成熟。
+
+**我们的壁垒**：领域 Know-How（理解 FBX 结构、贴图通道、面数预算）+ 数据积累（结构化资产数据库）+ 记忆系统（针对资产特征的精准匹配）。
+
+### 8.5 技术参考：GenericAgent
+
+平台的记忆和学习机制参考了 A3 Lab（深圳 Aquaintelling + 复旦大学）的 GenericAgent 项目（arXiv:2604.17091）。
+
+**核心数据**（Lifelong AgentBench 基准测试）：
+
+| 指标 | 数据 |
+|------|------|
+| 任务完成率 | 100% |
+| Token 消耗 vs Claude Code | 仅 27.7% |
+| 重复任务 9 轮后 Token 下降 | 89.6% |
+
+**借鉴的核心思想**：
+- **技能结晶**：完成任务后自动将执行路径固化为可复用技能
+- **No Execution, No Memory**：只有经过验证的结果才写入记忆
+- **分层记忆 + 按需加载**：深层记忆不全量加载，按相关性检索后注入上下文
 
 ---
 
@@ -1674,3 +2407,11 @@ Agent 自动执行：
 | v0.11 | 2026-05-11 | Phase 2 收尾：1) 人工审核工作流实现（tools/review.py + review_schema.py）：get_pending_reviews 分级审核、get_review_detail 详情查看、submit_review 审核提交、batch_approve 批量通过；2) Schema 扩展：MaterialStructure/VisualAttributes 新增置信度字段；3) 动画文件过滤：自动识别动画资产并跳过 AI 推断和渲染，不进入审核列表；4) Agent System Prompt 优化：明确审核流程独立于分析流程，避免审核后重复分析 |
 | v0.12 | 2026-05-11 | 新增独立高质量渲染模块（tools/render_studio.py）：支持 HDRI 环境光、摄影棚三点光、多角度渲染、PBR 材质、可配置分辨率和采样；预设配置：studio/turntable/fast/transparent；支持命令行独立测试和代码调用两种方式；渲染流程验证完成（Windows 编码兼容、无材质默认处理、包围盒自动计算）；设计文档更新：明确渲染模块定位（Blender 阶段介入），补充 Phase 5 Blender Agent 面板工作流设计 |
 | v0.13 | 2026-05-12 | Phase 3 详细设计：1) 明确 Agent 与引擎的关系——Agent 运行在 Blender/UE5 外部，UE5 导入/元数据写入需要在 UE5 内部执行；2) 设计两阶段实现方案：方案 A（MVP，半自动，Agent 生成导入清单+脚本，用户在 UE5 中一键运行）、方案 B（全自动，UE5 HTTP 插件）；3) 设计入库工作流编排（tools/intake.py）：审核通过→重命名→创建目录→移动文件→生成清单；4) 设计导入清单格式（import_manifest.json + import_assets.py）；5) 设计引擎元数据写入方案（unreal.EditorAssetLibrary.set_metadata_tag）；6) 设计入库审计日志；7) 调整 Phase 3/4 边界，批量入库和审计日志纳入 Phase 3 |
+| v0.14 | 2026-05-12 | 工作流模式实现：1) 新增 step_by_step（逐步模式）和 auto（自动模式）两种工作流模式；2) System Prompt 动态注入模式指令，驱动 LLM 按模式行为执行；3) agent_loop 新增 workflow_mode 参数；4) CLI 新增 /mode 和 /status 命令支持运行时切换；5) 设计文档新增 4.1.5.1 工作流模式章节；6) Phase 4 Workflow Engine 标记为已完成 |
+| v0.15 | 2026-05-12 | 1) 命名规范集成到入库流程：intake.py 生成名称后自动调用 check_naming 校验，不合规时记录 warning；2) intake.py 补全缺失前缀（BP_/S_/FX_）；3) 修复审计日志 original_name bug（之前错误存储新名称）；4) 设计文档 Phase 1/3/4 checkbox 全面更新，Phase 4 全部标记完成；5) Phase 3 实现步骤表增加状态列，MVP 标记为已达成 |
+| v0.16 | 2026-05-12 | 1) 新增第 7 章"工具扩展性架构"：设计三阶段扩展方案（插件目录→HTTP 远程工具→MCP 协议）；2) 定义插件格式规范（SCHEMA + 同名函数）；3) 设计三层共存架构（进程内/HTTP/MCP 统一注册到 TOOL_FUNCTIONS）；4) 明确各引擎对接方案（UE5 原生 Python、Unity HTTP、自研引擎 MCP）；5) 新增 v0.16 changelog |
+| v0.17 | 2026-05-12 | 1) 1.2 节扩展为公司级视角：新增"规范落地不一致"、"资产无法复用"、"新项目规划靠猜"等公司级痛点；2) 路线图新增里程碑总览（4 步：本地检查→自动入库→项目管理→公司助手）；3) 竞品分析新增"通用技能平台 vs 垂直领域 Agent"对比；4) 竞品分析新增 GenericAgent 引用（arXiv:2604.17091）及量化数据；5) v0.17 changelog |
+| v0.18 | 2026-05-13 | 1) 新增 7.7 可靠性机制：断点续传（checkpoint 存盘+自动恢复）、AI 推断阈值确认（资产数>50 时先汇报基础结果再确认）、自定义规则持久化（custom_rules 写入 project.yaml）、API 调用重试（3 次指数退避）；2) 插件库机制：tools/plugins_available/ + /install /uninstall /plugins CLI 命令；3) 动画文件识别扩展：支持 @ 前缀；4) CLI 多行输入改用 prompt_toolkit；5) CLI 输出改用 rich markdown 渲染；6) v0.18 changelog |
+| v0.19 | 2026-05-14 | 1) UE5 集成实现：文件通信方案（commands.jsonl/results.jsonl），避免 UE5 线程安全问题；ue5_server/server.py（UE5 侧命令轮询）+ tools/ue5_bridge.py（Agent 侧桥接工具）；2) 5.3 通信架构更新：从 HTTP 方案改为文件轮询方案；3) 5.4 UE5 集成方案重写：实际实现架构、启动方式、支持的操作列表；4) System Prompt 新增工具失败自修复规则（插件可直接改，核心工具需确认）；5) Ctrl+C 打断功能：Agent 执行中可中断回到输入状态；6) 入库结果截断：intake_batch 只返回前 10 个详情避免上下文过大；7) v0.19 changelog |
+| v0.20 | 2026-05-14 | 1) 入库流程重构：不再移动源文件，只记录规范名称和目标引擎路径，源文件保留在原始位置；UE5 导入直接从源路径导入，成功后更新 engine_path 和状态为 imported；2) MetaInfo 新增字段：target_engine_dir、target_engine_path；状态新增 imported；3) AI 推断过滤增强：除动画外，新增面数为 0 的 FBX 过滤（解析失败的文件不参与推断）；4) 对话历史智能压缩：超过 20 条时保留首尾+关键决策，丢弃工具调用中间过程；5) UE5 Server 修复：用 does_asset_exist 替代读取 AssetImportTask.Result（UE5.7 兼容）；队列架构+Slate Tick 主线程回调；6) 413 错误防护：历史截断避免请求体过大；7) v0.20 changelog |
+| v0.21 | 2026-05-15 | 1) 多会话管理系统：新增 session_manager.py（JSONL append-only + JSON 索引），支持创建/切换/删除/搜索会话，草稿机制、置顶、自动归档；2) CLI 会话集成：agent.py 新增 /sessions /new /switch /delete /clear 命令，启动时自动恢复最近会话历史；3) 上下文分割机制：agent_loop 新增 context_cutoff 参数，/clear 清空上下文但保留历史，与 server.py 的 clearContext 事件对齐；4) Server 会话 API：新增 8 个 REST 端点（/api/sessions/*），WebSocket 支持 sessionId 参数恢复会话；5) 分析进度面板：新增 rich.progress 多阶段进度条，通过模块级回调注入 identity.py；6) FBX 路径 bug 修复：analyzer.py 改用 file["path"] 替代 dir_path+filename，修复子目录文件找不到的问题；7) 工具结果截断：新增 _truncate_tool_result()，超过 2000 字符自动截断避免上下文溢出；8) 输入过长自动恢复：API 返回 input length 错误时自动压缩历史重试；9) 最大迭代次数 10→15；10) System Prompt 优化：禁止 analyze_assets 前调用 scan_directory；11) 多用户架构设计文档整理：MULTI_USER_ARCHITECTURE.md 从 1820 行精简到 491 行，新增任务规划、前后端模块拆分、前端会话 UI 实现规格；12) v0.21 changelog |

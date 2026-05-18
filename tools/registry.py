@@ -45,6 +45,9 @@ from tools.intake import (
     intake_asset, intake_batch, intake_approved,
     INTAKE_ASSET_DEF, INTAKE_BATCH_DEF, INTAKE_APPROVED_DEF,
 )
+from tools.ue5_bridge import (
+    UE5_TOOLS, UE5_TOOL_FUNCTIONS,
+)
 
 
 # ========== Schema 注册 ==========
@@ -106,6 +109,7 @@ TOOLS = [
     INTAKE_ASSET_DEF,
     INTAKE_BATCH_DEF,
     INTAKE_APPROVED_DEF,
+    *UE5_TOOLS,
 ]
 
 
@@ -151,6 +155,7 @@ TOOL_FUNCTIONS = {
     "intake_asset":           intake_asset,
     "intake_batch":           intake_batch,
     "intake_approved":        intake_approved,
+    **UE5_TOOL_FUNCTIONS,
 }
 
 

@@ -63,6 +63,7 @@ class TagExtractor:
             material_count = mesh_details[0].get("material_count", 0)
         mesh.material_count = material_count
         mesh.material_names = fbx_result.get("material_names", [])
+        mesh.material_textures = fbx_result.get("material_textures", {})
         mesh.has_materials = fbx_result.get("has_materials", material_count > 0)
         mesh.export_mode = fbx_result.get("export_mode", "")
 

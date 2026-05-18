@@ -417,23 +417,27 @@ def infer_batch(
         # 从资产身份证中获取预览图路径
         preview_images = tags.meta.preview_images if tags.meta else []
 
-        # 启动动态计时线程（每 0.5 秒刷新一次当前资产的耗时）
-        stop_tick = threading.Event()
-        def _fmt(sec):
-            if sec >= 60:
-                m = int(sec) // 60
-                s = sec - m * 60
-                return f"{m}m {s:.1f}s"
-            return f"{sec:.1f}s"
-        def _tick(idx=i, name=tags.asset_name):
-            while not stop_tick.is_set():
-                so_far = time.time() - t0
-                # \r 覆盖同一行，end="" 不换行
-                print(f"\r  [AI 推断]  {idx+1}/{total} - {name}  ({_fmt(so_far)})   ", end="", flush=True)
-                stop_tick.wait(0.5)
+        # 动态进度：有外部回调时用回调，否则用内部 \r tick 线程
+        use_external_progress = on_progress is not None
+        stop_tick = None
+        tick_thread = None
 
-        tick_thread = threading.Thread(target=_tick, daemon=True)
-        tick_thread.start()
+        if not use_external_progress:
+            # 启动动态计时线程（每 0.5 秒刷新一次当前资产的耗时）
+            stop_tick = threading.Event()
+            def _fmt(sec):
+                if sec >= 60:
+                    m = int(sec) // 60
+                    s = sec - m * 60
+                    return f"{m}m {s:.1f}s"
+                return f"{sec:.1f}s"
+            def _tick(idx=i, name=tags.asset_name):
+                while not stop_tick.is_set():
+                    so_far = time.time() - t0
+                    print(f"\r  [AI 推断]  {idx+1}/{total} - {name}  ({_fmt(so_far)})   ", end="", flush=True)
+                    stop_tick.wait(0.5)
+            tick_thread = threading.Thread(target=_tick, daemon=True)
+            tick_thread.start()
 
         infer_asset_tags(
             tags,
@@ -443,17 +447,20 @@ def infer_batch(
             client=client,
         )
 
-        # 停止计时，打印最终耗时（覆盖动态行）
-        stop_tick.set()
-        tick_thread.join(timeout=1.5)
+        # 停止计时
         elapsed = time.time() - t0
-        # 清除动态行，打印最终结果
-        if elapsed >= 60:
-            m = int(elapsed) // 60
-            s = elapsed - m * 60
-            print(f"\r  [AI 推断]  {i+1}/{total} - {tags.asset_name}  ({m}m {s:.1f}s)   ")
+        if use_external_progress:
+            on_progress(i + 1, total, tags.asset_name, elapsed)
         else:
-            print(f"\r  [AI 推断]  {i+1}/{total} - {tags.asset_name}  ({elapsed:.1f}s)   ")
+            stop_tick.set()
+            tick_thread.join(timeout=1.5)
+            # 清除动态行，打印最终结果
+            if elapsed >= 60:
+                m = int(elapsed) // 60
+                s = elapsed - m * 60
+                print(f"\r  [AI 推断]  {i+1}/{total} - {tags.asset_name}  ({m}m {s:.1f}s)   ")
+            else:
+                print(f"\r  [AI 推断]  {i+1}/{total} - {tags.asset_name}  ({elapsed:.1f}s)   ")
 
         # 统计成功/失败
         if getattr(tags, '_infer_failed', False):

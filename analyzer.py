@@ -7,6 +7,7 @@ analyzer.py - 资产身份分析器
 from __future__ import annotations
 import os
 import json
+import sys
 import time
 
 from typing import Optional
@@ -209,7 +210,7 @@ class AssetIdentityAnalyzer:
             for idx, tex_file in enumerate(texture_files):
                 if on_progress:
                     on_progress("textures", idx + 1, total_textures, tex_file["filename"], _elapsed())
-                tex_path = os.path.join(dir_path, tex_file["filename"])
+                tex_path = tex_file.get("path") or os.path.join(dir_path, tex_file["filename"])
                 tex_result = check_texture_info(tex_path)
                 tex_result["file"] = tex_file["filename"]
                 texture_results.append(tex_result)
@@ -241,7 +242,7 @@ class AssetIdentityAnalyzer:
             for idx, fbx_file in enumerate(fbx_files):
                 if on_progress:
                     on_progress("assets", idx + 1, total_fbx, fbx_file["filename"], _elapsed())
-                fbx_path = os.path.join(dir_path, fbx_file["filename"])
+                fbx_path = fbx_file.get("path") or os.path.join(dir_path, fbx_file["filename"])
                 tags = self._analyze_single_asset(
                     fbx_path=fbx_path,
                     naming_config=naming_config,
@@ -275,12 +276,27 @@ class AssetIdentityAnalyzer:
 
         # 6.5 AI 推断层（可选）
         if enable_ai_inference:
-            # 过滤掉动画资产，动画不需要 AI 视觉分析
-            inferable_tags = [t for t in all_tags if t.asset_type != "animation"]
-            skip_count = len(all_tags) - len(inferable_tags)
-            if skip_count:
-                print(f"  跳过 {skip_count} 个动画资产（不需要 AI 推断）")
-                import sys; sys.stdout.flush()
+            # 过滤掉不适合 AI 推断的资产
+            inferable_tags = []
+            skip_reasons = {"animation": 0, "no_mesh": 0, "parse_error": 0}
+            for t in all_tags:
+                if t.asset_type == "animation":
+                    skip_reasons["animation"] += 1
+                    continue
+                if t.mesh.tri_count == 0:
+                    skip_reasons["no_mesh"] += 1
+                    continue
+                inferable_tags.append(t)
+
+            skip_total = sum(skip_reasons.values())
+            if skip_total:
+                parts = []
+                if skip_reasons["animation"]:
+                    parts.append(f"{skip_reasons['animation']} 个动画")
+                if skip_reasons["no_mesh"]:
+                    parts.append(f"{skip_reasons['no_mesh']} 个无网格")
+                print(f"  跳过 {skip_total} 个资产（{', '.join(parts)}）")
+                sys.stdout.flush()
             _phase(f"AI 智能推断 ({len(inferable_tags)} 个资产)")
             # 构建记忆上下文（从第一个资产的特征提取）
             memory_context = None
@@ -318,6 +334,19 @@ class AssetIdentityAnalyzer:
         for tags in all_tags:
             self.store.save(tags)
 
+        # 6.7 自动生成贴图缩略图
+        preview_dir = os.path.join(self.store_dir, "previews")
+        os.makedirs(preview_dir, exist_ok=True)
+        thumb_count = 0
+        for tags in all_tags:
+            if tags.asset_type == "texture":
+                thumb_path = os.path.join(preview_dir, f"{tags.asset_id}.png")
+                if not os.path.exists(thumb_path):
+                    if self._generate_texture_thumbnail(tags.file_path, thumb_path):
+                        thumb_count += 1
+        if thumb_count:
+            print(f"  [缩略图] 生成 {thumb_count} 张贴图缩略图")
+
         # 7. 生成汇总
         summary = self._build_summary(all_tags)
         report_md = self._build_report_markdown(all_tags, summary, dir_path)
@@ -352,6 +381,13 @@ class AssetIdentityAnalyzer:
         """分析单个 FBX 资产"""
         # 读 FBX 信息
         fbx_result = check_fbx_info(fbx_path)
+
+        # FBX 解析失败时输出警告
+        if fbx_result.get("error"):
+            fname = os.path.basename(fbx_path)
+            err = fbx_result["error"]
+            print(f"  [警告] {fname}: FBX 解析失败 - {err}")
+            sys.stdout.flush()
 
         # 命名检查（使用项目规范 if 提供）
         naming_result = check_naming(os.path.basename(fbx_path), naming_config=naming_config)
@@ -394,7 +430,7 @@ class AssetIdentityAnalyzer:
 
         判断逻辑：
         1. 命名以 AN_ 开头 → 动画
-        2. FBX 有骨架但没有网格数据 → 纯动画文件
+        2. FBX 有骨架但没有网格数据 → 纯动画文件（仅在解析成功时判断）
         3. 命名以 SK_ 开头 → 骨骼网格体
         4. 命名以 SM_ 开头 → 静态网格体
         5. 其他 → 未知
@@ -418,9 +454,11 @@ class AssetIdentityAnalyzer:
             return "animation"
 
         # 2. FBX 内容判断：有骨架但没有网格 → 纯动画
+        #    仅在 Blender 解析成功（无 error）时才做此判断，避免解析失败误判
         has_skeleton = fbx_result.get("has_skeleton", False)
-        has_mesh = not fbx_result.get("error") and fbx_result.get("total_faces", 0) > 0
-        if has_skeleton and not has_mesh:
+        parse_error = fbx_result.get("error")
+        has_mesh = not parse_error and fbx_result.get("total_faces", 0) > 0
+        if has_skeleton and not has_mesh and not parse_error:
             return "animation"
 
         # 3. 根据命名前缀判断其他类型
@@ -511,6 +549,19 @@ class AssetIdentityAnalyzer:
         if match:
             return match.group(1)
         return base
+
+    def _generate_texture_thumbnail(self, src_path: str, dst_path: str) -> bool:
+        """生成贴图缩略图（256px PNG）"""
+        try:
+            from PIL import Image
+            if not os.path.isfile(src_path):
+                return False
+            img = Image.open(src_path)
+            img.thumbnail((256, 256), Image.LANCZOS)
+            img.save(dst_path, format="PNG", optimize=True)
+            return True
+        except Exception:
+            return False
 
     def _build_summary(self, all_tags: list[AssetTags]) -> dict:
         """生成汇总统计"""
