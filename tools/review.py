@@ -19,6 +19,104 @@ from tools.memory_tools import get_memory_provider
 
 # ========== 工具实现 ==========
 
+def _build_review_criteria(tags: AssetTags) -> dict:
+    """按资产类型构建审核维度"""
+    asset_type = tags.asset_type
+
+    if asset_type in ("static_mesh", "skeletal_mesh", "mesh"):
+        # 模型：面数、材质、风格、状态
+        return {
+            "type_label": "模型",
+            "criteria": {
+                "category": {"value": f"{tags.category.category}/{tags.category.subcategory}", "confidence": tags.category.confidence, "label": "分类"},
+                "material": {"value": ", ".join(tags.material_structure.primary) or "无", "confidence": tags.material_structure.confidence, "label": "材质"},
+                "style": {"value": tags.visual.style or "-", "confidence": tags.visual.style_confidence, "label": "风格"},
+                "condition": {"value": tags.visual.condition or "-", "confidence": tags.visual.condition_confidence, "label": "状态"},
+            },
+            "determined": {
+                "tri_count": {"value": tags.mesh.tri_count, "label": "面数"},
+                "vertex_count": {"value": tags.mesh.vertex_count, "label": "顶点数"},
+                "has_skeleton": {"value": tags.mesh.has_skeleton, "label": "骨骼"},
+                "material_count": {"value": tags.mesh.material_count, "label": "材质数"},
+                "has_uv": {"value": tags.mesh.has_uv, "label": "UV"},
+                "material_names": {"value": ", ".join(tags.mesh.material_names) or "-", "label": "材质名"},
+            },
+        }
+
+    elif asset_type == "texture":
+        # 贴图：分辨率、格式、命名
+        tex = tags.textures
+        max_res = tex.max_resolution or "未知"
+        is_compliant = True
+        issues = []
+        # 检查分辨率是否超标
+        try:
+            w, h = max_res.split("x") if "x" in max_res else (0, 0)
+            w, h = int(w), int(h)
+            if w > 2048 or h > 2048:
+                is_compliant = False
+                issues.append(f"分辨率 {max_res} 超过 2048")
+            if w > 0 and (w & (w - 1)) != 0:
+                issues.append("宽度不是 2 的幂次")
+            if h > 0 and (h & (h - 1)) != 0:
+                issues.append("高度不是 2 的幂次")
+        except (ValueError, TypeError):
+            pass
+
+        naming_ok = tags.meta.naming_compliant
+        return {
+            "type_label": "贴图",
+            "criteria": {
+                "resolution": {"value": max_res, "confidence": 1.0 if is_compliant else 0.5, "label": "分辨率", "issues": issues},
+                "format": {"value": ", ".join(tex.formats_used) or "-", "confidence": 1.0, "label": "格式"},
+                "naming": {"value": tags.asset_name, "confidence": 1.0 if naming_ok else 0.3, "label": "命名", "issues": tags.meta.naming_issues},
+            },
+            "determined": {
+                "count": {"value": tex.count, "label": "贴图数"},
+                "color_spaces": {"value": ", ".join(tex.color_spaces) or "-", "label": "色彩空间"},
+            },
+        }
+
+    elif asset_type == "animation":
+        # 动画：命名、骨骼
+        naming_ok = tags.meta.naming_compliant
+        return {
+            "type_label": "动画",
+            "criteria": {
+                "naming": {"value": tags.asset_name, "confidence": 1.0 if naming_ok else 0.3, "label": "命名", "issues": tags.meta.naming_issues},
+                "has_skeleton": {"value": tags.mesh.has_skeleton, "confidence": 1.0 if tags.mesh.has_skeleton else 0.2, "label": "骨骼"},
+                "bone_count": {"value": tags.mesh.bone_count, "confidence": 1.0 if tags.mesh.bone_count > 0 else 0.2, "label": "骨骼数"},
+            },
+            "determined": {
+                "has_skeleton": {"value": tags.mesh.has_skeleton, "label": "有骨骼"},
+                "bone_count": {"value": tags.mesh.bone_count, "label": "骨骼数"},
+            },
+        }
+
+    elif asset_type in ("material", "material_instance"):
+        # 材质：命名
+        naming_ok = tags.meta.naming_compliant
+        return {
+            "type_label": "材质",
+            "criteria": {
+                "naming": {"value": tags.asset_name, "confidence": 1.0 if naming_ok else 0.3, "label": "命名", "issues": tags.meta.naming_issues},
+            },
+            "determined": {
+                "material_names": {"value": ", ".join(tags.mesh.material_names) or "-", "label": "材质名"},
+            },
+        }
+
+    else:
+        # 未知类型：通用审核
+        return {
+            "type_label": asset_type,
+            "criteria": {
+                "naming": {"value": tags.asset_name, "confidence": 1.0 if tags.meta.naming_compliant else 0.3, "label": "命名"},
+            },
+            "determined": {},
+        }
+
+
 def get_pending_reviews(store_dir: str = None, confidence_threshold: float = 0.9, include_animation: bool = False) -> dict:
     """
     获取待审核列表，按置信度分组。
@@ -51,33 +149,23 @@ def get_pending_reviews(store_dir: str = None, confidence_threshold: float = 0.9
     low_conf = []
 
     for tags in pending_assets:
-        # 计算综合置信度（取各推断层置信度的平均值）
-        confidences = [
-            tags.category.confidence,
-            tags.material_structure.confidence,
-            tags.visual.style_confidence,
-            tags.visual.condition_confidence,
-        ]
-        # 过滤掉 0 的（未推断的字段）
-        valid_confidences = [c for c in confidences if c > 0]
-        avg_confidence = sum(valid_confidences) / len(valid_confidences) if valid_confidences else 0
+        # 按资产类型构建审核维度
+        review_criteria = _build_review_criteria(tags)
+
+        # 计算综合置信度（取所有 criteria 的平均值）
+        criteria_confidences = [c["confidence"] for c in review_criteria["criteria"].values() if c["confidence"] > 0]
+        avg_confidence = sum(criteria_confidences) / len(criteria_confidences) if criteria_confidences else 0
 
         item = {
             "asset_id": tags.asset_id,
             "asset_name": tags.asset_name,
             "file_path": tags.file_path,
-            "category": tags.category.category,
-            "subcategory": tags.category.subcategory,
-            "style": tags.visual.style,
-            "condition": tags.visual.condition,
+            "asset_type": tags.asset_type,
             "tri_count": tags.mesh.tri_count,
             "avg_confidence": round(avg_confidence, 2),
-            "confidence_details": {
-                "category": tags.category.confidence,
-                "material": tags.material_structure.confidence,
-                "style": tags.visual.style_confidence,
-                "condition": tags.visual.condition_confidence,
-            },
+            "review_type": review_criteria["type_label"],
+            "review_criteria": review_criteria["criteria"],
+            "review_determined": review_criteria["determined"],
         }
 
         if avg_confidence >= confidence_threshold:
@@ -123,63 +211,45 @@ def get_review_detail(asset_id: str, store_dir: str = None) -> dict:
     if tags is None:
         return {"error": f"资产不存在: {asset_id}"}
 
+    # 按资产类型构建审核维度
+    review_criteria = _build_review_criteria(tags)
+
     # 计算综合置信度
-    confidences = {
-        "category": tags.category.confidence,
-        "material": tags.material_structure.confidence,
-        "style": tags.visual.style_confidence,
-        "condition": tags.visual.condition_confidence,
-    }
-    valid_confidences = [c for c in confidences.values() if c > 0]
-    avg_confidence = sum(valid_confidences) / len(valid_confidences) if valid_confidences else 0
+    criteria_confidences = [c["confidence"] for c in review_criteria["criteria"].values() if c["confidence"] > 0]
+    avg_confidence = sum(criteria_confidences) / len(criteria_confidences) if criteria_confidences else 0
 
     # 生成审核建议
     suggestions = []
     if avg_confidence >= 0.9:
-        suggestions.append("✅ 各项置信度均较高，建议直接通过")
+        suggestions.append("✅ 各项指标均正常，建议直接通过")
     elif avg_confidence >= 0.7:
-        suggestions.append("⚠️ 部分字段置信度中等，建议确认后通过")
+        suggestions.append("⚠️ 部分指标需要确认")
     else:
-        suggestions.append("❌ 多项置信度较低，建议仔细审核")
+        suggestions.append("❌ 多项指标异常，建议仔细审核")
 
     # 检查哪些字段需要重点关注
-    low_fields = [k for k, v in confidences.items() if 0 < v < 0.7]
+    low_fields = [c["label"] for c in review_criteria["criteria"].values() if 0 < c["confidence"] < 0.7]
     if low_fields:
         suggestions.append(f"需重点关注: {', '.join(low_fields)}")
+
+    # 检查确定层的问题
+    determined_issues = []
+    for key, info in review_criteria.get("determined", {}).items():
+        if info.get("issues"):
+            determined_issues.extend(info["issues"])
+    if determined_issues:
+        suggestions.append(f"确定层问题: {'; '.join(determined_issues)}")
 
     return {
         "asset_id": tags.asset_id,
         "asset_name": tags.asset_name,
         "file_path": tags.file_path,
         "asset_type": tags.asset_type,
-        # 确定层（100%准确，无需审核）
-        "determined": {
-            "mesh": tags.mesh.to_dict(),
-            "textures": tags.textures.to_dict(),
-        },
-        # 推断层（需审核）
-        "inferred": {
-            "category": {
-                "value": f"{tags.category.category}/{tags.category.subcategory}",
-                "confidence": tags.category.confidence,
-            },
-            "material": {
-                "value": {
-                    "primary": tags.material_structure.primary,
-                    "secondary": tags.material_structure.secondary,
-                },
-                "confidence": tags.material_structure.confidence,
-            },
-            "style": {
-                "value": tags.visual.style,
-                "confidence": tags.visual.style_confidence,
-            },
-            "condition": {
-                "value": tags.visual.condition,
-                "confidence": tags.visual.condition_confidence,
-            },
-            "description": tags.visual.description,
-        },
+        "review_type": review_criteria["type_label"],
+        # 按类型的审核维度
+        "review_criteria": review_criteria["criteria"],
+        # 确定层数据
+        "determined": review_criteria.get("determined", {}),
         # 管理层
         "meta": {
             "naming_suggestion": tags.meta.naming_suggestion,
@@ -192,7 +262,6 @@ def get_review_detail(asset_id: str, store_dir: str = None) -> dict:
         # 审核信息
         "review": {
             "avg_confidence": round(avg_confidence, 2),
-            "confidence_details": confidences,
             "suggestions": suggestions,
         },
     }

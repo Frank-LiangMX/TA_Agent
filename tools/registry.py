@@ -23,7 +23,7 @@ from tools.mesh import check_mesh_budget
 from tools.mesh_fbx import check_fbx_info
 from tools.texture import check_texture_info, check_texture_batch
 from tools.report import generate_report
-from tools.identity import analyze_assets, run_ai_inference, update_asset_type, search_assets, get_asset_detail, list_assets
+from tools.identity import analyze_assets, run_ai_inference, update_asset_type, update_asset, search_assets, get_asset_detail, list_assets
 from tools.convention_tools import discover_conventions, load_conventions
 from tools.memory_tools import record_correction, get_memory_stats, update_project_profile
 from tools.renderer import render_asset_preview
@@ -61,8 +61,8 @@ from tools.mesh_fbx import SCHEMA as FBX_SCHEMA
 from tools.texture import SCHEMA as TEX_SCHEMA, BATCH_SCAN_SCHEMA
 from tools.report import SCHEMA as REPORT_SCHEMA
 from tools.identity import (
-    ANALYZE_ASSETS_DEF, RUN_INFERENCE_DEF, UPDATE_ASSET_TYPE_DEF, SEARCH_ASSETS_DEF,
-    GET_ASSET_DETAIL_DEF, LIST_ASSETS_DEF,
+    ANALYZE_ASSETS_DEF, RUN_INFERENCE_DEF, UPDATE_ASSET_TYPE_DEF, UPDATE_ASSET_DEF,
+    SEARCH_ASSETS_DEF, GET_ASSET_DETAIL_DEF, LIST_ASSETS_DEF,
 )
 from tools.convention_tools import DISCOVER_CONVENTIONS_DEF, LOAD_CONVENTIONS_DEF
 from tools.memory_tools import RECORD_CORRECTION_DEF, GET_MEMORY_STATS_DEF, UPDATE_PROJECT_PROFILE_DEF
@@ -83,6 +83,7 @@ TOOLS = [
     ANALYZE_ASSETS_DEF,
     RUN_INFERENCE_DEF,
     UPDATE_ASSET_TYPE_DEF,
+    UPDATE_ASSET_DEF,
     SEARCH_ASSETS_DEF,
     GET_ASSET_DETAIL_DEF,
     LIST_ASSETS_DEF,
@@ -129,6 +130,7 @@ TOOL_FUNCTIONS = {
     "analyze_assets":         analyze_assets,
     "run_ai_inference":       run_ai_inference,
     "update_asset_type":      update_asset_type,
+    "update_asset":           update_asset,
     "search_assets":          search_assets,
     "get_asset_detail":       get_asset_detail,
     "list_assets":            list_assets,

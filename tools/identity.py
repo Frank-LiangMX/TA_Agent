@@ -74,7 +74,7 @@ ANALYZE_ASSETS_DEF = {
                 },
                 "enable_ai_inference": {
                     "type": "boolean",
-                    "description": "是否启用 AI 推断层（自动推断分类、材质、风格、状态等）。默认 false。启用后每个资产会调用一次 LLM 分析。",
+                    "description": "是否启用 AI 推断层（自动推断分类、材质、风格、状态等）。默认 true。设置 false 可跳过推断只做基础分析。",
                 },
             },
             "required": ["dir_path"],
@@ -168,14 +168,14 @@ LIST_ASSETS_DEF = {
 # 工具实现（接收关键字参数）
 # ============================================================
 
-def analyze_assets(dir_path: str, naming_prefix: str = None, enable_ai_inference: bool = False, ai_inference_threshold: int = 50) -> dict:
+def analyze_assets(dir_path: str, naming_prefix: str = None, enable_ai_inference: bool = True, ai_inference_threshold: int = 50) -> dict:
     """
     分析目录中的资产，生成身份证。
 
     参数:
         dir_path: 要分析的目录路径
         naming_prefix: 命名规范前缀（可选）
-        enable_ai_inference: 是否启用 AI 推断层
+        enable_ai_inference: 是否启用 AI 推断层（默认 true）
         ai_inference_threshold: AI 推断资产数超过此阈值时，先返回基础分析结果，不执行推断（默认 50）
 
     返回:
@@ -464,6 +464,83 @@ def update_asset_type(asset_type: str, pattern: str = None, asset_ids: list[str]
         "asset_type": asset_type,
         "pattern": pattern,
         "message": f"已将 {updated} 个资产的类型更新为 {asset_type}",
+    }
+
+
+UPDATE_ASSET_DEF = {
+    "type": "function",
+    "function": {
+        "name": "update_asset",
+        "description": "更新资产的属性（名称、分类、风格等）。用于修正分析结果。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "asset_id": {
+                    "type": "string",
+                    "description": "资产 ID",
+                },
+                "asset_name": {
+                    "type": "string",
+                    "description": "新的资产名称（可选）",
+                },
+                "category": {
+                    "type": "string",
+                    "description": "新的分类（可选，如 character/weapon/prop）",
+                },
+                "subcategory": {
+                    "type": "string",
+                    "description": "新的子分类（可选）",
+                },
+                "style": {
+                    "type": "string",
+                    "description": "新的风格（可选，如 写实/卡通/科幻）",
+                },
+                "asset_type": {
+                    "type": "string",
+                    "description": "新的资产类型（可选）",
+                },
+            },
+            "required": ["asset_id"],
+        },
+    },
+}
+
+
+def update_asset(asset_id: str, **kwargs) -> dict:
+    """更新单个资产的属性"""
+    store = _get_tag_store()
+    tags = store.load(asset_id)
+    if not tags:
+        return {"error": f"资产不存在: {asset_id}"}
+
+    updated_fields = []
+    if "asset_name" in kwargs and kwargs["asset_name"]:
+        tags.asset_name = kwargs["asset_name"]
+        updated_fields.append("asset_name")
+    if "category" in kwargs and kwargs["category"]:
+        tags.category.category = kwargs["category"]
+        tags.category.confidence = 1.0
+        updated_fields.append("category")
+    if "subcategory" in kwargs and kwargs["subcategory"]:
+        tags.category.subcategory = kwargs["subcategory"]
+        updated_fields.append("subcategory")
+    if "style" in kwargs and kwargs["style"]:
+        tags.visual.style = kwargs["style"]
+        tags.visual.style_confidence = 1.0
+        updated_fields.append("style")
+    if "asset_type" in kwargs and kwargs["asset_type"]:
+        tags.asset_type = kwargs["asset_type"]
+        updated_fields.append("asset_type")
+
+    if not updated_fields:
+        return {"error": "没有指定要更新的字段"}
+
+    store.save(tags)
+    return {
+        "success": True,
+        "asset_id": asset_id,
+        "updated_fields": updated_fields,
+        "message": f"已更新 {tags.asset_name}: {', '.join(updated_fields)}",
     }
 
 

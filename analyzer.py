@@ -489,7 +489,8 @@ class AssetIdentityAnalyzer:
             file_path=representative_path,
             texture_set=texture_set,
         )
-        tags.asset_name = stem
+        # asset_name 用原始文件名（去掉扩展名），保留 T_ 前缀
+        tags.asset_name = os.path.splitext(texture_results[0]["file"])[0]
 
         return tags
 

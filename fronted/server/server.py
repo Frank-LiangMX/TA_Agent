@@ -282,7 +282,6 @@ async def run_agent(
                 })
 
                 # 执行工具（在线程池中运行，期间定期推送进度事件）
-                import asyncio
                 from progress_hook import get_progress_events
 
                 loop = asyncio.get_event_loop()
@@ -837,6 +836,61 @@ async def increment_usage(payload: dict = Body(...)):
     return {"success": True}
 
 
+# ===== REST 端点（规范管理） =====
+
+@app.get("/api/conventions")
+async def get_conventions():
+    """获取已加载的规范文档"""
+    from conventions.context import get_conventions_context
+    from config import NAMING_CONVENTIONS, MESH_BUDGETS, TEXTURE_BUDGETS
+
+    loaded_content = get_conventions_context()
+
+    return {
+        "loaded": bool(loaded_content),
+        "content_length": len(loaded_content) if loaded_content else 0,
+        "content_preview": loaded_content[:500] if loaded_content else "",
+        "default_rules": {
+            "naming_conventions": NAMING_CONVENTIONS,
+            "mesh_budgets": MESH_BUDGETS,
+            "texture_budgets": TEXTURE_BUDGETS,
+        },
+    }
+
+
+@app.post("/api/conventions/clear")
+async def clear_conventions():
+    """卸载已加载的规范文档"""
+    from conventions.context import set_conventions_context
+    set_conventions_context("")
+    return {"success": True, "message": "已卸载规范文档"}
+
+
+# ===== REST 端点（权限管理） =====
+
+# 权限配置（运行时内存）
+_permission_config = {
+    "mode": "ask",  # "safe" | "ask" | "allow-all"
+    "tool_permissions": {},  # {tool_name: "safe"|"ask"|"allow-all"}
+}
+
+
+@app.get("/api/permissions")
+async def get_permissions():
+    """获取权限配置"""
+    return _permission_config
+
+
+@app.post("/api/permissions")
+async def update_permissions(payload: dict = Body(...)):
+    """更新权限配置"""
+    if "mode" in payload:
+        _permission_config["mode"] = payload["mode"]
+    if "tool_permissions" in payload:
+        _permission_config["tool_permissions"].update(payload["tool_permissions"])
+    return {"success": True, "permissions": _permission_config}
+
+
 # ===== REST 端点（资产数据 — 直接查 SQLite） =====
 
 def _get_tag_store():
@@ -872,78 +926,11 @@ async def get_asset_detail(asset_id: str):
 
 @app.get("/api/reviews/pending")
 async def get_pending_reviews(limit: int = 100):
-    """获取待审核资产（直接查数据库，绕过 MAX_DETAIL=20 限制）"""
+    """获取待审核资产（使用 review.py 的分类审核逻辑）"""
     try:
-        store = _get_tag_store()
-        conn = store._get_conn()
-
-        # 查询所有 pending 状态的资产
-        rows = conn.execute(
-            """SELECT asset_id, asset_name, file_path, asset_type,
-                      category, subcategory, tri_count, status, analyzed_at
-               FROM assets WHERE status = 'pending'
-               ORDER BY analyzed_at DESC""",
-        ).fetchall()
-
-        all_pending = [
-            {
-                "asset_id": r["asset_id"],
-                "asset_name": r["asset_name"],
-                "file_path": r["file_path"],
-                "asset_type": r["asset_type"],
-                "category": r["category"],
-                "subcategory": r["subcategory"],
-                "tri_count": r["tri_count"],
-                "status": r["status"],
-            }
-            for r in rows
-        ]
-
-        # 从 full_data 中提取置信度信息
-        high_conf = []
-        low_conf = []
-        for item in all_pending:
-            tags = store.load(item["asset_id"])
-            if tags is None:
-                continue
-            # 计算平均置信度
-            confidences = []
-            if tags.category and tags.category.confidence > 0:
-                confidences.append(tags.category.confidence)
-            if tags.material_structure and tags.material_structure.confidence > 0:
-                confidences.append(tags.material_structure.confidence)
-            if tags.visual:
-                if tags.visual.style_confidence > 0:
-                    confidences.append(tags.visual.style_confidence)
-                if tags.visual.condition_confidence > 0:
-                    confidences.append(tags.visual.condition_confidence)
-            avg_conf = sum(confidences) / len(confidences) if confidences else 0
-
-            entry = {
-                **item,
-                "avg_confidence": round(avg_conf, 2),
-                "confidence_details": {
-                    "category": tags.category.confidence if tags.category else 0,
-                    "material": tags.material_structure.confidence if tags.material_structure else 0,
-                    "style": tags.visual.style_confidence if tags.visual else 0,
-                    "condition": tags.visual.condition_confidence if tags.visual else 0,
-                },
-            }
-
-            if avg_conf >= 0.9:
-                high_conf.append(entry)
-            else:
-                low_conf.append(entry)
-
-        return {
-            "total_pending": len(all_pending),
-            "high_confidence_count": len(high_conf),
-            "low_confidence_count": len(low_conf),
-            "high_confidence": high_conf[:limit],
-            "low_confidence": low_conf[:limit],
-            "high_confidence_ids": [a["asset_id"] for a in high_conf],
-            "summary": f"共 {len(all_pending)} 个待审核：{len(high_conf)} 高置信度，{len(low_conf)} 低置信度",
-        }
+        from tools.review import get_pending_reviews as _get_reviews
+        result = _get_reviews(confidence_threshold=0.9, include_animation=False)
+        return result
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -1106,6 +1093,46 @@ async def get_asset_preview(asset_id: str):
             return FileResponse(preview_path, media_type='image/png')
 
         return {"error": "暂无预览", "type": "model", "file_ext": ext}
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.post("/api/preview/{asset_id}/render")
+async def render_asset_preview_api(asset_id: str):
+    """生成 FBX 模型预览图（调用 Blender 渲染）"""
+    try:
+        store = _get_tag_store()
+        tags = store.load(asset_id)
+        if tags is None:
+            return {"error": "资产不存在"}
+
+        # 只有有面数的模型才渲染
+        if tags.mesh.tri_count <= 0:
+            return {"error": "无网格数据，跳过渲染"}
+
+        if tags.asset_type in ("animation", "texture", "material"):
+            return {"error": f"资产类型 {tags.asset_type} 不支持渲染"}
+
+        # 调用 Blender 渲染
+        from tools.renderer import render_asset_preview
+        result = render_asset_preview(tags.file_path)
+
+        if result.get("success"):
+            # 复制预览图到 tag_store/previews/
+            preview_dir = os.path.join(TA_AGENT_DIR, "tag_store", "previews")
+            os.makedirs(preview_dir, exist_ok=True)
+            dst_path = os.path.join(preview_dir, f"{asset_id}.png")
+
+            import shutil
+            src_images = result.get("images", [])
+            if src_images and os.path.isfile(src_images[0]):
+                shutil.copy2(src_images[0], dst_path)
+                return {"success": True, "message": "预览图已生成"}
+            else:
+                return {"error": "渲染完成但未找到图片文件"}
+        else:
+            return {"error": result.get("error", "渲染失败")}
 
     except Exception as e:
         return {"error": str(e)}

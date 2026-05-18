@@ -3,8 +3,22 @@
 """
 import os
 import re
+import fnmatch
 
 from config import NAMING_CONVENTIONS
+
+
+def _get_custom_rules() -> list:
+    """加载项目自定义规则"""
+    try:
+        from core.project_config import find_project_config, ProjectConfig
+        config_path = find_project_config()
+        if config_path:
+            config = ProjectConfig.load(config_path)
+            return config.custom_rules or []
+    except Exception:
+        pass
+    return []
 
 
 SCHEMA = {
@@ -79,32 +93,43 @@ def check_naming(filename: str, naming_config: dict = None) -> dict:
     issues = []
     prefix_found = None
 
-    # 检查是否有正确的前缀
-    for prefix, desc in conventions.items():
-        if name.startswith(prefix):
-            prefix_found = prefix
+    # 先检查自定义规则（如 @*.* → animation）
+    custom_rules = _get_custom_rules()
+    matched_custom = False
+    for rule in custom_rules:
+        pattern = rule.get("pattern", "")
+        if pattern and fnmatch.fnmatch(name, pattern):
+            matched_custom = True
+            prefix_found = pattern
             break
+
+    # 如果没匹配自定义规则，检查标准前缀
+    if not matched_custom:
+        for prefix, desc in conventions.items():
+            if name.startswith(prefix):
+                prefix_found = prefix
+                break
 
     if not prefix_found:
         issues.append(f"缺少类型前缀。建议使用以下前缀之一：{', '.join(conventions.keys())}")
-    else:
-        # 检查前缀后的部分
+    elif not matched_custom:
+        # 只对标准前缀做后续检查（自定义规则匹配即合规）
         rest = name_no_ext[len(prefix_found):]
         if not rest:
             issues.append("前缀后缺少描述性名称")
         elif rest[0].islower():
             issues.append(f"前缀 '{prefix_found}' 后的描述应以大写字母开头（PascalCase）")
 
-    # 检查非法字符
-    if re.search(r'[^a-zA-Z0-9_.]', name):
+    # 检查非法字符（自定义规则匹配时跳过）
+    if not matched_custom and re.search(r'[^a-zA-Z0-9_.]', name):
         issues.append("文件名包含非法字符（只允许字母、数字、下划线、点）")
 
     # 检查是否有连续下划线
     if '__' in name:
         issues.append("文件名包含连续下划线")
 
-    # 检查是否以数字开头（去掉前缀后）
-    if prefix_found:
+    # 检查是否以数字开头（去掉前缀后，仅对标准前缀）
+    if prefix_found and not matched_custom:
         rest = name_no_ext[len(prefix_found):]
         if rest and rest[0].isdigit():
             issues.append("描述部分不应以数字开头")
@@ -113,10 +138,22 @@ def check_naming(filename: str, naming_config: dict = None) -> dict:
     for rule in extra_rules:
         issues.append(f"[项目规范] {rule}")
 
+    # 获取前缀含义
+    prefix_meaning = None
+    if prefix_found:
+        if matched_custom:
+            # 自定义规则匹配，显示规则描述
+            for rule in custom_rules:
+                if fnmatch.fnmatch(name, rule.get("pattern", "")):
+                    prefix_meaning = rule.get("description", "项目自定义规则")
+                    break
+        else:
+            prefix_meaning = conventions.get(prefix_found, "未知类型")
+
     return {
         "filename": name,
         "prefix": prefix_found,
-        "prefix_meaning": conventions.get(prefix_found, "未知类型") if prefix_found else None,
+        "prefix_meaning": prefix_meaning,
         "is_valid": len(issues) == 0,
         "issues": issues,
     }
