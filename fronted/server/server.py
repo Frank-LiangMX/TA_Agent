@@ -43,6 +43,30 @@ try:
 except ImportError:
     HAS_MEMORY = False
 
+# ===== 工具 → 流水线阶段映射 =====
+# 执行工具时自动追踪到对应流水线阶段
+TOOL_TO_STAGE = {
+    "scan_directory": "scan",
+    "check_file_info": "scan",
+    "analyze_assets": "analyze",
+    "run_ai_inference": "analyze",
+    "check_naming": "analyze",
+    "check_mesh_budget": "analyze",
+    "check_texture_info": "analyze",
+    "check_texture_batch": "analyze",
+    "check_fbx_info": "analyze",
+    "load_project_config": "scan",
+    "check_project_config": "scan",
+    "discover_conventions": "scan",
+    "load_conventions": "scan",
+    "get_pending_reviews": "review",
+    "submit_review": "review",
+    "batch_approve": "review",
+    "intake_asset": "intake",
+    "intake_batch": "intake",
+    "intake_approved": "intake",
+}
+
 # 延迟导入 agent 模块的函数（避免循环导入）
 _agent_module = None
 
@@ -284,6 +308,19 @@ async def run_agent(
                     },
                 })
 
+                # 追踪流水线阶段（开始执行）
+                stage_id = TOOL_TO_STAGE.get(func_name)
+                if stage_id:
+                    _append_run({
+                        "runId": f"auto_{uuid.uuid4().hex[:8]}",
+                        "stageId": stage_id,
+                        "sessionId": session.session_id,
+                        "status": "running",
+                        "startedAt": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                        "toolsUsed": [func_name],
+                        "summary": f"正在{TOOL_TO_STAGE.get(func_name, '')}...",
+                    })
+
                 # 执行工具（在线程池中运行，期间定期推送进度事件）
                 from progress_hook import get_progress_events, is_cancelled
 
@@ -321,6 +358,38 @@ async def run_agent(
                     "name": func_name,
                     "result": result,
                 })
+
+                # 自动追踪流水线阶段
+                stage_id = TOOL_TO_STAGE.get(func_name)
+                print(f"[pipeline] tool={func_name} stage={stage_id}")  # debug
+                if stage_id:
+                    # 从结果中提取摘要（确保是字符串）
+                    summary = ""
+                    try:
+                        parsed = json.loads(result) if isinstance(result, str) else result
+                        if isinstance(parsed, dict):
+                            raw = parsed.get("message") or parsed.get("summary") or ""
+                            if isinstance(raw, str):
+                                summary = raw
+                            elif isinstance(raw, dict) and "report_markdown" in raw:
+                                summary = str(raw["report_markdown"])[:120]
+                            elif not raw and "report_markdown" in parsed:
+                                summary = str(parsed["report_markdown"])[:120]
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                    if not summary:
+                        summary = f"执行 {func_name}"
+
+                    _append_run({
+                        "runId": f"auto_{uuid.uuid4().hex[:8]}",
+                        "stageId": stage_id,
+                        "sessionId": session.session_id,
+                        "status": "completed",
+                        "startedAt": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                        "toolsUsed": [func_name],
+                        "summary": summary,
+                    })
+                    print(f"[pipeline] WRITTEN stage={stage_id} session={session.session_id}")
 
                 # 拦截 load_conventions
                 if func_name == "load_conventions":
@@ -667,6 +736,41 @@ async def add_llm(payload: dict = Body(...)):
     return add_llm_config(key=key, name=name, base_url=base_url, model=model, api_key=api_key, llm_type=llm_type)
 
 
+# ===== REST 端点（UE5 插件管理） =====
+
+@app.get("/api/ue5/plugin")
+async def check_ue5_plugin(project_path: str = ""):
+    """检查 UE5 项目是否安装了 TAAssetBridge 插件"""
+    if not project_path:
+        # 尝试从 config 获取
+        try:
+            from config import UE5_PROJECT_PATH
+            project_path = UE5_PROJECT_PATH
+        except (ImportError, AttributeError):
+            return {"installed": False, "error": "未配置 UE5 项目路径"}
+
+    from tools.ue5_bridge import check_plugin_installed
+    return check_plugin_installed(project_path)
+
+
+@app.post("/api/ue5/plugin/install")
+async def install_ue5_plugin(payload: dict = Body(...)):
+    """安装 TAAssetBridge 插件到 UE5 项目"""
+    project_path = payload.get("project_path", "")
+    if not project_path:
+        return {"error": "project_path 不能为空"}
+
+    from tools.ue5_bridge import install_plugin
+    return install_plugin(project_path)
+
+
+@app.get("/api/ue5/ping")
+async def ue5_ping():
+    """测试 UE5 连接"""
+    from tools.ue5_bridge import ue5_ping as _ping
+    return _ping()
+
+
 # ===== REST 端点（工具管理） =====
 
 @app.get("/api/tools")
@@ -961,10 +1065,10 @@ async def get_pipeline_config():
     return {
         "version": 1,
         "core_stages": [
-            {"id": "scan", "label": "目录扫描", "icon": "FolderSearch", "description": "扫描资产目录，发现文件", "order": 1},
-            {"id": "analyze", "label": "AI 分析", "icon": "Brain", "description": "推断分类、材质、风格", "order": 2},
-            {"id": "review", "label": "人工审核", "icon": "FileCheck", "description": "审核 AI 推断结果", "order": 3},
-            {"id": "intake", "label": "资产入库", "icon": "Package", "description": "导入项目引擎", "order": 4},
+            {"id": "scan", "label": "目录扫描", "icon": "FolderSearch", "description": "扫描资产目录，发现文件", "prompt": "扫描目录 {path}，列出所有资产文件，统计文件类型分布", "order": 1},
+            {"id": "analyze", "label": "AI 分析", "icon": "Brain", "description": "推断分类、材质、风格", "prompt": "对 {path} 下的所有资产进行 AI 推断，分析分类、材质、风格、状态", "order": 2},
+            {"id": "review", "label": "人工审核", "icon": "FileCheck", "description": "审核 AI 推断结果", "prompt": "展示 {path} 下待审核资产列表，等待用户逐个或批量确认", "order": 3},
+            {"id": "intake", "label": "资产入库", "icon": "Package", "description": "导入项目引擎", "prompt": "将 {path} 下已审核通过的资产导入项目引擎", "order": 4},
         ],
         "custom_stages": [],
     }
@@ -993,7 +1097,7 @@ def _append_run(run: dict):
         f.write(json.dumps(run, ensure_ascii=False) + "\n")
 
 
-def _load_runs(limit: int = 50, stage_id: str = None) -> list:
+def _load_runs(limit: int = 50, stage_id: str = None, session_id: str = None) -> list:
     """读取执行记录"""
     if not os.path.exists(_pipeline_runs_path):
         return []
@@ -1008,6 +1112,8 @@ def _load_runs(limit: int = 50, stage_id: str = None) -> list:
                     continue
     if stage_id:
         runs = [r for r in runs if r.get("stageId") == stage_id]
+    if session_id:
+        runs = [r for r in runs if r.get("sessionId") == session_id]
     runs.sort(key=lambda r: r.get("startedAt", ""), reverse=True)
     return runs[:limit]
 
@@ -1090,9 +1196,9 @@ async def run_pipeline_stage(payload: dict = Body(...)):
 
 
 @app.get("/api/pipeline/runs")
-async def get_pipeline_runs(stageId: str = None, limit: int = 20):
+async def get_pipeline_runs(stageId: str = None, sessionId: str = None, limit: int = 20):
     """获取执行记录"""
-    runs = _load_runs(limit=limit, stage_id=stageId)
+    runs = _load_runs(limit=limit, stage_id=stageId, session_id=sessionId)
     return {"runs": runs, "count": len(runs)}
 
 

@@ -79,6 +79,11 @@ def add_llm_config(key: str, name: str, base_url: str, model: str, api_key: str 
 
 BLENDER_PATH = r"D:\Program Files\Blender Foundation\Blender 4.3\blender.exe"
 
+# ========== UE5 配置 ==========
+
+# UE5 项目根目录（包含 .uproject 文件的目录）
+UE5_PROJECT_PATH = r"E:\Unreal_TechDemo_5.7"
+
 # FBX 解析超时（秒）
 FBX_PARSE_TIMEOUT = 30
 

@@ -20,7 +20,7 @@ from tools.naming import check_naming, suggest_naming
 from tools.directory import check_directory_structure
 from tools.file_info import check_file_info, scan_directory
 from tools.mesh import check_mesh_budget
-from tools.mesh_fbx import check_fbx_info
+from tools.mesh_fbx import check_fbx_info, check_blender
 from tools.texture import check_texture_info, check_texture_batch
 from tools.report import generate_report
 from tools.identity import analyze_assets, run_ai_inference, update_asset_type, update_asset, search_assets, get_asset_detail, list_assets
@@ -57,7 +57,7 @@ from tools.naming import SCHEMA as NAMING_SCHEMA, SUGGEST_SCHEMA
 from tools.directory import SCHEMA as DIR_SCHEMA
 from tools.file_info import CHECK_FILE_INFO_SCHEMA, SCAN_DIRECTORY_SCHEMA
 from tools.mesh import SCHEMA as MESH_SCHEMA
-from tools.mesh_fbx import SCHEMA as FBX_SCHEMA
+from tools.mesh_fbx import SCHEMA as FBX_SCHEMA, CHECK_BLENDER_SCHEMA
 from tools.texture import SCHEMA as TEX_SCHEMA, BATCH_SCAN_SCHEMA
 from tools.report import SCHEMA as REPORT_SCHEMA
 from tools.identity import (
@@ -77,6 +77,7 @@ TOOLS = [
     SCAN_DIRECTORY_SCHEMA,
     MESH_SCHEMA,
     FBX_SCHEMA,
+    CHECK_BLENDER_SCHEMA,
     TEX_SCHEMA,
     BATCH_SCAN_SCHEMA,
     REPORT_SCHEMA,
@@ -124,6 +125,7 @@ TOOL_FUNCTIONS = {
     "scan_directory":         scan_directory,
     "check_mesh_budget":      check_mesh_budget,
     "check_fbx_info":         check_fbx_info,
+    "check_blender":          check_blender,
     "check_texture_info":     check_texture_info,
     "check_texture_batch":    check_texture_batch,
     "generate_report":        generate_report,

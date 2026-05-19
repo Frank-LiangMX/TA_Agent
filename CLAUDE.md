@@ -7,14 +7,6 @@
 - 每个工具独立文件，统一注册到 `tools/registry.py`
 - 接口定义与实现分离（如 `provider.py` + `file_provider.py`）
 
-### 文件拆分策略
-```
-当文件超过 400 行时：
-  - Schema/接口定义 → xxx_schema.py 或 xxx_types.py
-  - 核心业务逻辑 → xxx_core.py
-  - 工具函数/辅助函数 → xxx_utils.py
-```
-
 ## 工具开发规范
 
 ### 新增工具标准模板
@@ -77,14 +69,31 @@ def tool_name(param1: str, param2: int = 0) -> dict:
 - 必须是 2 的幂次
 - 推荐正方形
 
-## 目录结构
-```
-ta_agent/
-├── agent.py           # Agent 主循环
-├── analyzer.py        # 分析编排器
-├── config.py          # 配置管理
-├── tools/             # 工具模块（每个工具独立文件）
-├── tags/              # 标签系统（schema/store/search/inferrer）
-├── conventions/       # 规范发现/加载
-└── .ta_agent/memory/  # 记忆系统
-```
+## 文档管理规范
+
+### 核心原则（Agent 必须遵守）
+1. **写文档前先读 `docs/README.md`**，了解当前文档结构，不要重复创建或写到错误的地方
+2. **参考 vs 实验严格分离**：稳定的设计写入 `docs/reference/`，试错内容写入 `docs/experiments/日期-主题.md`
+3. **一个模块一个文件**：前端内容 → `reference/frontend.md`；后端内容 → `reference/backend.md`；流水线 → `reference/pipeline.md`。**不要在一个文档里混写前后端内容**
+4. **新需求先行实验**：遇到不确定的新功能，先在 `experiments/` 对应目录下新建带日期的 `.md` 记录过程。实验成功后再把稳定部分写入 `reference/`
+5. **禁止把实验内容直接写进 reference 文档**：reference 里只放已经验证过的、稳定的设计
+
+### 文档位置速查表
+
+| 你想写什么 | 写在哪个文件 |
+|-----------|-------------|
+| 后端架构/数据流/工具系统 | `docs/reference/backend.md` |
+| 前端组件/协议/设计规范 | `docs/reference/frontend.md` |
+| 资产流水线系统 | `docs/reference/pipeline.md` |
+| 架构决策（为什么这么做） | `docs/decisions/主题.md` |
+| 试错/调研/实验记录 | `docs/experiments/{backend\|frontend}/日期-主题.md` |
+| 工作流程/使用指南 | `docs/guides/` |
+| 美术操作指南 | `docs/guides/artist-guide.md` |
+| 项目介绍/全貌 | 根目录 `README.md` |
+| 进度追踪/待办 | 根目录 `progress.md` |
+
+### 何时新建文件 vs 追加到现有文件
+- **新增功能模块**（如"新增 UV 检查工具"）→ 改 `reference/backend.md`，在对应章节加内容
+- **新增前端页面**（如"新增 UV 检查视图"）→ 改 `reference/frontend.md`
+- **尝试新技术/不确定的方案** → 新建 `experiments/` 文件
+- **以上都不匹配** → 先读 `docs/README.md` 找到最合适的位置，不确定则请教用户

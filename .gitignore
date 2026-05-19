@@ -21,3 +21,27 @@ tag_store/
 
 # Claude Code 本地配置
 .claude/
+
+# Node.js
+node_modules/
+
+# 构建产物
+dist/
+build/
+*.spec
+
+# 前端构建
+fronted/dist/
+fronted/node_modules/
+fronted/bun.lock
+fronted/package-lock.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# 临时文件
+*.tmp
+*.temp
+*.log

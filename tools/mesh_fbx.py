@@ -26,32 +26,90 @@ SCHEMA = {
     }
 }
 
+CHECK_BLENDER_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "check_blender",
+        "description": "检查 Blender 是否可用。返回 Blender 路径和版本信息。如果 Blender 未找到，提示用户安装或配置路径。",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+}
+
 
 def _get_blender_path() -> str:
-    """获取 Blender 路径"""
-    # 尝试从 config 导入（需要把项目根目录加入 path）
+    """获取 Blender 路径（自动检测 + 配置）"""
+    # 1. 从 config 读取
     try:
         tools_dir = os.path.dirname(os.path.abspath(__file__))
         project_root = os.path.dirname(tools_dir)
         if project_root not in sys.path:
             sys.path.insert(0, project_root)
         from config import BLENDER_PATH
-        if os.path.exists(BLENDER_PATH):
+        if BLENDER_PATH and os.path.exists(BLENDER_PATH):
             return BLENDER_PATH
     except (ImportError, AttributeError):
         pass
 
-    # 常见安装路径
-    candidates = [
-        r"D:\Program Files\Blender Foundation\Blender 4.3\blender.exe",
-        r"D:\Program Files\Blender Foundation\Blender 3.3\blender.exe",
-        r"E:\Program Files\Blender Foundation\Blender 4.5\blender.exe",
-        r"C:\Program Files\Blender Foundation\Blender 2.93\blender.exe",
-    ]
-    for path in candidates:
-        if os.path.exists(path):
-            return path
+    # 2. 检查系统 PATH
+    import shutil
+    blender_in_path = shutil.which("blender")
+    if blender_in_path:
+        return blender_in_path
+
+    # 3. 扫描常见安装路径
+    if sys.platform == "win32":
+        import glob
+        candidates = glob.glob(r"C:\Program Files\Blender Foundation\Blender *\blender.exe")
+        candidates += glob.glob(r"D:\Program Files\Blender Foundation\Blender *\blender.exe")
+        candidates += glob.glob(r"E:\Program Files\Blender Foundation\Blender *\blender.exe")
+        # 按版本号排序，取最新
+        candidates.sort(reverse=True)
+        for path in candidates:
+            if os.path.exists(path):
+                return path
+    else:
+        # Linux/Mac
+        candidates = ["/usr/bin/blender", "/usr/local/bin/blender", "/snap/bin/blender"]
+        for path in candidates:
+            if os.path.exists(path):
+                return path
+
+    # 4. 找不到
+    print("  [Blender] 未找到 Blender 安装，请在 config.py 中设置 BLENDER_PATH")
     return ""
+
+
+def check_blender() -> dict:
+    """检查 Blender 是否可用"""
+    path = _get_blender_path()
+    if not path:
+        return {
+            "available": False,
+            "message": "Blender 未安装或未找到",
+            "suggestion": "请安装 Blender 或在 config.py 中设置 BLENDER_PATH",
+        }
+
+    # 获取版本
+    try:
+        proc = subprocess.run(
+            [path, "--version"],
+            capture_output=True, text=True, timeout=10,
+            encoding="utf-8", errors="replace",
+        )
+        version = proc.stdout.strip().split("\n")[0] if proc.stdout else "未知"
+    except Exception:
+        version = "无法获取"
+
+    return {
+        "available": True,
+        "path": path,
+        "version": version,
+        "message": f"Blender 已就绪: {version}",
+    }
 
 
 def check_fbx_info(file_path: str) -> dict:

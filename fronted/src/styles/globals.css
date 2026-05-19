@@ -1,0 +1,480 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 3.9%;
+    --muted: 0 0% 96.1%;
+    --muted-foreground: 0 0% 45.1%;
+    --border: 0 0% 89.8%;
+    --input: 0 0% 89.8%;
+    --ring: 0 0% 3.9%;
+    --primary: 0 0% 9%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 0 0% 96.1%;
+    --secondary-foreground: 0 0% 9%;
+    --accent: 0 0% 96.1%;
+    --accent-foreground: 0 0% 9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 3.9%;
+    --dialog: 0 0% 100%;
+    --dialog-foreground: 0 0% 3.9%;
+    --content-area: 0 0% 100%;
+    --tooltip: 0 0% 15%;
+    --tooltip-foreground: 0 0% 98%;
+    --tooltip-muted: 0 0% 75%;
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 98%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 98%;
+  }
+
+  .dark {
+    --background: 0 0% 7%;
+    --foreground: 0 0% 98%;
+    --muted: 0 0% 14.9%;
+    --muted-foreground: 0 0% 63.9%;
+    --border: 0 0% 14.9%;
+    --input: 0 0% 14.9%;
+    --ring: 0 0% 83.1%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 0 0% 9%;
+    --secondary: 0 0% 14.9%;
+    --secondary-foreground: 0 0% 98%;
+    --accent: 0 0% 40%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 55% 45%;
+    --destructive-foreground: 0 0% 98%;
+    --card: 0 0% 7%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 7%;
+    --popover-foreground: 0 0% 98%;
+    --dialog: 0 0% 12%;
+    --dialog-foreground: 0 0% 98%;
+    --content-area: 0 0% 7%;
+    --tooltip: 0 0% 20%;
+    --tooltip-foreground: 0 0% 98%;
+    --tooltip-muted: 0 0% 70%;
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 98%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 98%;
+  }
+
+  /* ===== 海洋主题 ===== */
+
+  .theme-ocean-light {
+    --background: 205 35% 94%;
+    --foreground: 210 30% 15%;
+    --content-area: 205 30% 97%;
+    --muted: 205 35% 88%;
+    --muted-foreground: 210 15% 40%;
+    --border: 205 30% 82%;
+    --primary: 205 50% 50%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 205 35% 91%;
+    --secondary-foreground: 210 30% 20%;
+    --accent: 205 35% 82%;
+    --accent-foreground: 205 50% 30%;
+    --ring: 205 50% 50%;
+    --card: 205 30% 97%;
+    --card-foreground: 210 30% 15%;
+    --input: 205 35% 91%;
+    --popover: 205 30% 97%;
+    --popover-foreground: 210 30% 15%;
+    --dialog: 0 0% 100%;
+    --dialog-foreground: 210 30% 15%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --tooltip: 210 45% 18%;
+    --tooltip-foreground: 0 0% 98%;
+    --tooltip-muted: 210 20% 75%;
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 98%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 98%;
+  }
+
+  .theme-ocean-dark {
+    --background: 210 35% 13%;
+    --foreground: 210 20% 92%;
+    --content-area: 210 40% 8%;
+    --muted: 210 30% 14%;
+    --muted-foreground: 210 15% 55%;
+    --border: 210 30% 18%;
+    --primary: 205 87% 24%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 30% 16%;
+    --secondary-foreground: 210 20% 90%;
+    --accent: 210 40% 22%;
+    --accent-foreground: 205 60% 70%;
+    --ring: 205 87% 24%;
+    --card: 210 35% 11%;
+    --card-foreground: 210 20% 92%;
+    --input: 210 30% 14%;
+    --popover: 210 35% 13%;
+    --popover-foreground: 210 20% 92%;
+    --dialog: 210 25% 16%;
+    --dialog-foreground: 210 20% 92%;
+    --destructive: 0 55% 45%;
+    --destructive-foreground: 0 0% 98%;
+    --tooltip: 210 40% 22%;
+    --tooltip-foreground: 0 0% 98%;
+    --tooltip-muted: 210 20% 70%;
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 98%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 98%;
+  }
+
+  /* ===== 森系主题 ===== */
+
+  .theme-forest-light {
+    --background: 140 25% 95%;
+    --foreground: 150 25% 15%;
+    --content-area: 140 20% 97%;
+    --muted: 140 15% 90%;
+    --muted-foreground: 145 10% 45%;
+    --border: 140 15% 82%;
+    --primary: 150 35% 38%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 140 15% 92%;
+    --secondary-foreground: 150 20% 20%;
+    --accent: 145 20% 88%;
+    --accent-foreground: 150 30% 30%;
+    --ring: 150 35% 38%;
+    --card: 140 20% 97%;
+    --card-foreground: 150 25% 15%;
+    --input: 140 18% 92%;
+    --popover: 140 18% 98%;
+    --popover-foreground: 150 25% 15%;
+    --dialog: 140 15% 96%;
+    --dialog-foreground: 150 25% 15%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --tooltip: 150 20% 18%;
+    --tooltip-foreground: 0 0% 98%;
+    --tooltip-muted: 140 10% 60%;
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 98%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 98%;
+  }
+
+  .theme-forest-dark {
+    --background: 147 14% 15%;
+    --foreground: 140 10% 90%;
+    --content-area: 150 20% 8%;
+    --muted: 150 18% 13%;
+    --muted-foreground: 140 10% 55%;
+    --border: 150 18% 17%;
+    --primary: 151 55% 21%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 150 16% 15%;
+    --secondary-foreground: 140 10% 88%;
+    --accent: 155 25% 18%;
+    --accent-foreground: 150 30% 65%;
+    --ring: 150 35% 42%;
+    --card: 150 18% 11%;
+    --card-foreground: 140 10% 90%;
+    --input: 150 18% 13%;
+    --popover: 150 18% 13%;
+    --popover-foreground: 140 10% 90%;
+    --dialog: 150 15% 15%;
+    --dialog-foreground: 140 10% 90%;
+    --destructive: 0 55% 45%;
+    --destructive-foreground: 0 0% 98%;
+    --tooltip: 150 25% 20%;
+    --tooltip-foreground: 0 0% 98%;
+    --tooltip-muted: 140 10% 65%;
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 98%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 98%;
+  }
+
+  /* ===== 莫兰迪主题 ===== */
+
+  .theme-slate-light {
+    --background: 40 6% 88%;
+    --foreground: 40 8% 18%;
+    --content-area: 40 8% 94%;
+    --muted: 40 6% 85%;
+    --muted-foreground: 40 5% 45%;
+    --border: 40 6% 80%;
+    --primary: 18 20% 67%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 40 6% 90%;
+    --secondary-foreground: 40 8% 22%;
+    --accent: 40 6% 86%;
+    --accent-foreground: 40 10% 30%;
+    --ring: 18 20% 67%;
+    --card: 40 8% 96%;
+    --card-foreground: 40 8% 18%;
+    --input: 40 6% 90%;
+    --popover: 40 8% 96%;
+    --popover-foreground: 40 8% 18%;
+    --dialog: 40 8% 94%;
+    --dialog-foreground: 40 8% 18%;
+    --destructive: 0 65% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --tooltip: 40 8% 20%;
+    --tooltip-foreground: 0 0% 98%;
+    --tooltip-muted: 40 5% 55%;
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 98%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 98%;
+  }
+
+  .theme-slate-dark {
+    --background: 260 6% 12%;
+    --foreground: 30 10% 90%;
+    --content-area: 270 8% 9%;
+    --muted: 260 6% 16%;
+    --muted-foreground: 30 8% 60%;
+    --border: 260 8% 20%;
+    --primary: 15 25% 68%;
+    --primary-foreground: 270 8% 9%;
+    --secondary: 260 5% 18%;
+    --secondary-foreground: 30 10% 88%;
+    --accent: 200 12% 22%;
+    --accent-foreground: 200 25% 75%;
+    --ring: 15 25% 68%;
+    --card: 260 6% 13%;
+    --card-foreground: 30 10% 90%;
+    --input: 260 6% 16%;
+    --popover: 260 6% 15%;
+    --popover-foreground: 30 10% 90%;
+    --dialog: 260 5% 16%;
+    --dialog-foreground: 30 10% 90%;
+    --destructive: 0 45% 50%;
+    --destructive-foreground: 0 0% 98%;
+    --tooltip: 260 8% 22%;
+    --tooltip-foreground: 0 0% 98%;
+    --tooltip-muted: 30 8% 65%;
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 98%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 98%;
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+  body { @apply bg-background text-foreground; }
+}
+
+/* 代码块样式（确保亮暗主题都可见） */
+pre,
+.prose pre,
+.prose-sm pre {
+  background: hsl(var(--muted)) !important;
+  color: hsl(var(--foreground)) !important;
+  border-radius: 0.5rem;
+}
+
+pre code,
+.prose pre code {
+  background: transparent !important;
+  color: inherit !important;
+}
+
+:not(pre) > code,
+.prose :not(pre) > code {
+  background: hsl(var(--muted)) !important;
+  color: hsl(var(--foreground)) !important;
+  padding: 0.15em 0.3em;
+  border-radius: 0.25rem;
+  font-size: 0.875em;
+}
+
+/* 深色主题 dialog 光晕效果 */
+.theme-ocean-dark [data-radix-dialog-content],
+.theme-forest-dark [data-radix-dialog-content],
+.theme-slate-dark [data-radix-dialog-content] {
+  box-shadow:
+    0 0 40px 8px rgba(255, 255, 255, 0.06),
+    0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+/* 设置卡片样式（对齐 Proma） */
+.settings-card {
+  background: hsl(var(--card));
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.03), 0 1px 3px 0 rgb(0 0 0 / 0.06);
+}
+.dark .settings-card {
+  background: transparent;
+  box-shadow: none;
+  border: 1px solid hsl(var(--border) / 0.3);
+}
+
+/* 隐藏滚动条但保留滚动功能 */
+.scrollbar-none,
+.scrollbar-none > * {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar,
+.scrollbar-none > *::-webkit-scrollbar {
+  display: none;
+}
+
+/* 纤细滚动条 */
+.scrollbar-thin,
+.scrollbar-thin > * {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
+}
+.scrollbar-thin::-webkit-scrollbar,
+.scrollbar-thin > *::-webkit-scrollbar {
+  width: 6px;
+}
+.scrollbar-thin::-webkit-scrollbar-track,
+.scrollbar-thin > *::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb,
+.scrollbar-thin > *::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--muted-foreground) / 0.3);
+  border-radius: 3px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb:hover,
+.scrollbar-thin > *::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(var(--muted-foreground) / 0.5);
+}
+
+/* 微妙阴影（替代边框的层次感） */
+.shadow-minimal {
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.03), 0 1px 3px rgb(0 0 0 / 0.06);
+}
+
+/* 卡片阴影 */
+.shadow-card {
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+}
+
+/* 状态指示器脉冲 */
+@keyframes pulse-status {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.animate-pulse-status {
+  animation: pulse-status 2s ease-in-out infinite;
+}
+
+/* Shimmer 动画 */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.animate-shimmer {
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+/* 滑入动画 */
+@keyframes slide-in-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-slide-in-up {
+  animation: slide-in-up 0.3s ease-out;
+}
+
+/* 消息动画：用户消息从右侧滑入，AI 消息从左侧滑入 */
+@keyframes msg-slide-right {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes msg-slide-left {
+  from { opacity: 0; transform: translateX(-20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.animate-msg-user {
+  animation: msg-slide-right 0.3s ease-out;
+}
+.animate-msg-assistant {
+  animation: msg-slide-left 0.3s ease-out;
+}
+
+/* 消息气泡弹出 */
+@keyframes msg-pop {
+  0% { opacity: 0; transform: scale(0.95) translateY(8px); }
+  60% { transform: scale(1.02) translateY(-2px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+.animate-msg-pop {
+  animation: msg-pop 0.35s ease-out;
+}
+
+/* 波浪条动画 */
+@keyframes wave-bar {
+  0%, 100% { transform: scaleY(0.3); }
+  50% { transform: scaleY(1); }
+}
+.animate-wave-bar {
+  animation: wave-bar 0.8s ease-in-out infinite;
+}
+
+/* 光点滑动动画（输入框上方） */
+@keyframes glow-slide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+.animate-glow-slide {
+  animation: glow-slide 1.2s ease-in-out infinite;
+  background: linear-gradient(90deg, transparent, hsl(var(--primary) / 0.8), hsl(var(--primary)), hsl(var(--primary) / 0.8), transparent);
+}
+
+/* 输入框呼吸发光（从底部向上扩散） */
+@keyframes input-breathe {
+  0%, 100% { opacity: 0.3; height: 8px; }
+  50% { opacity: 1; height: 24px; }
+}
+.animate-input-breathe {
+  animation: input-breathe 2s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+/* 消息导航面板滑入 */
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(10px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.animate-slide-in-right {
+  animation: slide-in-right 0.2s ease-out;
+}
+
+/* 列表项逐个淡入 */
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in-up {
+  animation: fade-in-up 0.25s ease-out both;
+}
+
+/* 展开详情下滑 */
+@keyframes slide-down {
+  from { opacity: 0; max-height: 0; }
+  to { opacity: 1; max-height: 500px; }
+}
+.animate-slide-down {
+  animation: slide-down 0.25s ease-out both;
+  overflow: hidden;
+}
+
+/* Tab 内容淡入 */
+@keyframes tab-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-tab-fade {
+  animation: tab-fade-in 0.2s ease-out;
+}
