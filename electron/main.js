@@ -156,29 +156,29 @@ async function startApp() {
   // 开发模式：检测前端开发服务器
   if (!app.isPackaged) {
     console.log('[Electron] 检测前端开发服务器 (localhost:5175)...')
-    try {
+    
+    const success = await new Promise((resolve) => {
       const req = http.get(DEV_FRONTEND_URL, (res) => {
-        if (res.statusCode === 200) {
-          console.log('[Electron] 前端服务器已运行')
-          createWindow()
-          createTray()
-        }
+        resolve(res.statusCode === 200)
       })
-      req.on('error', () => {
-        console.log('')
-        console.log('========================================')
-        console.log('  请先启动前端开发服务器:')
-        console.log('  fronted/Start.bat')
-        console.log('========================================')
-        console.log('')
-        app.quit()
-      })
+      req.on('error', () => resolve(false))
       req.setTimeout(2000, () => {
         req.destroy()
-        console.log('[Electron] 前端服务器未响应')
-        app.quit()
+        resolve(false)
       })
-    } catch (e) {
+    })
+    
+    if (success) {
+      console.log('[Electron] 前端服务器已运行')
+      createWindow()
+      createTray()
+    } else {
+      console.log('')
+      console.log('========================================')
+      console.log('  请先启动前端开发服务器:')
+      console.log('  fronted/Start.bat')
+      console.log('========================================')
+      console.log('')
       app.quit()
     }
     return
