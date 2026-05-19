@@ -1008,6 +1008,80 @@ async def update_permissions(payload: dict = Body(...)):
     return {"success": True, "permissions": _permission_config}
 
 
+# ===== REST 端点（MCP 服务器管理） =====
+
+@app.get("/api/mcp")
+async def get_mcp_status():
+    """获取 MCP 服务器连接状态"""
+    try:
+        from tools.mcp_bridge import get_mcp_status
+        return {"servers": get_mcp_status()}
+    except ImportError:
+        return {"servers": {}, "error": "MCP 未安装"}
+    except Exception as e:
+        return {"servers": {}, "error": str(e)}
+
+
+@app.get("/api/mcp/servers")
+async def get_mcp_servers():
+    """获取 MCP 服务器配置列表（从 mcp.json 读取）"""
+    try:
+        from tools.mcp_bridge import get_mcp_servers
+        return {"servers": get_mcp_servers()}
+    except Exception as e:
+        return {"servers": {}, "error": str(e)}
+
+
+@app.post("/api/mcp/servers")
+async def add_mcp_server(payload: dict = Body(...)):
+    """添加 MCP 服务器"""
+    name = payload.get("name", "")
+    cfg = payload.get("config", {})
+    if not name:
+        return {"success": False, "error": "服务器名称不能为空"}
+    if not cfg.get("command"):
+        return {"success": False, "error": "command 不能为空"}
+    from tools.mcp_bridge import add_mcp_server
+    return add_mcp_server(name, cfg)
+
+
+@app.patch("/api/mcp/servers/{name}")
+async def update_mcp_server(name: str, payload: dict = Body(...)):
+    """更新 MCP 服务器配置（或切换 enabled）"""
+    from tools.mcp_bridge import update_mcp_server
+    return update_mcp_server(name, payload)
+
+
+@app.delete("/api/mcp/servers/{name}")
+async def delete_mcp_server(name: str):
+    """删除 MCP 服务器"""
+    from tools.mcp_bridge import remove_mcp_server
+    return remove_mcp_server(name)
+
+
+@app.post("/api/mcp/test")
+async def mcp_test_connection(payload: dict = Body(...)):
+    """测试 MCP 服务器连接（不保存配置，仅验证连通性和发现工具）"""
+    cfg = payload.get("config", {})
+    if not cfg.get("command"):
+        return {"success": False, "error": "command 不能为空"}
+    try:
+        from tools.mcp_bridge import test_connection
+        return test_connection(cfg)
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/mcp/reload")
+async def mcp_reload():
+    """重新加载所有 MCP 服务器"""
+    try:
+        from tools.mcp_bridge import reload_mcp_servers
+        return reload_mcp_servers()
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 # ===== REST 端点（活动日志 + 流水线配置） =====
 
 @app.get("/api/activity")

@@ -8,7 +8,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import {
   GitBranch, RefreshCw, MessageSquare, Settings, Plus, X,
   FolderSearch, Brain, FileCheck, Package, Wrench,
-  ChevronDown, ChevronRight, Trash2, ArrowRight, Clock,
+  ChevronDown, ChevronRight, Trash2, ArrowRight, Clock, Play, Loader2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useStats } from '@/lib/cache'
@@ -127,6 +127,29 @@ export function WorkflowView({ onNavigate }: WorkflowViewProps) {
       .filter(g => currentPipeline ? g.sessionId !== currentPipeline.sessionId : true)
   }, [runs, currentPipeline])
 
+  const [executingStage, setExecutingStage] = useState<string | null>(null)
+
+  const handleRunStage = async (stageId: string, label: string) => {
+    setExecutingStage(stageId)
+    try {
+      const res = await fetch(`${API_BASE}/api/pipeline/run`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stageId }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success(`已触发：${label}`)
+        onNavigate?.('chat')
+      } else {
+        toast.error(data.error || '执行失败')
+      }
+    } catch {
+      toast.error('执行失败')
+    } finally {
+      setExecutingStage(null)
+    }
+  }
+
   const handleJumpToChat = () => onNavigate?.('chat')
 
   const formatTime = (ts: string) => {
@@ -219,7 +242,7 @@ export function WorkflowView({ onNavigate }: WorkflowViewProps) {
                   {/* 4 节点看板 */}
                   <div className="rounded-xl border border-border/40 bg-card overflow-hidden">
                     <div className="p-5">
-                      <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-stretch justify-between gap-2">
                         {STAGE_ORDER.map((id, i) => {
                           const meta = STAGE_META[id]
                           const done = currentPipeline.runs.some(r => r.stageId === id)
@@ -227,8 +250,8 @@ export function WorkflowView({ onNavigate }: WorkflowViewProps) {
                           const c = meta.color
                           return (
                             <React.Fragment key={id}>
-                              <div className="flex-1 min-w-0">
-                                <div className={`flex flex-col items-center text-center ${done ? '' : 'opacity-45'}`}>
+                              <div className="flex-1 min-w-0 flex flex-col">
+                                <div className={`flex flex-col items-center text-center flex-1 ${done ? '' : 'opacity-45'}`}>
                                   {/* 节点图标 */}
                                   <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border-2 transition-all ${
                                     done
@@ -256,9 +279,25 @@ export function WorkflowView({ onNavigate }: WorkflowViewProps) {
                                     </div>
                                   )}
                                 </div>
+                                {/* 执行按钮 */}
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleRunStage(id, meta.label) }}
+                                  disabled={executingStage === id}
+                                  className={`mt-auto inline-flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-medium transition-all ${
+                                    done
+                                      ? 'bg-foreground/[0.06] text-muted-foreground hover:bg-foreground/[0.12] hover:text-foreground'
+                                      : 'bg-muted text-muted-foreground/60 hover:bg-muted/80'
+                                  } disabled:opacity-50`}
+                                >
+                                  {executingStage === id
+                                    ? <Loader2 size={10} className="animate-spin" />
+                                    : <Play size={10} />
+                                  }
+                                  执行
+                                </button>
                               </div>
-                              {/* 箭头 */}
-                              {i < STAGE_ORDER.length - 1 && (
+                            {/* 箭头 */}
+                            {i < STAGE_ORDER.length - 1 && (
                                 <div className="flex items-center pt-7 shrink-0 px-1">
                                   <ChevronRight size={18} className={
                                     currentPipeline.runs.some(r => r.stageId === STAGE_ORDER[i + 1])

@@ -11,6 +11,7 @@ const http = require('http')
 const SERVER_HOST = '127.0.0.1'
 const SERVER_PORT = 8080
 const SERVER_URL = `http://${SERVER_HOST}:${SERVER_PORT}`
+const DEV_FRONTEND_URL = 'http://localhost:5175'  // Vite 开发服务器
 const STARTUP_TIMEOUT = 30000
 
 let mainWindow = null
@@ -101,7 +102,10 @@ function createWindow() {
     show: false
   })
 
-  mainWindow.loadURL(SERVER_URL)
+  // 开发模式：加载 Vite 开发服务器；打包模式：加载后端静态文件
+  const url = app.isPackaged ? SERVER_URL : DEV_FRONTEND_URL
+  console.log(`[Electron] 加载: ${url}`)
+  mainWindow.loadURL(url)
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show()
@@ -149,25 +153,42 @@ async function startApp() {
   console.log('[Electron] 应用启动...')
   console.log(`[Electron] isPackaged: ${app.isPackaged}`)
 
-  // 检测后端是否已运行
+  // 开发模式：检测前端开发服务器
+  if (!app.isPackaged) {
+    console.log('[Electron] 检测前端开发服务器 (localhost:5175)...')
+    try {
+      const req = http.get(DEV_FRONTEND_URL, (res) => {
+        if (res.statusCode === 200) {
+          console.log('[Electron] 前端服务器已运行')
+          createWindow()
+          createTray()
+        }
+      })
+      req.on('error', () => {
+        console.log('')
+        console.log('========================================')
+        console.log('  请先启动前端开发服务器:')
+        console.log('  fronted/Start.bat')
+        console.log('========================================')
+        console.log('')
+        app.quit()
+      })
+      req.setTimeout(2000, () => {
+        req.destroy()
+        console.log('[Electron] 前端服务器未响应')
+        app.quit()
+      })
+    } catch (e) {
+      app.quit()
+    }
+    return
+  }
+
+  // 打包模式：检测后端
   if (await checkServerReady()) {
     console.log('[Electron] 后端已运行')
     createWindow()
     createTray()
-    return
-  }
-
-  // 开发模式：提示用户启动后端
-  if (!app.isPackaged) {
-    console.log('')
-    console.log('========================================')
-    console.log('  请先启动 Python 后端:')
-    console.log('  python launcher.py')
-    console.log('  或')
-    console.log('  fronted/Start.bat')
-    console.log('========================================')
-    console.log('')
-    app.quit()
     return
   }
 

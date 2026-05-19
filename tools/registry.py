@@ -48,6 +48,9 @@ from tools.intake import (
 from tools.ue5_bridge import (
     UE5_TOOLS, UE5_TOOL_FUNCTIONS,
 )
+from tools.mcp_bridge import (
+    MCP_TOOLS, MCP_TOOL_FUNCTIONS,
+)
 
 
 # ========== Schema 注册 ==========
@@ -112,6 +115,7 @@ TOOLS = [
     INTAKE_BATCH_DEF,
     INTAKE_APPROVED_DEF,
     *UE5_TOOLS,
+    *MCP_TOOLS,
 ]
 
 
@@ -160,6 +164,7 @@ TOOL_FUNCTIONS = {
     "intake_batch":           intake_batch,
     "intake_approved":        intake_approved,
     **UE5_TOOL_FUNCTIONS,
+    **MCP_TOOL_FUNCTIONS,
 }
 
 
@@ -254,18 +259,9 @@ _load_plugins()
 # ========== MCP 服务器加载 ==========
 
 def _load_mcp_servers():
-    """加载 MCP 服务器工具（参照 _load_plugins 模式）"""
+    """加载 MCP 服务器工具（启动时连接所有已启用的服务器）"""
     from tools.mcp_bridge import _load_mcp_servers_sync
-    schemas, functions = _load_mcp_servers_sync()
-    loaded = []
-    for schema in schemas:
-        name = schema["function"]["name"]
-        if name not in TOOL_FUNCTIONS:
-            TOOLS.append(schema)
-            TOOL_FUNCTIONS[name] = functions.get(name)
-            loaded.append(name)
-    if loaded:
-        print(f"  MCP 加载: {len(loaded)} 个工具已注册 — {', '.join(loaded)}")
-
-
+    count = _load_mcp_servers_sync()
+    if count:
+        print(f"  MCP 加载: {count} 个工具已注册")
 _load_mcp_servers()

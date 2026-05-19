@@ -18,18 +18,24 @@ electron/
 ## 开发模式
 
 **前提条件**：
-1. Python 后端已启动（`../fronted/Start.bat` 或 `python launcher.py`）
+1. 前端开发服务器已启动（`fronted/Start.bat`）
 2. Node.js 已安装
 
 **启动**：
 ```bash
-# 方式 1：双击 Start.bat
+# 方式 1：先启动前端，再启动 Electron
+F:\ta_agent\fronted\Start.bat   # 启动前端 + 后端
+F:\ta_agent\electron\Start.bat  # 启动 Electron
 
 # 方式 2：命令行
-cd electron
+cd F:\ta_agent\electron
 npm install
 npm start
 ```
+
+**说明**：
+- 开发模式加载 `http://localhost:5175`（Vite 开发服务器）
+- 打包模式加载 `http://localhost:8080`（后端静态文件）
 
 ## 打包流程
 
