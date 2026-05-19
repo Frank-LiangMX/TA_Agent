@@ -17,7 +17,7 @@ const http = require('http')
 const SERVER_HOST = '127.0.0.1'
 const SERVER_PORT = 8080
 const SERVER_URL = `http://${SERVER_HOST}:${SERVER_PORT}`
-const STARTUP_TIMEOUT = 30000 // 30 秒超时
+const STARTUP_TIMEOUT = 30000
 
 // 全局状态
 let mainWindow = null
@@ -29,12 +29,9 @@ let isQuitting = false
  * 获取 Python 后端路径
  */
 function getPythonExePath() {
-  // 打包后：resources/backend/TAgent.exe
-  // 开发环境：使用 launcher.py
   if (app.isPackaged) {
     return path.join(process.resourcesPath, 'backend', 'TAgent.exe')
   } else {
-    // 开发环境：返回 launcher.py 路径（需要 Python 环境）
     return path.join(__dirname, '..', 'launcher.py')
   }
 }
@@ -73,6 +70,13 @@ async function waitForServer(timeout = STARTUP_TIMEOUT) {
  * 启动 Python 后端
  */
 function startPythonBackend() {
+  // 开发模式：不启动后端，假设已手动启动
+  if (!app.isPackaged) {
+    console.log('[Electron] 开发模式：假设后端已运行在 ' + SERVER_URL)
+    return true
+  }
+  
+  // 打包模式：启动嵌入的 exe
   const exePath = getPythonExePath()
   
   if (!fs.existsSync(exePath)) {
@@ -82,11 +86,10 @@ function startPythonBackend() {
 
   console.log(`[Electron] 启动后端: ${exePath}`)
   
-  // 启动进程
   pythonProcess = spawn(exePath, [], {
     cwd: path.dirname(exePath),
-    stdio: 'inherit', // 继承控制台输出
-    windowsHide: true // Windows 下隐藏控制台窗口
+    stdio: 'inherit',
+    windowsHide: true
   })
 
   pythonProcess.on('error', (err) => {
@@ -107,14 +110,11 @@ function startPythonBackend() {
 function stopPythonBackend() {
   if (pythonProcess) {
     console.log('[Electron] 停止后端...')
-    
-    // Windows: 使用 taskkill 强制终止进程树
     if (process.platform === 'win32') {
       spawn('taskkill', ['/pid', pythonProcess.pid.toString(), '/f', '/t'])
     } else {
       pythonProcess.kill('SIGTERM')
     }
-    
     pythonProcess = null
   }
 }
@@ -135,31 +135,20 @@ function createWindow() {
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js')
     },
-    // 开发环境显示 DevTools
-    show: false // 先隐藏，加载完成后显示
+    show: false
   })
 
-  // 加载前端
-  if (app.isPackaged) {
-    // 打包后：加载本地服务器
-    mainWindow.loadURL(SERVER_URL)
-  } else {
-    // 开发环境：加载前端开发服务器或本地服务器
-    mainWindow.loadURL(SERVER_URL)
-  }
+  mainWindow.loadURL(SERVER_URL)
 
-  // 窗口准备好后显示
   mainWindow.once('ready-to-show', () => {
     mainWindow.show()
     console.log('[Electron] 窗口已显示')
   })
 
-  // 开发环境打开 DevTools
   if (!app.isPackaged) {
     mainWindow.webContents.openDevTools()
   }
 
-  // 关闭窗口时最小化到托盘
   mainWindow.on('close', (event) => {
     if (!isQuitting) {
       event.preventDefault()
@@ -178,7 +167,6 @@ function createWindow() {
 function createTray() {
   const iconPath = path.join(__dirname, 'assets', 'icon.png')
   
-  // 如果图标不存在，使用默认图标
   let icon
   if (fs.existsSync(iconPath)) {
     icon = nativeImage.createFromPath(iconPath)
@@ -198,7 +186,6 @@ function createTray() {
   tray.setToolTip('TAgent')
   tray.setContextMenu(contextMenu)
 
-  // 点击托盘图标显示窗口
   tray.on('click', () => {
     mainWindow?.show()
   })
@@ -231,20 +218,25 @@ function quitApp() {
 async function startApp() {
   console.log('[Electron] 应用启动...')
   console.log(`[Electron] isPackaged: ${app.isPackaged}`)
-  console.log(`[Electron] 资源目录: ${process.resourcesPath}`)
 
-  // 先检查服务器是否已启动（可能已有实例）
+  // 开发模式：直接创建窗口，提示用户启动后端
+  if (!app.isPackaged) {
+    console.log('[Electron] 开发模式：请确保后端已运行在 ' + SERVER_URL)
+    createWindow()
+    createTray()
+    return
+  }
+
+  // 打包模式：检查并启动后端
   if (await checkServerReady()) {
-    console.log('[Electron] 服务器已运行，直接创建窗口')
+    console.log('[Electron] 服务器已运行')
   } else {
-    // 启动 Python 后端
     if (!startPythonBackend()) {
       console.error('[Electron] 后端启动失败，退出')
       app.quit()
       return
     }
 
-    // 等待服务器启动
     console.log('[Electron] 等待后端启动...')
     const ready = await waitForServer()
     if (!ready) {
@@ -255,30 +247,9 @@ async function startApp() {
     console.log('[Electron] 后端已就绪')
   }
 
-  // 创建窗口和托盘
   createWindow()
   createTray()
 }
-
-// 应用事件
-app.whenReady().then(startApp)
-
-app.on('window-all-closed', () => {
-  // macOS: 除非 Cmd+Q，否则保持应用运行
-  if (process.platform !== 'darwin') {
-    quitApp()
-  }
-})
-
-app.on('activate', () => {
-  // macOS: 点击 Dock 图标时显示窗口
-  mainWindow?.show()
-})
-
-app.on('before-quit', () => {
-  isQuitting = true
-  stopPythonBackend()
-})
 
 // 单实例锁
 const gotTheLock = app.requestSingleInstanceLock()
@@ -287,8 +258,25 @@ if (!gotTheLock) {
   app.quit()
 } else {
   app.on('second-instance', () => {
-    // 第二个实例启动时，聚焦已有窗口
     mainWindow?.show()
     mainWindow?.focus()
   })
 }
+
+// 应用事件
+app.whenReady().then(startApp)
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    quitApp()
+  }
+})
+
+app.on('activate', () => {
+  mainWindow?.show()
+})
+
+app.on('before-quit', () => {
+  isQuitting = true
+  stopPythonBackend()
+})
