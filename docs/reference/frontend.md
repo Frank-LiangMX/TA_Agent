@@ -362,3 +362,92 @@ python server.py
 cd F:\ta_agent\fronted
 bun run dev
 ```
+
+---
+
+## 八、Electron 桌面应用（规划中）
+
+### 8.1 双模式架构
+
+```
+┌─────────────────────────────────────────────────────┐
+│                    前端 (React)                      │
+│              同一套代码，两种访问方式                  │
+└──────────────────────┬──────────────────────────────┘
+                       │
+         ┌─────────────┴─────────────┐
+         ▼                           ▼
+┌─────────────────┐         ┌─────────────────┐
+│  Electron 窗口   │         │   浏览器访问     │
+│  (桌面应用体验)   │         │  (远程访问)      │
+└────────┬────────┘         └────────┬────────┘
+         │                           │
+         ▼                           ▼
+┌─────────────────────────────────────────────────────┐
+│              Python FastAPI 后端                     │
+│              (localhost 或 服务器部署)               │
+└─────────────────────────────────────────────────────┘
+```
+
+### 8.2 目录结构（新增）
+
+```
+ta_agent/
+├── electron/                    # Electron 主进程
+│   ├── main.js                  # 启动 Python 后端 + 创建窗口
+│   ├── preload.js               # 预加载脚本（可选）
+│   └── package.json
+├── fronted/                     # 现有前端（不变）
+└── launcher.py                  # Python 后端启动器
+```
+
+### 8.3 核心代码
+
+**electron/main.js**：
+```javascript
+const { app, BrowserWindow } = require('electron')
+const { spawn } = require('child_process')
+const path = require('path')
+
+let pythonProcess = null
+let mainWindow = null
+
+function startPython() {
+  const exePath = path.join(process.resourcesPath, 'backend', 'TAgent.exe')
+  pythonProcess = spawn(exePath, [], { stdio: 'inherit' })
+}
+
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    webPreferences: { nodeIntegration: false }
+  })
+  mainWindow.loadURL('http://localhost:8080')
+}
+
+app.whenReady().then(() => {
+  startPython()
+  setTimeout(createWindow, 2000) // 等 Python 启动
+})
+
+app.on('will-quit', () => {
+  pythonProcess?.kill()
+})
+```
+
+### 8.4 打包流程
+
+```
+1. pyinstaller → 打包 Python 后端为 TAgent.exe
+2. npm run build → 打包前端到 electron/dist/
+3. electron-builder → 打包整个应用
+```
+
+### 8.5 部署场景
+
+| 场景 | 前端 | 后端 |
+|------|------|------|
+| **桌面应用** | Electron 窗口 | 本地 Python 进程 |
+| **团队使用** | 浏览器访问 `http://服务器IP:8080` | 服务器上运行 Python |
+| **本地开发** | 浏览器 `localhost:5175` | 本地 Python |
