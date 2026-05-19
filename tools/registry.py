@@ -250,3 +250,22 @@ def _load_plugins():
 
 # 启动时自动加载插件
 _load_plugins()
+
+# ========== MCP 服务器加载 ==========
+
+def _load_mcp_servers():
+    """加载 MCP 服务器工具（参照 _load_plugins 模式）"""
+    from tools.mcp_bridge import _load_mcp_servers_sync
+    schemas, functions = _load_mcp_servers_sync()
+    loaded = []
+    for schema in schemas:
+        name = schema["function"]["name"]
+        if name not in TOOL_FUNCTIONS:
+            TOOLS.append(schema)
+            TOOL_FUNCTIONS[name] = functions.get(name)
+            loaded.append(name)
+    if loaded:
+        print(f"  MCP 加载: {len(loaded)} 个工具已注册 — {', '.join(loaded)}")
+
+
+_load_mcp_servers()

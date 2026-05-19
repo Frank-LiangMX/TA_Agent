@@ -196,3 +196,37 @@ PROJECT_DIRECTORY_TREE = """
     ├── Shared/         # 共享材质
     └── Master/         # 主材质
 """
+
+# ========== MCP 服务器配置 ==========
+# 参考 Proma Agent mcp.json 格式，每个服务器：
+#   type:    "stdio"（子进程通信）
+#   command: 启动命令
+#   args:    命令参数列表
+#   env:     环境变量（可选）
+#   enabled: 是否启用
+
+MCP_SERVERS = {
+    "sequential-thinking": {
+        "type": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+        "enabled": False,
+    },
+    # "playwright": {
+    #     "type": "stdio",
+    #     "command": "npx",
+    #     "args": ["-y", "@playwright/mcp"],
+    #     "enabled": False,
+    # },
+    # "github": {
+    #     "type": "stdio",
+    #     "command": "npx",
+    #     "args": ["-y", "@modelcontextprotocol/server-github"],
+    #     "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": ""},
+    #     "enabled": False,
+    # },
+}
+
+def get_mcp_servers() -> dict:
+    """返回所有 MCP 服务器配置"""
+    return MCP_SERVERS

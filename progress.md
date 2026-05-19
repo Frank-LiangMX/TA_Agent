@@ -100,6 +100,7 @@
 | 前端流水线可视化 | P1 | WorkflowView 节点编辑 + 执行触发 |
 | 首次引导 + 使用指南 | P1 | ✅ TourGuide + HelpGuide 已开发，待美术验证 |
 | 流水线自动追踪 | P1 | ✅ 后端自动追踪工具→阶段，前端看板+历史记录 |
+| MCP 集成 | P1 | config 已加，mcp_bridge.py + 前端设置页待开发 |
 
 ---
 

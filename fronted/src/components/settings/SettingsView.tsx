@@ -11,7 +11,7 @@
 import React, { useState } from 'react'
 import {
   Package, Cpu, Bot, Wrench, FileText, BookOpen,
-  Brain, Palette, Keyboard, Shield, BarChart3, ArrowLeft, HelpCircle,
+  Brain, Palette, Keyboard, Shield, BarChart3, ArrowLeft, HelpCircle, Server,
 } from 'lucide-react'
 import { ProjectSettings } from './ProjectSettings'
 import { ModelSettings } from './ModelSettings'
@@ -25,8 +25,9 @@ import { ShortcutSettings } from './ShortcutSettings'
 import { PermissionSettings } from './PermissionSettings'
 import { UsageSettings } from './UsageSettings'
 import { HelpGuide } from './HelpGuide'
+import { McpSettings } from './McpSettings'
 
-type TabId = 'project' | 'model' | 'agent' | 'tools' | 'prompt' | 'conventions' | 'memory' | 'appearance' | 'shortcuts' | 'permissions' | 'usage' | 'help'
+type TabId = 'project' | 'model' | 'agent' | 'tools' | 'prompt' | 'conventions' | 'memory' | 'appearance' | 'shortcuts' | 'permissions' | 'usage' | 'help' | 'mcp'
 
 interface TabItem {
   id: TabId
@@ -47,6 +48,7 @@ const TABS: TabItem[] = [
   { id: 'permissions', label: '权限管理', icon: <Shield size={16} /> },
   { id: 'usage', label: '用量统计', icon: <BarChart3 size={16} /> },
   { id: 'help', label: '使用指南', icon: <HelpCircle size={16} /> },
+  { id: 'mcp', label: 'MCP 服务器', icon: <Server size={16} /> },
 ]
 
 const TAB_COMPONENTS: Record<TabId, React.ComponentType> = {
@@ -62,6 +64,7 @@ const TAB_COMPONENTS: Record<TabId, React.ComponentType> = {
   permissions: PermissionSettings,
   usage: UsageSettings,
   help: HelpGuide,
+  mcp: McpSettings,
 }
 
 interface SettingsViewProps {
