@@ -2,6 +2,10 @@
  * TAgent Electron 主进程
  */
 
+// 设置控制台编码为 UTF-8
+process.stdout.setDefaultEncoding?.('utf8')
+process.stderr.setDefaultEncoding?.('utf8')
+
 const { app, BrowserWindow, Menu, Tray, nativeImage } = require('electron')
 const { spawn } = require('child_process')
 const path = require('path')
@@ -61,15 +65,37 @@ function startPythonBackend() {
   }
 
   console.log(`[Electron] 启动后端: ${exePath}`)
+  
+  // 打包模式下，将后端输出写入日志文件
+  const logPath = path.join(app.getPath('userData'), 'backend.log')
+  console.log(`[Electron] 后端日志: ${logPath}`)
+  
   pythonProcess = spawn(exePath, [], {
     cwd: path.dirname(exePath),
-    stdio: 'inherit',
-    windowsHide: true
+    stdio: ['ignore', 'pipe', 'pipe'],  // 分离输出
+    windowsHide: true,
+    env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
   })
 
-  pythonProcess.on('error', (err) => console.error('[Electron] 后端启动失败:', err))
+  // 记录后端输出到日志
+  if (pythonProcess.stdout) {
+    pythonProcess.stdout.on('data', (data) => {
+      fs.appendFileSync(logPath, data)
+    })
+  }
+  if (pythonProcess.stderr) {
+    pythonProcess.stderr.on('data', (data) => {
+      fs.appendFileSync(logPath, data)
+    })
+  }
+
+  pythonProcess.on('error', (err) => {
+    console.error('[Electron] 后端启动失败:', err)
+    fs.appendFileSync(logPath, `[ERROR] ${err}\n`)
+  })
   pythonProcess.on('exit', (code) => {
     console.log(`[Electron] 后端已退出: code=${code}`)
+    fs.appendFileSync(logPath, `[EXIT] code=${code}\n`)
     pythonProcess = null
   })
   return true
@@ -107,11 +133,15 @@ function createWindow() {
   console.log(`[Electron] 加载: ${url}`)
   mainWindow.loadURL(url)
 
+  // 隐藏默认菜单栏
+  Menu.setApplicationMenu(null)
+
   mainWindow.once('ready-to-show', () => {
     mainWindow.show()
     console.log('[Electron] 窗口已显示')
   })
 
+  // 开发模式自动打开 DevTools
   if (!app.isPackaged) mainWindow.webContents.openDevTools()
 
   mainWindow.on('close', (event) => {

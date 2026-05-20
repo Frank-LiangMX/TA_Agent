@@ -33,10 +33,23 @@ else:
 # 设置工作目录
 os.chdir(BASE_DIR)
 
-# 将项目根目录和数据目录加入 Python 路径
-for p in [BASE_DIR, DATA_DIR, os.path.join(DATA_DIR, "fronted", "server")]:
-    if p not in sys.path and os.path.isdir(p):
-        sys.path.insert(0, p)
+# 将 _internal 目录放在 Python 路径最前面（打包后模块都在这里）
+if os.path.isdir(DATA_DIR):
+    if DATA_DIR not in sys.path:
+        sys.path.insert(0, DATA_DIR)
+    # 确保 tools 目录可被导入
+    tools_dir = os.path.join(DATA_DIR, "tools")
+    if os.path.isdir(tools_dir) and tools_dir not in sys.path:
+        sys.path.insert(0, tools_dir)
+    # 确保 fronted/server 目录可被导入
+    server_dir = os.path.join(DATA_DIR, "fronted", "server")
+    if os.path.isdir(server_dir) and server_dir not in sys.path:
+        sys.path.insert(0, server_dir)
+
+# 开发环境：将项目根目录加入路径
+if not getattr(sys, 'frozen', False):
+    if BASE_DIR not in sys.path:
+        sys.path.insert(0, BASE_DIR)
 
 SERVER_HOST = "127.0.0.1"
 SERVER_PORT = 8080
