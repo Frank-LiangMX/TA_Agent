@@ -30,11 +30,10 @@ dist/
 build/
 *.spec
 
-# 前端构建
-fronted/dist/
-fronted/node_modules/
-fronted/bun.lock
-fronted/package-lock.json
+# Electron 打包产物
+electron/release/
+electron/release-*/
+electron/dist/
 
 # IDE
 .idea/
