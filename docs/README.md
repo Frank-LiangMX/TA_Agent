@@ -1,6 +1,6 @@
 # 文档地图
 
-> 最后更新：2026-05-19
+> 最后更新：2026-05-20
 
 ## 文档结构
 
@@ -15,7 +15,8 @@ docs/
 │   ├── backend/
 │   └── frontend/
 └── guides/                   # 使用指南——流程说明
-    └── workflow.md           # 单人/团队工作流、SVN 集成、推广策略
+    ├── workflow.md           # 单人/团队工作流、SVN 集成、推广策略
+    └── ue-plugin-mcp-guide.md  # UE 插件 MCP 化指南（供项目组开发参考）
 ```
 
 ## 阅读指引
@@ -30,6 +31,10 @@ docs/
 | 了解团队怎么用这个工具 | `guides/workflow.md` |
 | 了解项目全貌 | 根目录 `README.md` |
 | 美术操作指南 | `guides/artist-guide.md` |
+| UE 插件 MCP 化 | `guides/ue-plugin-mcp-guide.md` |
+| 分布式架构设计 | `decisions/distributed-architecture.md` |
+| 用户认证设计 | `decisions/user-auth-design.md` |
+| 客户端双模式设计 | `decisions/client-dual-mode-design.md` |
 
 ## 写入规则
 
