@@ -3,15 +3,15 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Square, Wifi, WifiOff, Settings2, Trash2, Loader2, CheckCircle2, FolderSearch, Brain, FileCheck, Package } from 'lucide-react'
+import { Send, Square, Wifi, WifiOff, Settings2, Trash2, Loader2, CheckCircle2, FolderSearch, Brain, FileCheck, Package, MessageSquare, Bot } from 'lucide-react'
 import { ChatMessage } from '../chat/ChatMessage'
 import { ContextDivider } from '../chat/ContextDivider'
 import { ScrollMinimap } from '../chat/ScrollMinimap'
 import { AssetMentionPopover } from '../chat/AssetMentionPopover'
-import { SessionSelector } from '../session/SessionSelector'
+import { SessionTabBar } from '../session/SessionTabBar'
 import { ThinkingDots, SkeletonBlock } from '../animations'
 import { tagentClient, type ConnectionStatus } from '@/services/websocket'
-import { getSessionMessages } from '@/services/sessions'
+import { getSessionMessages, getSession } from '@/services/sessions'
 import { fetchPipelineRunsForSession, type PipelineRun } from '@/services/pipeline'
 import type { ChatMessage as ChatMessageType, ToolCall } from '@/types'
 
@@ -57,14 +57,21 @@ const MOCK_MESSAGES: ChatMessageType[] = [
 ]
 
 export function MainPanel({ onAssetSelect }: MainPanelProps) {
-  const [messages, setMessages] = useState<ChatMessageType[]>(MOCK_MESSAGES)
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(tagentClient.status)
   const [workflowMode, setWorkflowMode] = useState<'step_by_step' | 'auto'>('step_by_step')
-  const [sessionId, setSessionId] = useState<string | null>(
-    tagentClient.sessionId || localStorage.getItem('tagent-session-id')
+
+  // ===== 多标签会话管理 =====
+  const [openTabIds, setOpenTabIds] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('tagent-open-tabs') || '[]') } catch { return [] }
+  })
+  const [activeTabId, setActiveTabId] = useState<string | null>(
+    tagentClient.sessionId || localStorage.getItem('tagent-active-tab') || openTabIds[0] || null
   )
+  const [tabMessages, setTabMessages] = useState<Record<string, ChatMessageType[]>>({})
+  const [tabTitles, setTabTitles] = useState<Record<string, string>>({})
+
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const streamingMsgRef = useRef<string | null>(null)
@@ -76,83 +83,173 @@ export function MainPanel({ onAssetSelect }: MainPanelProps) {
   const [mentionQuery, setMentionQuery] = useState<string | null>(null)
   const [mentionAssets, setMentionAssets] = useState<Array<{ id: string; name: string }>>([])
   const [isAtBottom, setIsAtBottom] = useState(true)
+  const [streamingTabs, setStreamingTabs] = useState<Set<string>>(new Set())
 
-  // 持久化 sessionId（页面切换不丢失）
+  // 当前标签的消息
+  // Ref 保持 openTabIds 在事件回调中最新
+  const openTabIdsRef = useRef(openTabIds)
+  openTabIdsRef.current = openTabIds
+  const tabMessagesRef = useRef(tabMessages)
+  tabMessagesRef.current = tabMessages
+
+  // 当前标签的消息（activeTabId 为 null 时显示空数组）
+  const messages = activeTabId ? (tabMessages[activeTabId] || []) : []
+  const sessionId = activeTabId
+  const setMessages = useCallback((updater: ChatMessageType[] | ((prev: ChatMessageType[]) => ChatMessageType[])) => {
+    if (!activeTabId) return
+    const tabId = activeTabId
+    setTabMessages(prev => {
+      const current = prev[tabId] || MOCK_MESSAGES
+      return { ...prev, [tabId]: typeof updater === 'function' ? updater(current) : updater }
+    })
+  }, [activeTabId])
+
+  // 持久化 openTabs
   useEffect(() => {
-    if (sessionId) {
-      localStorage.setItem('tagent-session-id', sessionId)
-    } else {
-      localStorage.removeItem('tagent-session-id')
-    }
-  }, [sessionId])
+    localStorage.setItem('tagent-open-tabs', JSON.stringify(openTabIds))
+  }, [openTabIds])
 
-  // 切换会话：通过 RPC 切换，不断开连接
-  const handleSessionChange = useCallback(async (newSessionId: string) => {
-    setSessionId(newSessionId)
-    setContextCutoff(null)
-    streamingMsgRef.current = null
-    setIsStreaming(false)
-    setActiveTools(new Map())
-    setProgress(null)
+  // 持久化 activeTab
+  useEffect(() => {
+    if (activeTabId) localStorage.setItem('tagent-active-tab', activeTabId)
+  }, [activeTabId])
 
-    // 先通过 RPC 切换后端会话
+const loadTabHistory = useCallback(async (tabId: string) => {
     try {
-      const result = await tagentClient.switchSession(newSessionId)
-      console.log('[Session] 后端已切换:', result)
-    } catch (e) {
-      console.error('[Session] 切换失败:', e)
-    }
-
-    // 异步加载历史消息
-    try {
-      const history = await getSessionMessages(newSessionId, 50)
+      const history = await getSessionMessages(tabId, 50)
       if (history.length > 0) {
+        // 第一遍：收集工具结果摘要（避免加载完整结果导致卡顿）
+        const toolResultSummaries: Record<string, string> = {}
+        history.forEach((msg: Record<string, unknown>) => {
+          if (msg.role === 'tool' && msg.toolCallId) {
+            const content = (msg.content as string) || ''
+            // 只保留摘要（前 200 字符），避免加载过长内容
+            toolResultSummaries[msg.toolCallId as string] = content.length > 200
+              ? content.slice(0, 200) + '...[已截断]'
+              : content
+          }
+        })
+
+        // 第二遍：构建消息，关联工具结果摘要
         const converted: ChatMessageType[] = history
           .filter((msg: Record<string, unknown>) => {
-            // 过滤 tool 消息和空内容 assistant 消息
             const role = msg.role as string
             if (role === 'tool') return false
             if (role === 'assistant' && !msg.content && !msg.toolCalls) return false
             return true
           })
           .map((msg: Record<string, unknown>, i: number) => {
-            let toolCalls = msg.toolCalls as ToolCall[] | undefined
+            let toolCalls = msg.toolCalls as any[] | undefined
             if (toolCalls && Array.isArray(toolCalls)) {
-              toolCalls = toolCalls.map((tc: any) => ({
-                ...tc,
-                arguments: typeof tc.arguments === 'string' ? JSON.parse(tc.arguments) : tc.arguments,
-              }))
+              toolCalls = toolCalls.map((tc: any) => {
+                // 兼容两种格式：
+                // 1. OpenAI 格式: { id, function: { name, arguments } }
+                // 2. 简化格式: { id, name, arguments }
+                const name = tc.name || tc.function?.name || ''
+                const rawArgs = tc.arguments ?? tc.function?.arguments ?? '{}'
+                const parsedArgs = typeof rawArgs === 'string' ? (() => {
+                  try { return JSON.parse(rawArgs) } catch { return {} }
+                })() : rawArgs
+                return {
+                  id: tc.id,
+                  name,
+                  arguments: parsedArgs,
+                }
+              })
+            }
+            // 关联工具结果摘要
+            const _toolResults: Record<string, string> = {}
+            if (toolCalls) {
+              toolCalls.forEach((tc: ToolCall) => {
+                if (toolResultSummaries[tc.id]) {
+                  _toolResults[tc.id] = toolResultSummaries[tc.id]
+                }
+              })
             }
             return {
-              id: `hist-${newSessionId}-${i}`,
-              role: (msg.role as string) || 'assistant',
+              id: `hist-${tabId}-${i}`,
+              role: (msg.role as ChatMessageType['role']) || 'assistant',
               content: (msg.content as string) || '',
               timestamp: msg.timestamp ? new Date(msg.timestamp as string).getTime() : Date.now(),
               toolCalls,
+              _toolResults,
             }
           })
-        setMessages(converted)
+        setTabMessages(prev => ({ ...prev, [tabId]: converted.length > 0 ? converted : MOCK_MESSAGES }))
         setVisibleCount(Math.max(converted.length, 50))
       } else {
-        setMessages(MOCK_MESSAGES)
+        setTabMessages(prev => ({ ...prev, [tabId]: MOCK_MESSAGES }))
       }
     } catch (e) {
       console.error('[Session] 加载历史消息失败:', e)
-      setMessages(MOCK_MESSAGES)
+      setTabMessages(prev => ({ ...prev, [tabId]: MOCK_MESSAGES }))
     }
   }, [])
 
-  // 新建会话
-  const handleNewSession = useCallback(() => {
-    setSessionId(null)
-    setMessages(MOCK_MESSAGES)
+  // ===== 标签操作 =====
+
+  // 添加标签（打开一个会话）
+  const _openTab = useCallback(async (tabId: string, fetchHistory: boolean) => {
+    setOpenTabIds(prev => prev.includes(tabId) ? prev : [...prev, tabId])
+    setActiveTabId(tabId)
     setContextCutoff(null)
     streamingMsgRef.current = null
     setIsStreaming(false)
-    // 断开让后端创建新会话
+    setActiveTools(new Map())
+    setProgress(null)
+
+    // 获取会话标题（在缓存检查之前，标题总是需要更新）
+    try {
+      const meta = await getSession(tabId)
+      if (meta?.title) setTabTitles(prev => ({ ...prev, [tabId]: meta.title }))
+    } catch {}
+
+    // 通过 RPC 切换后端会话
+    try {
+      await tagentClient.switchSession(tabId)
+    } catch (e) {
+      console.error('[Session] 切换失败:', e)
+    }
+
+    // 如果已有缓存，后端切换完成后直接显示缓存
+    if (tabMessages[tabId] && tabMessages[tabId].length > 0) {
+      return
+    }
+
+    // 拉历史
+    if (!fetchHistory) return
+    await loadTabHistory(tabId)
+  }, [tabMessages, loadTabHistory])
+
+  // 选择标签（切换会话）
+  const handleTabSelect = useCallback(async (tabId: string) => {
+    if (tabId === activeTabId) return
+    await _openTab(tabId, true)
+  }, [_openTab, activeTabId])
+
+  // 新建标签
+  const handleNewTab = useCallback(() => {
+    setContextCutoff(null)
+    streamingMsgRef.current = null
+    setIsStreaming(false)
     tagentClient.disconnect()
     tagentClient.connect()
+    // WebSocket 连接后会分配 sessionId，在 onopen/onmessage 里处理
   }, [])
+
+// 关闭标签
+  const handleTabClose = useCallback((tabId: string) => {
+    setOpenTabIds(prev => {
+      const next = prev.filter(id => id !== tabId)
+      // 如果关的是当前标签，切到相邻或设为 null（空白状态）
+      if (tabId === activeTabId) {
+        const idx = prev.indexOf(tabId)
+        const switchTo = next[Math.min(idx, next.length - 1)] || null
+        setActiveTabId(switchTo)
+      }
+      return next
+    })
+  }, [activeTabId])
 
   // 滚到顶部加载更多 + 检测是否在底部
   const handleScroll = useCallback(() => {
@@ -219,7 +316,22 @@ export function MainPanel({ onAssetSelect }: MainPanelProps) {
     // 连接确认：捕获后端分配的 sessionId
     const unsubConnected = tagentClient.on('connected', (payload: any) => {
       if (payload?.sessionId) {
-        setSessionId(payload.sessionId)
+        // 恢复或新建的后端会话都必须对应一个前端标签。
+        setOpenTabIds(prev => prev.includes(payload.sessionId) ? prev : [...prev, payload.sessionId])
+        setActiveTabId(payload.sessionId)
+
+        if (!tabMessagesRef.current[payload.sessionId]) {
+          loadTabHistory(payload.sessionId)
+        }
+
+        // 异步加载标题
+        if (payload.title) {
+          setTabTitles(prev => ({ ...prev, [payload.sessionId]: payload.title }))
+        } else {
+          getSession(payload.sessionId).then(meta => {
+            if (meta?.title) setTabTitles(prev => ({ ...prev, [payload.sessionId]: meta.title }))
+          }).catch(() => {})
+        }
       }
     })
 
@@ -352,6 +464,14 @@ export function MainPanel({ onAssetSelect }: MainPanelProps) {
       setActiveTools(new Map())
       setProgress(null) // 兜底：清除进度条
       setSessionRefreshKey((k) => k + 1) // 刷新会话标题
+      // 移除当前标签的运行状态
+      if (activeTabId) {
+        setStreamingTabs(prev => {
+          const next = new Set(prev)
+          next.delete(activeTabId)
+          return next
+        })
+      }
 
       if (content) {
         setMessages((prev) => {
@@ -387,6 +507,14 @@ export function MainPanel({ onAssetSelect }: MainPanelProps) {
       streamingMsgRef.current = null
       setIsStreaming(false)
       setActiveTools(new Map())
+      // 移除当前标签的运行状态
+      if (activeTabId) {
+        setStreamingTabs(prev => {
+          const next = new Set(prev)
+          next.delete(activeTabId)
+          return next
+        })
+      }
       setMessages((prev) => [...prev, {
         id: `error-${Date.now()}`,
         role: 'assistant' as const,
@@ -407,7 +535,7 @@ export function MainPanel({ onAssetSelect }: MainPanelProps) {
       unsubError()
       // 不断开 WebSocket，由 App 层管理连接
     }
-  }, [])
+  }, [loadTabHistory])
 
   const handleSend = useCallback(async () => {
     if (!input.trim() || isStreaming) return
@@ -425,6 +553,10 @@ export function MainPanel({ onAssetSelect }: MainPanelProps) {
     setMentionQuery(null)
     setIsStreaming(true)
     streamingMsgRef.current = null
+    // 标记当前标签为运行中
+    if (activeTabId) {
+      setStreamingTabs(prev => new Set(prev).add(activeTabId))
+    }
 
     // 添加用户消息
     const userMsg: ChatMessageType = {
@@ -508,18 +640,21 @@ export function MainPanel({ onAssetSelect }: MainPanelProps) {
   return (
     <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
       {/* 头部 */}
-      <header className="h-14 flex items-center justify-between px-4 border-b border-border/50 shrink-0">
-        <div className="flex items-center gap-3">
-          <SessionSelector
-            sessionId={sessionId}
-            onSessionChange={handleSessionChange}
-            onNewSession={handleNewSession}
-            refreshKey={sessionRefreshKey}
+      {/* 头部：标签栏 + 操作区 */}
+      <div className="flex items-center justify-between px-4 shrink-0 border-b border-border/50 bg-card">
+        <div className="flex items-center min-w-0 flex-1 h-9">
+          <SessionTabBar
+            openTabs={openTabIds}
+            activeTabId={activeTabId}
+            tabTitles={tabTitles}
+            streamingTabs={streamingTabs}
+            onTabSelect={handleTabSelect}
+            onTabClose={handleTabClose}
+            onNewTab={handleNewTab}
           />
-          <ConnectionBadge status={connectionStatus} />
         </div>
-        <div className="flex items-center gap-2">
-          {/* 工作流模式切换 */}
+        <div className="flex items-center gap-2 shrink-0 h-9">
+          <ConnectionBadge status={connectionStatus} />
           <select
             value={workflowMode}
             onChange={(e) => {
@@ -542,13 +677,31 @@ export function MainPanel({ onAssetSelect }: MainPanelProps) {
             <Trash2 size={16} />
           </button>
         </div>
-      </header>
+      </div>
 
       <PipelineProgress sessionId={sessionId} />
 
       {/* 消息列表 */}
       <div className="flex-1 min-h-0 relative overflow-x-hidden">
       <div ref={listRef} onScroll={handleScroll} className="h-full overflow-y-auto overflow-x-hidden scrollbar-thin p-4 space-y-4">
+        {/* 无会话时的空白状态 */}
+        {!activeTabId && openTabIds.length === 0 && (
+          <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+            <MessageSquare size={48} className="opacity-20 mb-4" />
+            <p className="text-sm">没有打开的会话</p>
+            <p className="text-xs mt-1 opacity-60">点击左侧会话列表打开一个会话</p>
+          </div>
+        )}
+        
+        {/* 有会话但无消息 */}
+        {activeTabId && messages.length === 0 && (
+          <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+            <Bot size={48} className="opacity-20 mb-4" />
+            <p className="text-sm">开始新对话</p>
+            <p className="text-xs mt-1 opacity-60">输入消息开始与 Agent 交流</p>
+          </div>
+        )}
+        
         {messages.length > visibleCount && (
           <div className="text-center py-2">
             <button

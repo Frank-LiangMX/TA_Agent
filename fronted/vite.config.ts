@@ -11,7 +11,7 @@ export default defineConfig({
   root: resolve(__dirname, 'src'),
   base: './',
   build: {
-    outDir: resolve(__dirname, 'dist'),
+    outDir: resolve(__dirname, '..', 'dist', 'frontend'),
     emptyOutDir: true,
   },
   resolve: {
@@ -23,7 +23,7 @@ export default defineConfig({
   server: {
     port: 5175,
     strictPort: true,
-    open: true,
+    open: false,
     host: '0.0.0.0',
   },
 })

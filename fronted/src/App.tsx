@@ -7,6 +7,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Toaster } from 'sonner'
 import { tagentClient } from './services/websocket'
+import { getSession, listSessions } from './services/sessions'
 import { Sidebar, type ViewType } from './components/layout/Sidebar'
 import { ResizeHandle } from './components/layout/ResizeHandle'
 import { MainPanel } from './components/layout/MainPanel'
@@ -28,10 +29,38 @@ export default function App() {
   const sidebarRef = useRef<HTMLDivElement>(null)
   const detailRef = useRef<HTMLDivElement>(null)
 
-  // WebSocket 连接由 App 层管理，全局只连一次（新会话）
+  // WebSocket 连接由 App 层管理，启动时优先恢复已有会话，避免每次打开都创建新会话。
   useEffect(() => {
-    tagentClient.connect()
-    return () => tagentClient.disconnect()
+    let cancelled = false
+
+    const connectInitialSession = async () => {
+      const storedActiveId = localStorage.getItem('tagent-active-tab')
+      if (storedActiveId) {
+        try {
+          const existing = await getSession(storedActiveId)
+          if (!cancelled && existing) {
+            tagentClient.connect(storedActiveId)
+            return
+          }
+        } catch {}
+      }
+
+      try {
+        const sessions = await listSessions(false)
+        if (!cancelled && sessions.length > 0) {
+          tagentClient.connect(sessions[0].sessionId)
+          return
+        }
+      } catch {}
+
+      if (!cancelled) tagentClient.connect()
+    }
+
+    connectInitialSession()
+    return () => {
+      cancelled = true
+      tagentClient.disconnect()
+    }
   }, [])
 
   // 切换视图时自动关闭资产详情（仅资产库和搜索页可查看详情）

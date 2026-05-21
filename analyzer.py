@@ -18,11 +18,11 @@ from tags.store import TagStore
 from tags.inferrer import infer_batch
 
 # 导入现有工具的底层逻辑
-from tools.file_info import scan_directory
-from tools.naming import check_naming
-from tools.texture import check_texture_info
-from tools.mesh_fbx import check_fbx_info
-from tools.renderer import render_asset_preview, clean_orphan_previews
+from tools.core.file_info import scan_directory
+from tools.core.naming import check_naming
+from tools.core.texture import check_texture_info
+from tools.core.mesh_fbx import check_fbx_info
+from tools.core.renderer import render_asset_preview, clean_orphan_previews
 
 # 导入记忆模块
 from tools.memory import MemoryProvider, NullMemoryProvider, build_memory_context, extract_asset_features

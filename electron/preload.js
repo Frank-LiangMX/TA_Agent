@@ -14,6 +14,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // 应用信息
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  getBackendLogPath: () => ipcRenderer.invoke('backend-log-path'),
+  openBackendLog: () => ipcRenderer.invoke('open-backend-log'),
+  openUserDataDir: () => ipcRenderer.invoke('open-user-data-dir'),
   
   // 窗口控制
   minimizeWindow: () => ipcRenderer.send('window-minimize'),

@@ -30,7 +30,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 # 导入 ta_agent 模块（不修改原文件）
-from config import get_llm_config
+from config import get_llm_config, MEMORY_DIR
 from tools import TOOLS, execute_tool
 from conventions.context import get_conventions_context, set_conventions_context
 import session_manager
@@ -38,7 +38,7 @@ import session_manager
 # 尝试导入记忆模块
 try:
     from tools.memory import FileMemoryProvider
-    from tools.memory_tools import set_memory_provider
+    from tools.core.memory_llm_tools import set_memory_provider
     HAS_MEMORY = True
 except ImportError:
     HAS_MEMORY = False
@@ -749,7 +749,7 @@ async def check_ue5_plugin(project_path: str = ""):
         except (ImportError, AttributeError):
             return {"installed": False, "error": "未配置 UE5 项目路径"}
 
-    from tools.ue5_bridge import check_plugin_installed
+    from tools.extensions.ue5_bridge import check_plugin_installed
     return check_plugin_installed(project_path)
 
 
@@ -760,14 +760,14 @@ async def install_ue5_plugin(payload: dict = Body(...)):
     if not project_path:
         return {"error": "project_path 不能为空"}
 
-    from tools.ue5_bridge import install_plugin
+    from tools.extensions.ue5_bridge import install_plugin
     return install_plugin(project_path)
 
 
 @app.get("/api/ue5/ping")
 async def ue5_ping():
     """测试 UE5 连接"""
-    from tools.ue5_bridge import ue5_ping as _ping
+    from tools.extensions.ue5_bridge import ue5_ping as _ping
     return _ping()
 
 
@@ -775,16 +775,25 @@ async def ue5_ping():
 
 @app.get("/api/tools")
 async def list_all_tools():
-    """列出所有内置工具"""
+    """列出所有工具（按层级分组：core/extension/mcp/plugin）"""
+    from tools.registry import TOOLS, TOOL_TIER, get_tools_by_tier
+
+    tier_info = get_tools_by_tier()
     tools_info = []
     for schema in TOOLS:
         func_def = schema.get("function", {})
+        name = func_def.get("name", "")
         tools_info.append({
-            "name": func_def.get("name", ""),
+            "name": name,
             "description": func_def.get("description", ""),
-            "category": _categorize_tool(func_def.get("name", "")),
+            "category": _categorize_tool(name),
+            "tier": TOOL_TIER.get(name, "core"),
         })
-    return {"tools": tools_info, "count": len(tools_info)}
+    return {
+        "tools": tools_info,
+        "count": len(tools_info),
+        "tier_summary": {tier: len(names) for tier, names in tier_info.items()},
+    }
 
 
 def _categorize_tool(name: str) -> str:
@@ -1345,7 +1354,7 @@ async def get_asset_detail(asset_id: str):
 async def get_pending_reviews(limit: int = 100):
     """获取待审核资产（使用 review.py 的分类审核逻辑）"""
     try:
-        from tools.review import get_pending_reviews as _get_reviews
+        from tools.core.review import get_pending_reviews as _get_reviews
         result = _get_reviews(confidence_threshold=0.9, include_animation=False)
         return result
     except Exception as e:
@@ -1421,7 +1430,7 @@ async def get_stats():
 async def get_memory_stats():
     """获取记忆系统状态"""
     try:
-        from tools.memory_tools import get_memory_stats as _get_stats
+        from tools.core.memory_llm_tools import get_memory_stats as _get_stats
         result = _get_stats()
         return result
     except Exception as e:
@@ -1532,7 +1541,7 @@ async def render_asset_preview_api(asset_id: str):
             return {"error": f"资产类型 {tags.asset_type} 不支持渲染"}
 
         # 调用 Blender 渲染
-        from tools.renderer import render_asset_preview
+        from tools.core.renderer import render_asset_preview
         result = render_asset_preview(tags.file_path)
 
         if result.get("success"):
@@ -1569,18 +1578,17 @@ if __name__ == "__main__":
     print("  ws://localhost:8080/ws")
     print("=" * 50)
 
-    # 初始化记忆系统
+    # 初始化记忆系统（使用统一路径配置）
     if HAS_MEMORY:
         try:
-            memory_dir = os.path.join(TA_AGENT_DIR, ".ta_agent", "memory")
-            provider = FileMemoryProvider(memory_dir)
+            provider = FileMemoryProvider()
             set_memory_provider(provider)
-            print(f"  记忆系统: {memory_dir}")
+            print(f"  记忆系统: {MEMORY_DIR}")
         except Exception as e:
             print(f"  记忆系统: 初始化失败 ({e})")
 
-    # 初始化会话管理器
-    session_manager.init(os.path.join(TA_AGENT_DIR, ".ta_agent"))
+    # 初始化会话管理器（使用统一路径配置）
+    session_manager.init()
     stats = session_manager.get_stats()
     print(f"  会话管理: {stats['active_sessions']} 个活跃会话, {stats['total_messages']} 条消息")
 

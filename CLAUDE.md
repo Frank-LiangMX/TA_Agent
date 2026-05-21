@@ -7,6 +7,17 @@
 - 每个工具独立文件，统一注册到 `tools/registry.py`
 - 接口定义与实现分离（如 `provider.py` + `file_provider.py`）
 
+### 开发产出清理
+- **测试文件完成使命后立即删除**：功能开发完成后，对应的测试文件（`tests/` 下）如果没有 CI 持续维护，必须自行清除，不留脏代码
+- **调试代码禁止提交**：`print`、`import pdb`、临时日志、注释掉的代码块，在任务完成前全部清理
+- **实验分支的产物**：实验成功后，把结论写进 `docs/experiments/`，实验代码分支删除；实验失败同样保留文档记录，代码分支删除
+- **pycache 等缓存目录**：提交前检查 `.pytest_cache`、`__pycache__` 等缓存目录是否在 `.gitignore` 中，不在则清理
+
+### 根目录文件规范
+- **根目录只允许存放**：入口文件（`agent.py`、`launcher.py`）、配置文件（`.gitignore`、`mcp.json`、`TAgent.spec`）、文档（`README.md`、`CLAUDE.md`、`progress.md`）、构建脚本（`*.bat`）
+- **禁止在根目录创建新的 .py 代码文件**：新增模块必须放入对应的子目录（`tools/`、`tags/`、`core/` 等）
+- **历史遗留**：根目录现有的 `analyzer.py`、`config.py`、`session_manager.py`、`batch_render.py`、`run_render.py`、`quickstart.py` 是历史债务，后续重构时逐步迁入 `core/` 或 `scripts/`
+
 ## 工具开发规范
 
 ### 新增工具标准模板

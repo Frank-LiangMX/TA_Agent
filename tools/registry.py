@@ -16,36 +16,36 @@ import importlib
 import sys
 
 # 导入所有工具模块
-from tools.naming import check_naming, suggest_naming
-from tools.directory import check_directory_structure
-from tools.file_info import check_file_info, scan_directory
-from tools.mesh import check_mesh_budget
-from tools.mesh_fbx import check_fbx_info, check_blender
-from tools.texture import check_texture_info, check_texture_batch
-from tools.report import generate_report
-from tools.identity import analyze_assets, run_ai_inference, update_asset_type, update_asset, search_assets, get_asset_detail, list_assets
-from tools.convention_tools import discover_conventions, load_conventions
-from tools.memory_tools import record_correction, get_memory_stats, update_project_profile
-from tools.renderer import render_asset_preview
-from tools.review import get_pending_reviews, get_review_detail, submit_review, batch_approve
-from tools.review_schema import GET_PENDING_REVIEWS_DEF, GET_REVIEW_DETAIL_DEF, SUBMIT_REVIEW_DEF, BATCH_APPROVE_DEF
-from tools.config_tools import (
+from tools.core.naming import check_naming, suggest_naming
+from tools.core.directory import check_directory_structure
+from tools.core.file_info import check_file_info, scan_directory
+from tools.core.mesh import check_mesh_budget
+from tools.core.mesh_fbx import check_fbx_info, check_blender
+from tools.core.texture import check_texture_info, check_texture_batch
+from tools.core.report import generate_report
+from tools.core.identity import analyze_assets, run_ai_inference, update_asset_type, update_asset, search_assets, get_asset_detail, list_assets
+from tools.core.convention_tools import discover_conventions, load_conventions
+from tools.core.memory_llm_tools import record_correction, get_memory_stats, update_project_profile
+from tools.core.renderer import render_asset_preview
+from tools.core.review import get_pending_reviews, get_review_detail, submit_review, batch_approve
+from tools.core.review_schema import GET_PENDING_REVIEWS_DEF, GET_REVIEW_DETAIL_DEF, SUBMIT_REVIEW_DEF, BATCH_APPROVE_DEF
+from tools.core.config_tools import (
     check_project_config_tool, list_project_configs_tool,
     create_project_config_tool, load_project_config_tool,
     CHECK_PROJECT_CONFIG_DEF, LIST_PROJECT_CONFIGS_DEF,
     CREATE_PROJECT_CONFIG_DEF, LOAD_PROJECT_CONFIG_DEF,
     ADD_CUSTOM_RULE_DEF, add_custom_rule,
 )
-from tools.asset_operations import (
+from tools.core.asset_operations import (
     suggest_rename, rename_asset, batch_rename, create_directory, move_asset,
     SUGGEST_RENAME_DEF, RENAME_ASSET_DEF, BATCH_RENAME_DEF,
     CREATE_DIRECTORY_DEF, MOVE_ASSET_DEF,
 )
-from tools.intake import (
+from tools.core.intake import (
     intake_asset, intake_batch, intake_approved,
     INTAKE_ASSET_DEF, INTAKE_BATCH_DEF, INTAKE_APPROVED_DEF,
 )
-from tools.ue5_bridge import (
+from tools.extensions.ue5_bridge import (
     UE5_TOOLS, UE5_TOOL_FUNCTIONS,
 )
 from tools.mcp_bridge import (
@@ -56,22 +56,34 @@ from tools.mcp_bridge import (
 # ========== Schema 注册 ==========
 # 每个模块导出 SCHEMA 变量，这里汇总
 
-from tools.naming import SCHEMA as NAMING_SCHEMA, SUGGEST_SCHEMA
-from tools.directory import SCHEMA as DIR_SCHEMA
-from tools.file_info import CHECK_FILE_INFO_SCHEMA, SCAN_DIRECTORY_SCHEMA
-from tools.mesh import SCHEMA as MESH_SCHEMA
-from tools.mesh_fbx import SCHEMA as FBX_SCHEMA, CHECK_BLENDER_SCHEMA
-from tools.texture import SCHEMA as TEX_SCHEMA, BATCH_SCAN_SCHEMA
-from tools.report import SCHEMA as REPORT_SCHEMA
-from tools.identity import (
+from tools.core.naming import SCHEMA as NAMING_SCHEMA, SUGGEST_SCHEMA
+from tools.core.directory import SCHEMA as DIR_SCHEMA
+from tools.core.file_info import CHECK_FILE_INFO_SCHEMA, SCAN_DIRECTORY_SCHEMA
+from tools.core.mesh import SCHEMA as MESH_SCHEMA
+from tools.core.mesh_fbx import SCHEMA as FBX_SCHEMA, CHECK_BLENDER_SCHEMA
+from tools.core.texture import SCHEMA as TEX_SCHEMA, BATCH_SCAN_SCHEMA
+from tools.core.report import SCHEMA as REPORT_SCHEMA
+from tools.core.identity import (
     ANALYZE_ASSETS_DEF, RUN_INFERENCE_DEF, UPDATE_ASSET_TYPE_DEF, UPDATE_ASSET_DEF,
     SEARCH_ASSETS_DEF, GET_ASSET_DETAIL_DEF, LIST_ASSETS_DEF,
 )
-from tools.convention_tools import DISCOVER_CONVENTIONS_DEF, LOAD_CONVENTIONS_DEF
-from tools.memory_tools import RECORD_CORRECTION_DEF, GET_MEMORY_STATS_DEF, UPDATE_PROJECT_PROFILE_DEF
-from tools.renderer import SCHEMA as RENDERER_SCHEMA
+from tools.core.convention_tools import DISCOVER_CONVENTIONS_DEF, LOAD_CONVENTIONS_DEF
+from tools.core.memory_llm_tools import RECORD_CORRECTION_DEF, GET_MEMORY_STATS_DEF, UPDATE_PROJECT_PROFILE_DEF
+from tools.core.renderer import SCHEMA as RENDERER_SCHEMA
 
-# 所有工具 Schema 列表（传给 LLM）
+# ========== 工具层级分类 ==========
+# tier: core(内置) | extension(扩展) | mcp(动态) | plugin(可选插件)
+# core+extension 启动即注册，mcp 从 mcp.json 加载，plugin 从 plugins/ 加载
+
+TOOL_TIER: dict[str, str] = {}  # tool_name → tier
+
+
+def _tag_tier(name: str, tier: str):
+    TOOL_TIER[name] = tier
+
+
+# ========== Schema 注册 ==========
+
 TOOLS = [
     NAMING_SCHEMA,
     SUGGEST_SCHEMA,
@@ -117,6 +129,37 @@ TOOLS = [
     *UE5_TOOLS,
     *MCP_TOOLS,
 ]
+
+
+# ========== 工具层级标注 ==========
+# 四种层级: core(内置) | extension(引擎扩展) | mcp(动态) | plugin(可选插件)
+
+def _build_tier_map():
+    mcp_names = {s["function"]["name"] for s in MCP_TOOLS}
+    ext_names = {s["function"]["name"] for s in UE5_TOOLS}
+    for schema in TOOLS:
+        name = schema["function"]["name"]
+        if name in mcp_names:
+            _tag_tier(name, "mcp")
+        elif name in ext_names:
+            _tag_tier(name, "extension")
+        elif name.startswith("mcp__"):
+            _tag_tier(name, "mcp")
+        else:
+            _tag_tier(name, "core")
+
+
+_build_tier_map()
+del _build_tier_map
+
+
+def get_tools_by_tier() -> dict[str, list[str]]:
+    """返回按层级分组的工具名列表"""
+    tiers: dict[str, list[str]] = {"core": [], "extension": [], "mcp": [], "plugin": []}
+    for name, tier in TOOL_TIER.items():
+        if tier in tiers:
+            tiers[tier].append(name)
+    return tiers
 
 
 # ========== 工具执行函数注册 ==========
@@ -221,6 +264,7 @@ def _load_plugins():
                     TOOLS.append(schema)
                     TOOL_FUNCTIONS[func_name] = func
                     loaded.append(func_name)
+                    _tag_tier(func_name, "plugin")
                     continue
 
             # 格式 2：多工具（SCHEMAS + TOOL_FUNCTIONS）
@@ -235,6 +279,7 @@ def _load_plugins():
                         TOOLS.append(s)
                         TOOL_FUNCTIONS[fname] = func
                         loaded.append(fname)
+                        _tag_tier(fname, "plugin")
                         count += 1
                 if count > 0:
                     continue
@@ -262,6 +307,11 @@ def _load_mcp_servers():
     """加载 MCP 服务器工具（启动时连接所有已启用的服务器）"""
     from tools.mcp_bridge import _load_mcp_servers_sync
     count = _load_mcp_servers_sync()
+    # 给动态加载的 MCP 工具标注层级
+    for schema in TOOLS:
+        name = schema["function"]["name"]
+        if name.startswith("mcp__") and name not in TOOL_TIER:
+            _tag_tier(name, "mcp")
     if count:
         print(f"  MCP 加载: {count} 个工具已注册")
 _load_mcp_servers()

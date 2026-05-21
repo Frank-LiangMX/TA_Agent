@@ -199,3 +199,87 @@ PROJECT_DIRECTORY_TREE = """
 
 # MCP 服务器配置已迁移到项目根目录 mcp.json
 # 格式参照 Proma Agent mcp.json，通过 tools/mcp_bridge.py 读取
+
+# ========== 路径常量 ==========
+import os
+import sys
+
+# 项目根目录（代码所在目录）
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+
+# 运行时数据根目录
+# 开发模式：使用项目内的 .ta_agent 目录
+# 打包模式：使用用户目录（%LOCALAPPDATA%\TAgent\），确保用户数据在更新后保留
+def _get_runtime_dir() -> str:
+    # 判断是否在打包环境中（PyInstaller 会设置 sys.frozen）
+    if getattr(sys, 'frozen', False):
+        # 打包模式：使用用户目录
+        if sys.platform == 'win32':
+            # Windows: C:\Users\<用户名>\AppData\Local\TAgent\
+            base = os.environ.get('LOCALAPPDATA', os.path.expanduser('~'))
+            return os.path.join(base, 'TAgent')
+        elif sys.platform == 'darwin':
+            # macOS: ~/Library/Application Support/TAgent/
+            return os.path.join(os.path.expanduser('~'), 'Library', 'Application Support', 'TAgent')
+        else:
+            # Linux: ~/.local/share/TAgent/
+            return os.path.join(os.path.expanduser('~'), '.local', 'share', 'TAgent')
+    else:
+        # 开发模式：使用项目内的 .ta_agent 目录
+        return os.path.join(PROJECT_ROOT, '.ta_agent')
+
+RUNTIME_DIR = _get_runtime_dir()
+
+# ========== 数据库路径 ==========
+# 资产标签数据库
+TAG_STORE_DIR = os.path.join(RUNTIME_DIR, "tag_store")
+
+# ========== 会话路径 ==========
+# 会话数据目录
+SESSIONS_DIR = os.path.join(RUNTIME_DIR, "sessions")
+
+# ========== 记忆系统路径 ==========
+# 记忆数据目录
+MEMORY_DIR = os.path.join(RUNTIME_DIR, "memory")
+
+# ========== 配置路径 ==========
+# 运行时配置目录（项目配置、用户配置等）
+CONFIGS_DIR = os.path.join(RUNTIME_DIR, "configs")
+
+# ========== 流水线路径 ==========
+# 流水线检查点目录
+CHECKPOINTS_DIR = os.path.join(RUNTIME_DIR, "checkpoints")
+
+# 流水线运行记录
+PIPELINE_RUNS_FILE = os.path.join(RUNTIME_DIR, "pipeline_runs.jsonl")
+
+# ========== UE5 桥接路径 ==========
+# UE5 通信目录（命令/结果文件）
+UE5_BRIDGE_DIR = os.path.join(RUNTIME_DIR, "ue5_bridge")
+
+# ========== 预览图路径 ==========
+# 资产预览图目录
+PREVIEWS_DIR = os.path.join(RUNTIME_DIR, "previews")
+
+# ========== 日志路径 ==========
+# 日志目录
+LOGS_DIR = os.path.join(RUNTIME_DIR, "logs")
+
+# ========== 初始化函数 ==========
+def ensure_directories():
+    """确保所有必要的目录存在"""
+    dirs = [
+        TAG_STORE_DIR,
+        SESSIONS_DIR,
+        MEMORY_DIR,
+        CONFIGS_DIR,
+        CHECKPOINTS_DIR,
+        UE5_BRIDGE_DIR,
+        PREVIEWS_DIR,
+        LOGS_DIR,
+    ]
+    for d in dirs:
+        os.makedirs(d, exist_ok=True)
+
+# 模块加载时自动初始化
+ensure_directories()

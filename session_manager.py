@@ -20,7 +20,9 @@ from pathlib import Path
 from typing import Optional
 
 
-# 存储根目录（~/.ta_agent/sessions/）
+from config import SESSIONS_DIR
+
+# 存储根目录
 _sessions_dir: str = ""
 _index_lock = threading.Lock()  # 索引文件读写锁
 
@@ -30,12 +32,13 @@ def init(base_dir: str = ""):
     初始化会话管理器。
 
     参数:
-        base_dir: 存储根目录，默认 ~/.ta_agent
+        base_dir: 存储根目录，默认使用 config.SESSIONS_DIR
     """
     global _sessions_dir
     if not base_dir:
-        base_dir = os.path.join(os.path.expanduser("~"), ".ta_agent")
-    _sessions_dir = os.path.join(base_dir, "sessions")
+        _sessions_dir = SESSIONS_DIR
+    else:
+        _sessions_dir = os.path.join(base_dir, "sessions")
     os.makedirs(_sessions_dir, exist_ok=True)
 
 

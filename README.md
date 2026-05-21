@@ -90,8 +90,27 @@ ta_agent/
 | 标签数据库 | SQLite（4 万+ 资产毫秒级检索） |
 | 渲染 | Blender headless（Python API） |
 | 引擎集成 | UE5 Python（unreal 模块） |
+| 前端 | React 18 + TypeScript + Vite 6 + Tailwind CSS |
+| 桌面应用 | Electron 33 |
 
 ## 快速开始
+
+### 开发模式启动
+
+开发时只保留三个根目录入口：
+
+```bat
+dev-web.bat       :: 只启动 Web UI 模式（后端 8080 + 前端 5175）
+dev-electron.bat  :: 启动 Electron 模式（自动确保 Web UI 已启动）
+dev-cli.bat       :: 启动 CLI 模式
+```
+
+辅助命令同样只放在根目录：
+
+```bat
+stop-web.bat       :: 停止 Web UI 与后端开发服务
+build-electron.bat :: 打包 Electron 桌面应用
+```
 
 ### 1. 安装依赖
 
@@ -189,9 +208,10 @@ Agent 共注册 **36 个工具**，覆盖资产全生命周期：
 
 - [x] **Phase 1**：资产身份系统骨架
 - [x] **Phase 2**：AI 分析层 + 记忆系统 + 标签入库
-- [ ] **Phase 3**：入库自动化 + 引擎集成（进行中）
-- [ ] **Phase 4**：工作流串联 + 命名规范
-- [ ] **Phase 5**：进阶功能（Blender Agent 面板、性能诊断、RAG 知识库）
+- [x] **Phase 3**：入库自动化 + 引擎集成
+- [x] **Phase 4**：Web 前端 + 流水线可视化 + Electron 桌面应用
+- [ ] **Phase 5**：项目级管理平台（进行中）
+- [ ] **Phase 6**：公司级资产助手（远期）
 
 ## 设计文档
 

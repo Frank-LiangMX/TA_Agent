@@ -91,7 +91,7 @@ export function SettingsView({ onBack }: SettingsViewProps) {
       {/* Body: nav + content */}
       <div className="flex flex-1 min-h-0">
         {/* Left nav — 与主侧边栏同宽 */}
-        <div className="w-[256px] border-r border-border/40 pt-3 px-3 flex-shrink-0 bg-card">
+        <div className="w-[256px] border-r border-border/40 pt-3 px-3 flex-shrink-0 bg-card overflow-y-auto scrollbar-thin">
           <div className="flex flex-col gap-0.5">
             {TABS.map((tab) => (
               <button
@@ -111,7 +111,7 @@ export function SettingsView({ onBack }: SettingsViewProps) {
         </div>
 
         {/* Right content — 自适应宽度 */}
-        <div className="flex-1 min-w-0 overflow-y-auto">
+        <div className="flex-1 min-w-0 overflow-y-auto scrollbar-thin">
           <div className="w-full max-w-5xl px-8 py-6">
             <ActiveComponent />
           </div>

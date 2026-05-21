@@ -10,28 +10,21 @@ electron/
 ├── preload.js       # 预加载脚本
 ├── package.json     # 依赖配置
 ├── assets/          # 图标等资源
-├── Start.bat        # 开发启动
-├── Build.bat        # 打包脚本
 └── dist/            # 前端构建产物（打包时需要）
 ```
 
 ## 开发模式
 
-**前提条件**：
-1. 前端开发服务器已启动（`fronted/Start.bat`）
-2. Node.js 已安装
+**开发启动**：
 
-**启动**：
+统一从项目根目录启动：
+
 ```bash
-# 方式 1：先启动前端，再启动 Electron
-F:\ta_agent\fronted\Start.bat   # 启动前端 + 后端
-F:\ta_agent\electron\Start.bat  # 启动 Electron
-
-# 方式 2：命令行
-cd F:\ta_agent\electron
-npm install
-npm start
+cd F:\ta_agent
+dev-electron.bat
 ```
+
+`dev-electron.bat` 会自动确保 Web UI 开发服务已启动。
 
 **说明**：
 - 开发模式加载 `http://localhost:5175`（Vite 开发服务器）
@@ -39,24 +32,10 @@ npm start
 
 ## 打包流程
 
-### 1. 打包 Python 后端
+### 打包 Electron
 ```bash
 cd F:\ta_agent
-pyinstaller TAgent.spec
-```
-
-### 2. 构建前端
-```bash
-cd F:\ta_agent\fronted
-npm run build
-# 复制 dist 到 electron/dist
-xcopy /E /I dist ..\electron\dist
-```
-
-### 3. 打包 Electron
-```bash
-cd F:\ta_agent\electron
-Build.bat
+build-electron.bat
 ```
 
 安装包输出在 `electron/release/` 目录。

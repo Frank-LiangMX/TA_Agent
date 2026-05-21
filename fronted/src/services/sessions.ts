@@ -29,10 +29,11 @@ export async function listSessions(includeArchived = false): Promise<SessionMeta
 
 /** 获取单个会话 */
 export async function getSession(sessionId: string): Promise<SessionMeta | null> {
-  const data = await request<{ meta?: SessionMeta; error?: string }>(
+  const data = await request<SessionMeta & { error?: string }>(
     `/api/sessions/${sessionId}`
   )
-  return data.meta ?? null
+  if ((data as any).error) return null
+  return data as SessionMeta
 }
 
 /** 创建新会话 */
@@ -48,11 +49,12 @@ export async function updateSession(
   sessionId: string,
   patch: Partial<Pick<SessionMeta, 'title' | 'isPinned' | 'isArchived' | 'workflowMode'>>
 ): Promise<SessionMeta | null> {
-  const data = await request<{ meta?: SessionMeta }>(`/api/sessions/${sessionId}`, {
+  const data = await request<SessionMeta & { error?: string }>(`/api/sessions/${sessionId}`, {
     method: 'PATCH',
     body: JSON.stringify(patch),
   })
-  return data.meta ?? null
+  if ((data as any).error) return null
+  return data as SessionMeta
 }
 
 /** 删除会话 */

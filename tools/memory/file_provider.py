@@ -1,6 +1,6 @@
 """File-based memory provider.
 
-Stores project memory in a local `.ta_agent/memory/` directory:
+Stores project memory in a unified memory directory:
 - L0: profile.md (project conventions, <=500 tokens)
 - L1: rules.json (compressed inference rules, max 20)
 - L2: corrections.jsonl (raw correction log, auto-compressed)
@@ -15,6 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from config import MEMORY_DIR
 from .provider import MemoryProvider, CorrectionRecord, Rule
 
 
@@ -27,12 +28,12 @@ MAX_PROFILE_CHARS = 2000  # ~500 tokens
 class FileMemoryProvider:
     """File-backed memory provider.
 
-    All state is persisted in a `.ta_agent/memory/` directory relative
-    to the project root.
+    All state is persisted in the unified MEMORY_DIR.
     """
 
-    def __init__(self, project_root: str):
-        self._memory_dir = Path(project_root) / ".ta_agent" / "memory"
+    def __init__(self, project_root: str = None):
+        # 使用统一路径配置，忽略传入的 project_root
+        self._memory_dir = Path(MEMORY_DIR)
         self._profile_path = self._memory_dir / "profile.md"
         self._rules_path = self._memory_dir / "rules.json"
         self._corrections_path = self._memory_dir / "corrections.jsonl"

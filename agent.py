@@ -105,11 +105,11 @@ def _get_console():
 from openai import OpenAI
 from config import get_llm_config
 from tools import TOOLS, execute_tool
-from conventions.context import get_conventions_context, set_conventions_context
+from conventions.context import get_conventions_context, set_conventions_context, retrieve_conventions
 
 # 导入记忆模块
 from tools.memory import FileMemoryProvider, NullMemoryProvider
-from tools.memory_tools import set_memory_provider
+from tools.core.memory_llm_tools import set_memory_provider
 
 # 导入会话管理模块
 import session_manager
@@ -551,14 +551,18 @@ def build_system_prompt(workflow_mode: str = None) -> str:
     if mode_instruction:
         prompt += mode_instruction
 
-    conventions = get_conventions_context()
-    if conventions:
+    # 注入规范文档（通过检索接口，未来可切换为 RAG）
+    # 当前：直接返回全文（与之前行为一致）
+    # 未来：retrieve_conventions 会返回相关片段
+    conventions_docs = retrieve_conventions("项目规范")
+    if conventions_docs:
+        conventions_content = "\n\n".join(conventions_docs)
         prompt += f"""
 
 ## 项目规范文档（已加载）
 以下是当前项目加载的规范文档内容，在执行所有检查时必须优先参考这些规范：
 
-{conventions}
+{conventions_content}
 
 ---
 注意：以上项目规范优先级高于默认规范。当项目规范与默认规范冲突时，以项目规范为准。
@@ -871,7 +875,7 @@ def agent_loop(user_message: str, history: list = None, workflow_mode: str = Non
                 # 创建进度面板
                 progress, progress_cb = _create_analysis_progress()
                 with progress:
-                    from tools.identity import set_progress_callback, clear_progress_callback
+                    from tools.core.identity import set_progress_callback, clear_progress_callback
                     set_progress_callback(progress_cb)
                     try:
                         result = execute_tool(func_name, func_args)
@@ -1017,17 +1021,15 @@ def main():
     # 系统状态
     _print_status()
 
-    # 初始化记忆系统
-    # 默认使用当前目录作为项目根目录，记忆存储在 .ta_agent/memory/
-    project_root = os.getcwd()
-    memory_dir = os.path.join(project_root, ".ta_agent", "memory")
+    # 初始化记忆系统（使用统一路径配置）
+    from config import MEMORY_DIR
 
     try:
-        memory_provider = FileMemoryProvider(project_root)
+        memory_provider = FileMemoryProvider()
         set_memory_provider(memory_provider)
         stats = memory_provider.get_memory_stats()
         print(f"\n  记忆系统: OK")
-        print(f"  存储位置: {memory_dir}")
+        print(f"  存储位置: {MEMORY_DIR}")
         print(f"  项目画像: {'已设置' if memory_provider.get_project_profile() else '未设置'}")
         print(f"  规则数量: {stats['rule_count']}")
         print(f"  纠正记录: {stats['correction_count']}")

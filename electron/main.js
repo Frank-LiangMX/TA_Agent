@@ -6,8 +6,8 @@
 process.stdout.setDefaultEncoding?.('utf8')
 process.stderr.setDefaultEncoding?.('utf8')
 
-const { app, BrowserWindow, Menu, Tray, nativeImage } = require('electron')
-const { spawn } = require('child_process')
+const { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, shell } = require('electron')
+const { spawn, spawnSync } = require('child_process')
 const path = require('path')
 const fs = require('fs')
 const http = require('http')
@@ -18,10 +18,50 @@ const SERVER_URL = `http://${SERVER_HOST}:${SERVER_PORT}`
 const DEV_FRONTEND_URL = 'http://localhost:5175'  // Vite 开发服务器
 const STARTUP_TIMEOUT = 30000
 
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.tagent.desktop')
+  try {
+    spawnSync('chcp', ['65001'], { shell: true, stdio: 'ignore' })
+  } catch {
+    // 控制台编码设置失败不影响应用启动。
+  }
+}
+
 let mainWindow = null
 let pythonProcess = null
 let tray = null
 let isQuitting = false
+
+function getAppIconPath() {
+  const icoPath = path.join(__dirname, 'assets', 'icon.ico')
+  const pngPath = path.join(__dirname, 'assets', 'icon.png')
+  if (process.platform === 'win32' && fs.existsSync(icoPath)) return icoPath
+  if (fs.existsSync(pngPath)) return pngPath
+  return undefined
+}
+
+function getBackendLogPath() {
+  return path.join(app.getPath('userData'), 'backend.log')
+}
+
+function registerIpcHandlers() {
+  ipcMain.handle('get-app-version', () => app.getVersion())
+  ipcMain.handle('backend-log-path', () => getBackendLogPath())
+  ipcMain.handle('open-backend-log', async () => {
+    const logPath = getBackendLogPath()
+    if (!fs.existsSync(logPath)) {
+      fs.writeFileSync(logPath, '', 'utf8')
+    }
+
+    const error = await shell.openPath(logPath)
+    return { ok: !error, error: error || undefined, path: logPath }
+  })
+  ipcMain.handle('open-user-data-dir', async () => {
+    const dir = app.getPath('userData')
+    const error = await shell.openPath(dir)
+    return { ok: !error, error: error || undefined, path: dir }
+  })
+}
 
 function getPythonExePath() {
   if (app.isPackaged) {
@@ -114,12 +154,15 @@ function stopPythonBackend() {
 }
 
 function createWindow() {
+  const iconPath = getAppIconPath()
+
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 1000,
     minHeight: 700,
     title: 'TAgent - 游戏技术美术 AI Agent',
+    ...(iconPath ? { icon: iconPath } : {}),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -142,7 +185,9 @@ function createWindow() {
   })
 
   // 开发模式自动打开 DevTools
-  if (!app.isPackaged) mainWindow.webContents.openDevTools()
+  if (!app.isPackaged && process.env.TAGENT_DEVTOOLS === '1') {
+    mainWindow.webContents.openDevTools({ mode: 'detach' })
+  }
 
   mainWindow.on('close', (event) => {
     if (!isQuitting) {
@@ -155,8 +200,8 @@ function createWindow() {
 }
 
 function createTray() {
-  const iconPath = path.join(__dirname, 'assets', 'icon.png')
-  let icon = fs.existsSync(iconPath) 
+  const iconPath = getAppIconPath()
+  let icon = iconPath && fs.existsSync(iconPath)
     ? nativeImage.createFromPath(iconPath) 
     : nativeImage.createEmpty()
 
@@ -251,7 +296,10 @@ if (!gotTheLock) {
   })
 }
 
-app.whenReady().then(startApp)
+app.whenReady().then(() => {
+  registerIpcHandlers()
+  startApp()
+})
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') quitApp() })
 app.on('activate', () => mainWindow?.show())
 app.on('before-quit', () => { isQuitting = true; stopPythonBackend() })

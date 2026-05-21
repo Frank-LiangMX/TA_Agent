@@ -3,7 +3,7 @@
  */
 
 import React, { useState, useEffect } from 'react'
-import { User, FolderOpen, Users, Key } from 'lucide-react'
+import { User, FolderOpen, Users, Key, FileText, ExternalLink, Copy } from 'lucide-react'
 import { SettingsSection, SettingsCard, SettingsRow } from './primitives'
 import { loadUserConfig, saveUserConfig, fetchUserConfig } from '@/lib/user-config'
 
@@ -12,6 +12,8 @@ export function ProjectSettings() {
   const [userToken, setUserToken] = useState('')
   const [userGroup, setUserGroup] = useState('')
   const [loading, setLoading] = useState(true)
+  const [backendLogPath, setBackendLogPath] = useState('')
+  const isElectron = Boolean(window.electronAPI?.isElectron)
 
   useEffect(() => {
     fetchUserConfig().then((cfg) => {
@@ -21,8 +23,27 @@ export function ProjectSettings() {
     }).finally(() => setLoading(false))
   }, [])
 
+  useEffect(() => {
+    if (!isElectron) return
+    window.electronAPI?.getBackendLogPath?.()
+      .then(setBackendLogPath)
+      .catch(() => setBackendLogPath(''))
+  }, [isElectron])
+
   const handleSave = async (field: string, value: string) => {
     await saveUserConfig({ [field]: value })
+  }
+
+  const openBackendLog = () => {
+    window.electronAPI?.openBackendLog?.()
+  }
+
+  const openUserDataDir = () => {
+    window.electronAPI?.openUserDataDir?.()
+  }
+
+  const copyBackendLogPath = () => {
+    if (backendLogPath) navigator.clipboard?.writeText(backendLogPath)
   }
 
   return (
@@ -75,6 +96,44 @@ export function ProjectSettings() {
           </SettingsRow>
         </SettingsCard>
       </SettingsSection>
+
+      {isElectron && (
+        <SettingsSection title="桌面应用" description="Electron 运行时、后端日志和本地数据目录。">
+          <SettingsCard>
+            <SettingsRow label="后端日志" description={backendLogPath || 'backend.log'} icon={<FileText size={16} />}>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={openBackendLog}
+                  className="h-8 px-2.5 rounded-md border border-border bg-background text-xs text-foreground hover:bg-accent inline-flex items-center gap-1.5"
+                >
+                  <ExternalLink size={14} />
+                  打开
+                </button>
+                <button
+                  type="button"
+                  onClick={copyBackendLogPath}
+                  className="h-8 w-8 rounded-md border border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground inline-flex items-center justify-center"
+                  aria-label="复制后端日志路径"
+                  title="复制后端日志路径"
+                >
+                  <Copy size={14} />
+                </button>
+              </div>
+            </SettingsRow>
+            <SettingsRow label="本地数据目录" description="打开 Electron userData 目录。" icon={<FolderOpen size={16} />}>
+              <button
+                type="button"
+                onClick={openUserDataDir}
+                className="h-8 px-2.5 rounded-md border border-border bg-background text-xs text-foreground hover:bg-accent inline-flex items-center gap-1.5"
+              >
+                <ExternalLink size={14} />
+                打开目录
+              </button>
+            </SettingsRow>
+          </SettingsCard>
+        </SettingsSection>
+      )}
     </div>
   )
 }

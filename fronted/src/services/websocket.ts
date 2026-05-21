@@ -123,9 +123,14 @@ export class TAgentClient {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
     }
-    this.ws?.close()
+    if (this.ws) {
+      this.ws.onclose = null
+      this.ws.onerror = null
+      this.ws.close()
+    }
     this.ws = null
     this._sessionId = null
+    this.reconnectAttempts = 0
     this.setStatus('disconnected')
   }
 

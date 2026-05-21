@@ -4,6 +4,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { API_BASE } from '@/lib/api'
+import agentIcon from '@/assets/icon.png'
 import { BlurText } from '../animations'
 import {
   MessageSquare,
@@ -56,8 +57,8 @@ export function Sidebar({ activeView, onViewChange }: SidebarProps) {
       {/* Logo */}
       <div className="h-14 flex items-center px-4 border-b border-border/50">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-            <Package size={16} className="text-primary-foreground" />
+          <div className="w-8 h-8 rounded-lg bg-background border border-border/60 flex items-center justify-center overflow-hidden">
+            <img src={agentIcon} alt="TAgent" className="w-full h-full object-cover" />
           </div>
           <div>
             <h1 className="text-sm font-semibold"><BlurText text="TAgent" delay={80} /></h1>

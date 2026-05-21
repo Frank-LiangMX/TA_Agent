@@ -4,7 +4,7 @@
   "description": "TAgent - 游戏技术美术 AI Agent 桌面应用",
   "main": "main.js",
   "scripts": {
-    "start": "electron .",
+    "start": "node scripts/start-electron.js",
     "build": "electron-builder",
     "build:win": "electron-builder --win",
     "build:mac": "electron-builder --mac",
@@ -20,7 +20,7 @@
     "appId": "com.tagent.desktop",
     "productName": "TAgent",
     "directories": {
-      "output": "release"
+      "output": "../dist/electron-release"
     },
     "files": [
       "main.js",

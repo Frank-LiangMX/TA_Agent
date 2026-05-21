@@ -262,14 +262,14 @@ def infer_asset_tags(
         vision_enabled = False
 
     if vision_enabled and preview_images:
-        from tools.vision import get_available_preview_images
+        from tools.core.vision import get_available_preview_images
         vision_images = get_available_preview_images(preview_images, max_count=3)
         use_vision = len(vision_images) > 0
 
     try:
         if use_vision:
             # 多模态模式：图片 + 文本，使用视觉专用配置
-            from tools.vision import build_vision_prompt
+            from tools.core.vision import build_vision_prompt
             from config import get_vision_config, INFERENCE_TIMEOUT
             vision_config = get_vision_config()
             vision_client = OpenAI(base_url=vision_config["base_url"], api_key=vision_config["api_key"], timeout=INFERENCE_TIMEOUT)

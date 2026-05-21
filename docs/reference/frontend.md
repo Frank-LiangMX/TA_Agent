@@ -10,7 +10,6 @@
 
 ```
 F:\ta_agent\fronted\
-├── Start.bat / Stop.bat           # 一键启动/关闭
 ├── vite.config.ts                 # 端口 5175, host: 0.0.0.0
 │
 ├── server/                        # Python WebSocket 后端
@@ -348,9 +347,9 @@ const ANIMATION_FIELDS: FieldConfig[] = [
 ## 七、启动方式
 
 ```bash
-# 一键启动
-F:\ta_agent\fronted\Start.bat    # 前端 + 后端
-F:\ta_agent\fronted\Stop.bat     # 关闭
+# 根目录统一入口
+F:\ta_agent\dev-web.bat          # 前端 + 后端
+F:\ta_agent\stop-web.bat         # 关闭
 
 # 手动启动
 # 终端 1：后端
