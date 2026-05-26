@@ -335,20 +335,27 @@ const loadTabHistory = useCallback(async (tabId: string) => {
     // 连接确认：捕获后端分配的 sessionId
     const unsubConnected = tagentClient.on('connected', (payload: any) => {
       if (payload?.sessionId) {
-        // 恢复或新建的后端会话都必须对应一个前端标签。
-        setOpenTabIds(prev => prev.includes(payload.sessionId) ? prev : [...prev, payload.sessionId])
-        setActiveTabId(payload.sessionId)
+        const newSessionId = payload.sessionId
 
-        if (!tabMessagesRef.current[payload.sessionId]) {
-          loadTabHistory(payload.sessionId)
+        // 只保留当前连接的会话，清理旧的累积会话
+        setOpenTabIds(prev => {
+          // 如果已存在，不修改
+          if (prev.includes(newSessionId)) return prev
+          // 否则，只保留当前会话（清理旧的累积会话）
+          return [newSessionId]
+        })
+        setActiveTabId(newSessionId)
+
+        if (!tabMessagesRef.current[newSessionId]) {
+          loadTabHistory(newSessionId)
         }
 
         // 异步加载标题
         if (payload.title) {
-          setTabTitles(prev => ({ ...prev, [payload.sessionId]: payload.title }))
+          setTabTitles(prev => ({ ...prev, [newSessionId]: payload.title }))
         } else {
-          getSession(payload.sessionId).then(meta => {
-            if (meta?.title) setTabTitles(prev => ({ ...prev, [payload.sessionId]: meta.title }))
+          getSession(newSessionId).then(meta => {
+            if (meta?.title) setTabTitles(prev => ({ ...prev, [newSessionId]: meta.title }))
           }).catch(() => {})
         }
       }
