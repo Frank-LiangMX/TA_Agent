@@ -1,6 +1,6 @@
 # 文档地图
 
-> 最后更新：2026-05-20
+> 最后更新：2026-05-26
 
 ## 文档结构
 
@@ -11,9 +11,14 @@ docs/
 │   ├── frontend.md           # 前端架构、WebSocket 协议、组件参考、设计规范
 │   └── pipeline.md           # 资产流水线系统：核心概念 + 前后端 API
 ├── decisions/                # 架构决策记录——为什么这么做 (只追加，不修改)
+│   ├── user-auth-design.md   # 用户认证、权限管理、管理员分配
+│   ├── client-dual-mode-design.md  # 客户端双模式（本地/联机）
+│   └── distributed-architecture.md # 分布式架构设计
 ├── experiments/              # 实验/试错——过程记录 (追加，成功/失败都保留)
 │   ├── backend/
 │   └── frontend/
+│       ├── 2026-05-21-prompt-suggestion.md  # 提示建议功能实验
+│       └── 2026-05-22-bug-report.md         # Bug 排查报告
 └── guides/                   # 使用指南——流程说明
     ├── workflow.md           # 单人/团队工作流、SVN 集成、推广策略
     └── ue-plugin-mcp-guide.md  # UE 插件 MCP 化指南（供项目组开发参考）
@@ -36,6 +41,7 @@ docs/
 | 用户认证设计 | `decisions/user-auth-design.md` |
 | 客户端双模式设计 | `decisions/client-dual-mode-design.md` |
 | 管理员分配机制 | `decisions/user-auth-design.md` (5.2 节) |
+| Bug 排查记录 | `experiments/frontend/2026-05-22-bug-report.md` |
 
 ## 写入规则
 
@@ -45,4 +51,5 @@ docs/
 
 ## 历史
 
-原先的 6 个文档于 2026-05-19 按此结构重组。
+- 2026-05-19：原先的 6 个文档按此结构重组
+- 2026-05-26：添加联机模式、中心服务器、权限管理相关文档

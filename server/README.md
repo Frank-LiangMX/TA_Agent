@@ -1,6 +1,7 @@
 # TAgent Server 部署指南
 
 > 服务器部署说明，供技术人员参考
+> 最后更新：2026-05-26
 
 ---
 
@@ -18,6 +19,7 @@
 server/
 ├── main.py                   # 主入口
 ├── config.py                 # 配置文件
+├── config.yaml               # 部署配置（初始管理员等）
 ├── requirements.txt          # Python 依赖
 ├── database/
 │   ├── base.py               # 数据库抽象层
@@ -31,7 +33,11 @@ server/
 │   ├── auth.py               # 认证 API
 │   └── usage.py              # 用量统计 API
 └── static/
-    └── usage.html            # 用量统计管理页面
+    ├── usage.html            # 用量统计管理页面
+    ├── assets.html           # 资产管理页面
+    ├── reviews.html          # 审核管理页面
+    ├── users.html            # 用户管理页面
+    └── settings.html         # 系统设置页面
 ```
 
 ## 三、快速启动
