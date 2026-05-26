@@ -65,15 +65,11 @@ class TagExtractor:
         mesh.has_uv = fbx_result.get("uv_channel_count", 0) > 0
         mesh.uv_channel_count = fbx_result.get("uv_channel_count", 0)
 
-        # material_count 可能在顶层或 mesh_details 里
-        material_count = fbx_result.get("material_count", 0)
-        mesh_details = fbx_result.get("mesh_details", [])
-        if not material_count and mesh_details:
-            material_count = mesh_details[0].get("material_count", 0)
-        mesh.material_count = material_count
+        # 材质信息：material_names 是汇总后的列表，material_count 应与其一致
         mesh.material_names = fbx_result.get("material_names", [])
+        mesh.material_count = len(mesh.material_names)  # 与 material_names 保持一致
         mesh.material_textures = fbx_result.get("material_textures", {})
-        mesh.has_materials = fbx_result.get("has_materials", material_count > 0)
+        mesh.has_materials = len(mesh.material_names) > 0
         mesh.export_mode = fbx_result.get("export_mode", "")
 
         # 包围盒：支持两种格式

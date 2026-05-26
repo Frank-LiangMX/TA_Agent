@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TAgent 审核管理</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; padding: 20px; }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    h1 { font-size: 24px; color: #333; }
+    .stats { display: flex; gap: 20px; margin-bottom: 20px; }
+    .stat-card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); min-width: 150px; }
+    .stat-card h3 { font-size: 14px; color: #666; margin-bottom: 8px; }
+    .stat-card .value { font-size: 28px; font-weight: bold; color: #333; }
+    .table-container { background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid #eee; }
+    th { background: #f8f9fa; font-weight: 600; color: #333; font-size: 14px; }
+    td { font-size: 14px; color: #666; }
+    tr:hover { background: #f8f9fa; }
+    .status { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+    .status-pending { background: #fff3cd; color: #856404; }
+    .status-approved { background: #d4edda; color: #155724; }
+    .status-rejected { background: #f8d7da; color: #721c24; }
+    .btn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+    .btn-primary { background: #007bff; color: white; }
+    .btn-primary:hover { background: #0056b3; }
+    .btn-success { background: #28a745; color: white; }
+    .btn-success:hover { background: #218838; }
+    .btn-danger { background: #dc3545; color: white; }
+    .btn-danger:hover { background: #c82333; }
+    .btn-sm { padding: 4px 8px; font-size: 12px; }
+    .search-bar { display: flex; gap: 10px; margin-bottom: 20px; }
+    .search-bar input { padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; width: 300px; }
+    .search-bar select { padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+    .actions { display: flex; gap: 8px; }
+    .loading { text-align: center; padding: 40px; color: #666; }
+    .empty { text-align: center; padding: 40px; color: #999; }
+    .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; }
+    .modal-content { background: white; margin: 100px auto; padding: 20px; border-radius: 8px; width: 500px; max-width: 90%; }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .modal-header h2 { font-size: 18px; }
+    .modal-close { background: none; border: none; font-size: 24px; cursor: pointer; color: #666; }
+    .form-group { margin-bottom: 15px; }
+    .form-group label { display: block; margin-bottom: 5px; font-weight: 500; }
+    .form-group input, .form-group textarea, .form-group select { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+    .form-group textarea { height: 100px; resize: vertical; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>审核管理</h1>
+    <button class="btn btn-primary" onclick="refresh()">刷新</button>
+  </div>
+
+  <div class="stats">
+    <div class="stat-card">
+      <h3>待审核</h3>
+      <div class="value" id="pendingCount">-</div>
+    </div>
+    <div class="stat-card">
+      <h3>已通过</h3>
+      <div class="value" id="approvedCount">-</div>
+    </div>
+    <div class="stat-card">
+      <h3>已拒绝</h3>
+      <div class="value" id="rejectedCount">-</div>
+    </div>
+  </div>
+
+  <div class="search-bar">
+    <input type="text" id="searchInput" placeholder="搜索资产名称..." onkeyup="filterReviews()">
+    <select id="statusFilter" onchange="filterReviews()">
+      <option value="">所有状态</option>
+      <option value="pending" selected>待审核</option>
+      <option value="approved">已通过</option>
+      <option value="rejected">已拒绝</option>
+    </select>
+  </div>
+
+  <div class="table-container">
+    <table>
+      <thead>
+        <tr>
+          <th>资产名称</th>
+          <th>类型</th>
+          <th>分类</th>
+          <th>置信度</th>
+          <th>状态</th>
+          <th>提交时间</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="reviewsTable">
+        <tr><td colspan="7" class="loading">加载中...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 审核弹窗 -->
+  <div id="reviewModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>审核资产</h2>
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+      </div>
+      <div id="modalBody">
+        <!-- 动态内容 -->
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-danger" onclick="submitReview('reject')">拒绝</button>
+        <button class="btn btn-success" onclick="submitReview('approve')">通过</button>
+        <button class="btn" onclick="closeModal()">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let allReviews = [];
+    let currentAssetId = null;
+
+    async function loadReviews() {
+      try {
+        const res = await fetch('/api/reviews');
+        const data = await res.json();
+        allReviews = data.reviews || [];
+        updateStats();
+        filterReviews();
+      } catch (err) {
+        console.error('加载失败:', err);
+        document.getElementById('reviewsTable').innerHTML =
+          '<tr><td colspan="7" class="empty">加载失败，请检查服务器连接</td></tr>';
+      }
+    }
+
+    function updateStats() {
+      const pending = allReviews.filter(r => r.status === 'pending').length;
+      const approved = allReviews.filter(r => r.status === 'approved').length;
+      const rejected = allReviews.filter(r => r.status === 'rejected').length;
+
+      document.getElementById('pendingCount').textContent = pending;
+      document.getElementById('approvedCount').textContent = approved;
+      document.getElementById('rejectedCount').textContent = rejected;
+    }
+
+    function filterReviews() {
+      const search = document.getElementById('searchInput').value.toLowerCase();
+      const status = document.getElementById('statusFilter').value;
+
+      let filtered = allReviews;
+
+      if (search) {
+        filtered = filtered.filter(r => r.asset_name && r.asset_name.toLowerCase().includes(search));
+      }
+      if (status) {
+        filtered = filtered.filter(r => r.status === status);
+      }
+
+      renderReviews(filtered);
+    }
+
+    function renderReviews(reviews) {
+      const tbody = document.getElementById('reviewsTable');
+      if (reviews.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无审核数据</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = reviews.map(review => `
+        <tr>
+          <td><strong>${review.asset_name || '-'}</strong></td>
+          <td>${getTypeLabel(review.asset_type)}</td>
+          <td>${review.category || '-'}</td>
+          <td>${review.confidence ? (review.confidence * 100).toFixed(1) + '%' : '-'}</td>
+          <td><span class="status status-${review.status}">${getStatusLabel(review.status)}</span></td>
+          <td>${review.created_at || '-'}</td>
+          <td class="actions">
+            ${review.status === 'pending' ? `
+              <button class="btn btn-success btn-sm" onclick="openReviewModal('${review.asset_id}', 'approve')">通过</button>
+              <button class="btn btn-danger btn-sm" onclick="openReviewModal('${review.asset_id}', 'reject')">拒绝</button>
+            ` : `
+              <button class="btn btn-primary btn-sm" onclick="viewDetail('${review.asset_id}')">详情</button>
+            `}
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function getTypeLabel(type) {
+      const labels = {
+        'mesh': '模型',
+        'skeletal_mesh': '骨骼模型',
+        'texture': '贴图',
+        'material': '材质',
+        'animation': '动画',
+        'blueprint': '蓝图',
+        'sound': '音效',
+        'effect': '特效'
+      };
+      return labels[type] || type || '-';
+    }
+
+    function getStatusLabel(status) {
+      const labels = {
+        'pending': '待审核',
+        'approved': '已通过',
+        'rejected': '已拒绝'
+      };
+      return labels[status] || status || '-';
+    }
+
+    function openReviewModal(assetId, action) {
+      currentAssetId = assetId;
+      const review = allReviews.find(r => r.asset_id === assetId);
+
+      document.getElementById('modalBody').innerHTML = `
+        <div class="form-group">
+          <label>资产名称</label>
+          <input type="text" value="${review.asset_name || ''}" readonly>
+        </div>
+        <div class="form-group">
+          <label>资产类型</label>
+          <input type="text" value="${getTypeLabel(review.asset_type)}" readonly>
+        </div>
+        <div class="form-group">
+          <label>分类</label>
+          <input type="text" value="${review.category || ''}" readonly>
+        </div>
+        <div class="form-group">
+          <label>审核意见（可选）</label>
+          <textarea id="reviewComment" placeholder="请输入审核意见..."></textarea>
+        </div>
+      `;
+
+      document.getElementById('reviewModal').style.display = 'block';
+    }
+
+    function closeModal() {
+      document.getElementById('reviewModal').style.display = 'none';
+      currentAssetId = null;
+    }
+
+    async function submitReview(action) {
+      if (!currentAssetId) return;
+
+      const comment = document.getElementById('reviewComment')?.value || '';
+
+      try {
+        const res = await fetch('/api/reviews', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            asset_id: currentAssetId,
+            action: action,
+            comment: comment
+          })
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          closeModal();
+          loadReviews();
+        } else {
+          alert('审核失败: ' + (data.error || '未知错误'));
+        }
+      } catch (err) {
+        alert('审核失败: ' + err.message);
+      }
+    }
+
+    async function viewDetail(assetId) {
+      try {
+        const res = await fetch(`/api/assets/${assetId}`);
+        const data = await res.json();
+        alert(JSON.stringify(data, null, 2));
+      } catch (err) {
+        alert('获取详情失败');
+      }
+    }
+
+    function refresh() {
+      loadReviews();
+    }
+
+    // 初始加载
+    loadReviews();
+
+    // 每 30 秒自动刷新
+    setInterval(loadReviews, 30000);
+  </script>
+</body>
+</html>

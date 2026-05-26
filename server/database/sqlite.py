@@ -109,7 +109,8 @@ class SQLiteDatabase(Database):
                 department TEXT DEFAULT '',
                 email TEXT DEFAULT '',
                 created_at TEXT DEFAULT '',
-                last_login TEXT DEFAULT ''
+                last_login TEXT DEFAULT '',
+                last_login_ip TEXT DEFAULT ''
             )
         """)
 
@@ -133,6 +134,12 @@ class SQLiteDatabase(Database):
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_rules_project_id ON rules(project_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_usage_user_id ON usage_logs(user_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_usage_created_at ON usage_logs(created_at)")
+
+        # 迁移：添加 last_login_ip 字段（如果不存在）
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN last_login_ip TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass  # 字段已存在
 
         self.conn.commit()
 
@@ -360,6 +367,13 @@ class SQLiteDatabase(Database):
         cursor = self.conn.cursor()
         cursor.execute("SELECT * FROM users ORDER BY created_at DESC")
         return [User(**dict(row)) for row in cursor.fetchall()]
+
+    def delete_user(self, user_id: str) -> bool:
+        """删除用户"""
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
+        self.conn.commit()
+        return cursor.rowcount > 0
 
     # ========== 用量统计 ==========
 

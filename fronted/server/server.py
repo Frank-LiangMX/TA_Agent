@@ -59,12 +59,23 @@ TOOL_TO_STAGE = {
     "check_project_config": "scan",
     "discover_conventions": "scan",
     "load_conventions": "scan",
-    "get_pending_reviews": "review",
-    "submit_review": "review",
-    "batch_approve": "review",
+    # review 阶段：只有实际完成审核的操作才触发建议
+    "submit_review": "review_done",
+    "batch_approve": "review_done",
+    # intake 阶段
     "intake_asset": "intake",
     "intake_batch": "intake",
     "intake_approved": "intake",
+}
+
+# ===== 阶段建议规则 =====
+# 根据最后执行的工具判断阶段，生成建议
+# 注意：建议内容是用户可能想对 Agent 说的话
+STAGE_SUGGESTIONS = {
+    "scan": "开始分析这些资产",
+    "analyze": "进入审核阶段",
+    "review_done": "入库到 UE5，路径是",
+    "intake": "查看入库清单",
 }
 
 # 延迟导入 agent 模块的函数（避免循环导入）
@@ -75,6 +86,27 @@ def get_agent_module():
     if _agent_module is None:
         import agent as _agent_module
     return _agent_module
+
+
+def _generate_suggestion(tool_names: list[str]) -> str | None:
+    """
+    根据本次对话调用的工具，生成建议的下一步提示。
+
+    规则：
+    - 如果最后调用了 analyze 相关工具 → 建议进入审核
+    - 如果最后调用了 review 相关工具 → 建议入库
+    - 如果最后调用了 intake 相关工具 → 建议在 UE5 中执行脚本
+    """
+    if not tool_names:
+        return None
+
+    # 从后往前找最后一个有阶段映射的工具
+    for tool_name in reversed(tool_names):
+        stage = TOOL_TO_STAGE.get(tool_name)
+        if stage and stage in STAGE_SUGGESTIONS:
+            return STAGE_SUGGESTIONS[stage]
+
+    return None
 
 
 # ===== FastAPI 应用 =====
@@ -181,6 +213,8 @@ async def run_agent(
     })
 
     max_iterations = 15
+    # 追踪本次对话调用的工具（用于生成建议）
+    last_tool_names: list[str] = []
 
     for iteration in range(max_iterations):
         try:
@@ -246,9 +280,14 @@ async def run_agent(
                     "role": "assistant",
                     "content": final_answer,
                 })
+
+                # 生成建议（根据最后调用的工具判断阶段）
+                suggestion = _generate_suggestion(last_tool_names)
+
                 await send_event(ws, "done", {
                     "sessionId": session.session_id,
                     "content": final_answer,
+                    "suggestion": suggestion,
                 })
                 return
 
@@ -307,6 +346,9 @@ async def run_agent(
                         "arguments": func_args,
                     },
                 })
+
+                # 追踪工具调用
+                last_tool_names.append(func_name)
 
                 # 追踪流水线阶段（开始执行）
                 stage_id = TOOL_TO_STAGE.get(func_name)
@@ -702,38 +744,76 @@ async def update_user(payload: dict = Body(...)):
     )
 
 
-# ===== REST 端点（LLM 配置） =====
+# ===== REST 端点（应用配置） =====
 
-@app.get("/api/config/llm")
-async def get_llm_configs():
-    """获取所有 LLM 配置"""
-    from config import list_llm_configs, ACTIVE_LLM
-    return {"configs": list_llm_configs(), "active": ACTIVE_LLM}
+@app.get("/api/config/app")
+async def get_app_config():
+    """获取应用配置（前端本地模式配置）"""
+    from config import _get_runtime_app_config
+    return _get_runtime_app_config()
 
 
-@app.post("/api/config/llm/switch")
-async def switch_llm(payload: dict = Body(...)):
-    """切换 LLM"""
-    from config import set_active_llm
+@app.post("/api/config/app")
+async def save_app_config(payload: dict = Body(...)):
+    """保存应用配置（前端本地模式配置）"""
+    from config import CONFIGS_DIR
+    import json
+    import os
+    os.makedirs(CONFIGS_DIR, exist_ok=True)
+    config_path = os.path.join(CONFIGS_DIR, "app-config.json")
+    try:
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        return {"success": True}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+# ===== REST 端点（用户自定义模型管理） =====
+
+@app.get("/api/config/models")
+async def get_models():
+    """获取所有用户自定义模型"""
+    from config import list_models, get_active_model
+    models = list_models()
+    active_id = get_active_model().get("id") if get_active_model() else None
+    return {
+        "models": models,
+        "active_id": active_id,
+    }
+
+@app.post("/api/config/models")
+async def create_model(payload: dict = Body(...)):
+    """添加新模型"""
+    from config import add_model
     name = payload.get("name", "")
-    if not name:
-        return {"error": "name 不能为空"}
-    return set_active_llm(name)
-
-
-@app.post("/api/config/llm/add")
-async def add_llm(payload: dict = Body(...)):
-    """添加自定义 LLM 配置"""
-    from config import add_llm_config
-    key = payload.get("key", "")
-    name = payload.get("name", key)
     base_url = payload.get("base_url", "")
     model = payload.get("model", "")
-    api_key = payload.get("api_key", "none")
-    llm_type = payload.get("type", "local")
-    if not key or not base_url or not model:
-        return {"error": "key, base_url, model 不能为空"}
-    return add_llm_config(key=key, name=name, base_url=base_url, model=model, api_key=api_key, llm_type=llm_type)
+    api_key = payload.get("api_key", "")
+    extra_headers = payload.get("extra_headers") or {}
+    protocol = payload.get("protocol", "openai")
+    if not name or not base_url or not model:
+        return {"success": False, "error": "name, base_url, model 不能为空"}
+    return add_model(name=name, base_url=base_url, model=model, api_key=api_key, extra_headers=extra_headers, protocol=protocol)
+
+@app.put("/api/config/models/{model_id}")
+async def modify_model(model_id: str, payload: dict = Body(...)):
+    """更新模型"""
+    from config import update_model
+    updates = {k: v for k, v in payload.items() if k not in ("id",)}
+    return update_model(model_id, updates)
+
+@app.delete("/api/config/models/{model_id}")
+async def remove_model(model_id: str):
+    """删除模型"""
+    from config import delete_model
+    return delete_model(model_id)
+
+@app.post("/api/config/models/{model_id}/activate")
+async def activate_model(model_id: str):
+    """激活指定模型"""
+    from config import set_active_model
+    return set_active_model(model_id)
 
 
 # ===== REST 端点（UE5 插件管理） =====
@@ -1322,8 +1402,8 @@ async def get_pipeline_state():
 def _get_tag_store():
     """获取 TagStore 实例（延迟导入）"""
     from tags.store import TagStore
-    store_dir = os.path.join(TA_AGENT_DIR, "tag_store")
-    return TagStore(store_dir)
+    from config import TAG_STORE_DIR
+    return TagStore(TAG_STORE_DIR)
 
 
 @app.get("/api/assets")
@@ -1346,6 +1426,27 @@ async def get_asset_detail(asset_id: str):
         if tags is None:
             return {"error": f"未找到资产: {asset_id}"}
         return tags.to_dict()
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/assets/{asset_id}/file")
+async def download_asset_file(asset_id: str):
+    """下载资产原始文件"""
+    from pathlib import Path
+    try:
+        store = _get_tag_store()
+        tags = store.load(asset_id)
+        if tags is None:
+            return {"error": f"未找到资产: {asset_id}"}
+        file_path = Path(tags.file_path)
+        if not file_path.exists():
+            return {"error": f"文件不存在: {tags.file_path}"}
+        return FileResponse(
+            path=str(file_path),
+            filename=file_path.name,
+            media_type="application/octet-stream",
+        )
     except Exception as e:
         return {"error": str(e)}
 
@@ -1513,7 +1614,8 @@ async def get_asset_preview(asset_id: str):
                 return {"error": f"图片转换失败: {str(e)}"}
 
         # 3D 模型：检查已渲染的预览图
-        preview_dir = os.path.join(TA_AGENT_DIR, "tag_store", "previews")
+        from config import TAG_STORE_DIR
+        preview_dir = os.path.join(TAG_STORE_DIR, "previews")
         preview_path = os.path.join(preview_dir, f"{asset_id}.png")
         if os.path.isfile(preview_path):
             return FileResponse(preview_path, media_type='image/png')
@@ -1546,7 +1648,8 @@ async def render_asset_preview_api(asset_id: str):
 
         if result.get("success"):
             # 复制预览图到 tag_store/previews/
-            preview_dir = os.path.join(TA_AGENT_DIR, "tag_store", "previews")
+            from config import TAG_STORE_DIR
+            preview_dir = os.path.join(TAG_STORE_DIR, "previews")
             os.makedirs(preview_dir, exist_ok=True)
             dst_path = os.path.join(preview_dir, f"{asset_id}.png")
 

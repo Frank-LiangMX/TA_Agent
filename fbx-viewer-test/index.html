@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FBX Model Viewer - Three.js Demo</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #1a1a2e;
+      color: #e0e0e0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      overflow: hidden;
+      height: 100vh;
+    }
+
+    /* Top toolbar */
+    .toolbar {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: 48px;
+      background: rgba(20, 20, 40, 0.95);
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 12px;
+      z-index: 100;
+      backdrop-filter: blur(8px);
+    }
+    .toolbar h1 {
+      font-size: 14px;
+      font-weight: 600;
+      color: #7c8aff;
+      margin-right: 8px;
+    }
+    .toolbar label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      background: #7c8aff;
+      color: #fff;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .toolbar label:hover { background: #6b79ee; }
+    .toolbar input[type="file"] { display: none; }
+    .url-input {
+      flex: 1;
+      max-width: 400px;
+      padding: 6px 12px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 6px;
+      color: #e0e0e0;
+      font-size: 13px;
+      outline: none;
+    }
+    .url-input:focus { border-color: #7c8aff; }
+    .url-input::placeholder { color: rgba(255,255,255,0.3); }
+    .btn {
+      padding: 6px 14px;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 6px;
+      color: #e0e0e0;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn:hover { background: rgba(255,255,255,0.18); }
+    .separator { width: 1px; height: 24px; background: rgba(255,255,255,0.15); }
+
+    /* Canvas */
+    #viewer-canvas {
+      position: fixed;
+      top: 48px; left: 0; right: 0; bottom: 0;
+    }
+
+    /* Bottom status bar */
+    .statusbar {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      height: 32px;
+      background: rgba(20, 20, 40, 0.95);
+      border-top: 1px solid rgba(255,255,255,0.1);
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 20px;
+      font-size: 12px;
+      color: rgba(255,255,255,0.5);
+      z-index: 100;
+    }
+    .statusbar span { display: inline-flex; align-items: center; gap: 4px; }
+    .statusbar .label { color: rgba(255,255,255,0.35); }
+    .statusbar .value { color: rgba(255,255,255,0.7); }
+
+    /* Loading overlay */
+    .loading-overlay {
+      position: fixed;
+      top: 48px; left: 0; right: 0; bottom: 32px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(26, 26, 46, 0.9);
+      z-index: 50;
+      transition: opacity 0.3s;
+    }
+    .loading-overlay.hidden { opacity: 0; pointer-events: none; }
+    .spinner {
+      width: 40px; height: 40px;
+      border: 3px solid rgba(124, 138, 255, 0.2);
+      border-top-color: #7c8aff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-text { margin-top: 12px; font-size: 13px; color: rgba(255,255,255,0.5); }
+
+    /* Drop zone hint */
+    .drop-hint {
+      position: fixed;
+      top: 48px; left: 0; right: 0; bottom: 32px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 40;
+      pointer-events: none;
+    }
+    .drop-hint .icon {
+      width: 80px; height: 80px;
+      border: 2px dashed rgba(255,255,255,0.15);
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 16px;
+    }
+    .drop-hint .icon svg { opacity: 0.3; }
+    .drop-hint p { font-size: 14px; color: rgba(255,255,255,0.25); }
+    .drop-hint.hidden { display: none; }
+
+    /* Drag-over state */
+    body.drag-over .drop-hint .icon {
+      border-color: #7c8aff;
+      background: rgba(124, 138, 255, 0.1);
+    }
+    body.drag-over .drop-hint p { color: #7c8aff; }
+
+    /* Error toast */
+    .error-toast {
+      position: fixed;
+      top: 60px;
+      right: 16px;
+      padding: 10px 16px;
+      background: rgba(220, 50, 50, 0.9);
+      color: #fff;
+      border-radius: 8px;
+      font-size: 13px;
+      z-index: 200;
+      transform: translateX(120%);
+      transition: transform 0.3s;
+    }
+    .error-toast.show { transform: translateX(0); }
+  </style>
+</head>
+<body>
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <h1>FBX Viewer</h1>
+    <label>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      选择 FBX
+      <input type="file" id="file-input" accept=".fbx">
+    </label>
+    <label>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+      贴图目录
+      <input type="file" id="texture-dir-input" webkitdirectory multiple style="display:none">
+    </label>
+    <span id="texture-status" style="font-size:11px;color:rgba(255,255,255,0.4)"></span>
+    <div class="separator"></div>
+    <input type="text" class="url-input" id="url-input" placeholder="输入 FBX 文件 URL...">
+    <button class="btn" id="load-url-btn">加载 URL</button>
+    <div class="separator"></div>
+    <button class="btn" id="reset-camera-btn">重置视角</button>
+    <button class="btn" id="toggle-grid-btn">网格</button>
+    <button class="btn" id="toggle-wireframe-btn">线框</button>
+    <button class="btn" id="auto-rotate-btn">自动旋转</button>
+  </div>
+
+  <!-- Canvas -->
+  <canvas id="viewer-canvas"></canvas>
+
+  <!-- Drop hint -->
+  <div class="drop-hint" id="drop-hint">
+    <div class="icon">
+      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+    </div>
+    <p>拖放 FBX 文件到此处，或点击「选择文件」</p>
+  </div>
+
+  <!-- Loading overlay -->
+  <div class="loading-overlay hidden" id="loading">
+    <div class="spinner"></div>
+    <div class="loading-text">加载模型中...</div>
+  </div>
+
+  <!-- Status bar -->
+  <div class="statusbar">
+    <span><span class="label">文件:</span> <span class="value" id="stat-file">-</span></span>
+    <span><span class="label">顶点:</span> <span class="value" id="stat-verts">-</span></span>
+    <span><span class="label">面数:</span> <span class="value" id="stat-tris">-</span></span>
+    <span><span class="label">网格:</span> <span class="value" id="stat-meshes">-</span></span>
+    <span><span class="label">材质:</span> <span class="value" id="stat-materials">-</span></span>
+    <span><span class="label">FPS:</span> <span class="value" id="stat-fps">-</span></span>
+  </div>
+
+  <!-- Error toast -->
+  <div class="error-toast" id="error-toast"></div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+      "three/addons/loaders/FBXLoader.js": "./lib/FBXLoader.js"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three'
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+    import { FBXLoader } from 'three/addons/loaders/FBXLoader.js'
+    import { TGALoader } from 'three/addons/loaders/TGALoader.js'
+
+    // Texture file cache: filename -> blob URL
+    const textureFiles = new Map()
+
+    // Custom loading manager: resolve absolute paths to local blob URLs
+    const loadingManager = new THREE.LoadingManager()
+    loadingManager.addHandler(/\.tga$/i, new TGALoader())
+    loadingManager.setURLModifier((url) => {
+      // Extract filename from absolute or relative path
+      const filename = url.split(/[/\\]/).pop()
+      if (textureFiles.has(filename)) {
+        console.log('[TextureResolver]', filename, '-> local blob')
+        return textureFiles.get(filename)
+      }
+      return url
+    })
+
+    // --- Elements ---
+    const canvas = document.getElementById('viewer-canvas')
+    const fileInput = document.getElementById('file-input')
+    const textureDirInput = document.getElementById('texture-dir-input')
+    const textureStatus = document.getElementById('texture-status')
+    const urlInput = document.getElementById('url-input')
+    const loadUrlBtn = document.getElementById('load-url-btn')
+    const resetCameraBtn = document.getElementById('reset-camera-btn')
+    const toggleGridBtn = document.getElementById('toggle-grid-btn')
+    const toggleWireframeBtn = document.getElementById('toggle-wireframe-btn')
+    const autoRotateBtn = document.getElementById('auto-rotate-btn')
+    const loadingEl = document.getElementById('loading')
+    const dropHint = document.getElementById('drop-hint')
+    const errorToast = document.getElementById('error-toast')
+
+    const statFile = document.getElementById('stat-file')
+    const statVerts = document.getElementById('stat-verts')
+    const statTris = document.getElementById('stat-tris')
+    const statMeshes = document.getElementById('stat-meshes')
+    const statMaterials = document.getElementById('stat-materials')
+    const statFps = document.getElementById('stat-fps')
+
+    // --- Scene setup ---
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false })
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    renderer.outputColorSpace = THREE.SRGBColorSpace
+    renderer.toneMapping = THREE.NoToneMapping
+
+    const scene = new THREE.Scene()
+    scene.background = new THREE.Color(0x1a1a2e)
+
+    const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 10000)
+    camera.position.set(100, 100, 100)
+
+    const controls = new OrbitControls(camera, canvas)
+    controls.enableDamping = true
+    controls.dampingFactor = 0.25
+    controls.rotateSpeed = 1.2
+    controls.autoRotate = false
+    controls.autoRotateSpeed = 2
+
+    // --- Lights ---
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.5)
+    scene.add(ambientLight)
+
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.2)
+    hemiLight.position.set(0, 500, 0)
+    scene.add(hemiLight)
+
+    const dirLight1 = new THREE.DirectionalLight(0xffffff, 1.5)
+    dirLight1.position.set(200, 300, 200)
+    scene.add(dirLight1)
+    scene.add(dirLight1.target)
+
+    const dirLight2 = new THREE.DirectionalLight(0x8888ff, 0.8)
+    dirLight2.position.set(-200, 100, -200)
+    scene.add(dirLight2)
+    scene.add(dirLight2.target)
+
+    const dirLight3 = new THREE.DirectionalLight(0xffffff, 0.6)
+    dirLight3.position.set(0, -100, 200)
+    scene.add(dirLight3)
+    scene.add(dirLight3.target)
+
+    // --- Grid ---
+    const gridHelper = new THREE.GridHelper(1000, 50, 0x333355, 0x222244)
+    gridHelper.visible = false
+    scene.add(gridHelper)
+
+    // --- Axes helper ---
+    const axesHelper = new THREE.AxesHelper(200)
+    axesHelper.visible = false
+    scene.add(axesHelper)
+
+    // --- State ---
+    let currentModel = null
+    let wireframeMode = false
+    const originalMaterials = new Map()
+
+    // --- Resize ---
+    function resize() {
+      const top = 48, bottom = 32
+      const w = window.innerWidth
+      const h = window.innerHeight - top - bottom
+      renderer.setSize(w, h)
+      camera.aspect = w / h
+      camera.updateProjectionMatrix()
+      canvas.style.top = top + 'px'
+    }
+    window.addEventListener('resize', resize)
+    resize()
+
+    // --- FPS counter ---
+    let frameCount = 0, lastFpsTime = performance.now()
+    function updateFps() {
+      frameCount++
+      const now = performance.now()
+      if (now - lastFpsTime >= 1000) {
+        statFps.textContent = frameCount
+        frameCount = 0
+        lastFpsTime = now
+      }
+    }
+
+    // --- Animation loop ---
+    function animate() {
+      requestAnimationFrame(animate)
+      controls.update()
+      renderer.render(scene, camera)
+      updateFps()
+    }
+    animate()
+
+    // --- Helpers ---
+    function showLoading(show) {
+      loadingEl.classList.toggle('hidden', !show)
+    }
+
+    function showError(msg) {
+      errorToast.textContent = msg
+      errorToast.classList.add('show')
+      setTimeout(() => errorToast.classList.remove('show'), 4000)
+    }
+
+    function clearModel() {
+      if (currentModel) {
+        scene.remove(currentModel)
+        currentModel.traverse((child) => {
+          if (child.isMesh) {
+            child.geometry?.dispose()
+            if (Array.isArray(child.material)) {
+              child.material.forEach(m => m.dispose())
+            } else {
+              child.material?.dispose()
+            }
+          }
+        })
+        currentModel = null
+        originalMaterials.clear()
+      }
+    }
+
+    function fitCameraToObject(obj) {
+      const box = new THREE.Box3().setFromObject(obj)
+      const size = box.getSize(new THREE.Vector3())
+      const center = box.getCenter(new THREE.Vector3())
+
+      const maxDim = Math.max(size.x, size.y, size.z)
+      const fov = camera.fov * (Math.PI / 180)
+      let dist = maxDim / (2 * Math.tan(fov / 2))
+      dist *= 1.5
+
+      controls.target.copy(center)
+      camera.position.set(
+        center.x + dist * 0.6,
+        center.y + dist * 0.5,
+        center.z + dist * 0.6
+      )
+      camera.near = dist * 0.001
+      camera.far = dist * 100
+      camera.updateProjectionMatrix()
+      controls.update()
+
+      // Reposition lights relative to model
+      dirLight1.position.set(center.x + maxDim, center.y + maxDim * 1.5, center.z + maxDim)
+      dirLight1.target.position.copy(center)
+      dirLight2.position.set(center.x - maxDim, center.y + maxDim * 0.5, center.z - maxDim)
+      dirLight2.target.position.copy(center)
+      dirLight3.position.set(center.x, center.y - maxDim * 0.5, center.z + maxDim)
+      dirLight3.target.position.copy(center)
+      hemiLight.position.set(center.x, center.y + maxDim * 2, center.z)
+
+      // Update grid size
+      gridHelper.scale.set(maxDim / 1000, 1, maxDim / 1000)
+    }
+
+    function computeStats(obj) {
+      let verts = 0, tris = 0, meshCount = 0
+      const materials = new Set()
+      obj.traverse((child) => {
+        if (child.isMesh) {
+          meshCount++
+          const geo = child.geometry
+          if (geo.attributes.position) verts += geo.attributes.position.count
+          if (geo.index) tris += geo.index.count / 3
+          else if (geo.attributes.position) tris += geo.attributes.position.count / 3
+          if (Array.isArray(child.material)) {
+            child.material.forEach(m => materials.add(m.name || '(unnamed)'))
+          } else if (child.material) {
+            materials.add(child.material.name || '(unnamed)')
+          }
+        }
+      })
+      return { verts, tris, meshCount, materialCount: materials.size }
+    }
+
+    // --- Load FBX ---
+    function loadFbxFromUrl(url, fileName) {
+      clearModel()
+      showLoading(true)
+      dropHint.classList.add('hidden')
+
+      const loader = new FBXLoader(loadingManager)
+      loader.load(
+        url,
+        (object) => {
+          currentModel = object
+
+          // Fix materials: convert to MeshStandardMaterial, preserve textures
+          object.traverse((child) => {
+            if (child.isMesh) {
+              if (!child.geometry.attributes.normal) {
+                child.geometry.computeVertexNormals()
+              }
+
+              const oldMats = Array.isArray(child.material) ? child.material : [child.material]
+              const newMats = oldMats.map((mat) => {
+                const hasTexture = mat.map != null
+                console.log('[FBXViewer]', mat.type, 'name:', mat.name, 'texture:', hasTexture ? mat.map.image?.src || 'yes' : 'none')
+
+                if (mat.isMeshBasicMaterial && !hasTexture) {
+                  const m = new THREE.MeshStandardMaterial({
+                    color: mat.color || 0x888888,
+                    roughness: 0.7, metalness: 0.1, side: mat.side,
+                  })
+                  m.name = mat.name; mat.dispose(); return m
+                }
+
+                if (mat.isMeshPhongMaterial || mat.isMeshLambertMaterial) {
+                  const m = new THREE.MeshStandardMaterial({
+                    color: mat.color || 0x888888,
+                    map: mat.map || null,
+                    normalMap: mat.normalMap || null,
+                    emissiveMap: mat.emissiveMap || null,
+                    roughness: 0.7, metalness: 0.1, side: mat.side,
+                  })
+                  m.name = mat.name; mat.dispose(); return m
+                }
+
+                // MeshStandardMaterial with texture — keep as-is
+                if (hasTexture) return mat
+
+                // MeshStandardMaterial without texture — fix dark colors
+                if (mat.color) {
+                  const brightness = (mat.color.r + mat.color.g + mat.color.b) / 3
+                  if (brightness < 0.15) mat.color.setRGB(0.5, 0.5, 0.5)
+                }
+                return mat
+              })
+
+              child.material = Array.isArray(child.material) ? newMats : newMats[0]
+              originalMaterials.set(child.uuid, child.material)
+            }
+          })
+
+          scene.add(object)
+          fitCameraToObject(object)
+
+          const stats = computeStats(object)
+          statFile.textContent = fileName || url.split('/').pop() || 'unknown'
+          statVerts.textContent = stats.verts.toLocaleString()
+          statTris.textContent = Math.round(stats.tris).toLocaleString()
+          statMeshes.textContent = stats.meshCount
+          statMaterials.textContent = stats.materialCount
+
+          showLoading(false)
+        },
+        (xhr) => {
+          if (xhr.total > 0) {
+            const pct = Math.round((xhr.loaded / xhr.total) * 100)
+            document.querySelector('.loading-text').textContent = `加载模型中... ${pct}%`
+          }
+        },
+        (err) => {
+          showLoading(false)
+          showError('加载失败: ' + (err.message || '未知错误'))
+          console.error('[FBXLoader]', err)
+        }
+      )
+    }
+
+    // --- File input ---
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0]
+      if (!file) return
+      const url = URL.createObjectURL(file)
+      loadFbxFromUrl(url, file.name)
+    })
+
+    // --- Texture directory input ---
+    textureDirInput.addEventListener('change', (e) => {
+      textureFiles.clear()
+      const files = Array.from(e.target.files || [])
+      let tgaCount = 0, imgCount = 0
+      files.forEach((f) => {
+        const name = f.name.toLowerCase()
+        const blobUrl = URL.createObjectURL(f)
+        textureFiles.set(f.name, blobUrl)
+        if (name.endsWith('.tga')) tgaCount++
+        else imgCount++
+      })
+      textureStatus.textContent = `已加载 ${tgaCount} TGA + ${imgCount} 张贴图`
+      console.log('[TextureDir]', textureFiles.size, 'files loaded')
+    })
+
+    // --- URL load ---
+    loadUrlBtn.addEventListener('click', () => {
+      const url = urlInput.value.trim()
+      if (url) loadFbxFromUrl(url)
+    })
+    urlInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        const url = urlInput.value.trim()
+        if (url) loadFbxFromUrl(url)
+      }
+    })
+
+    // --- Drag & drop ---
+    document.addEventListener('dragover', (e) => {
+      e.preventDefault()
+      document.body.classList.add('drag-over')
+    })
+    document.addEventListener('dragleave', () => {
+      document.body.classList.remove('drag-over')
+    })
+    document.addEventListener('drop', (e) => {
+      e.preventDefault()
+      document.body.classList.remove('drag-over')
+      const file = e.dataTransfer?.files[0]
+      if (file && file.name.toLowerCase().endsWith('.fbx')) {
+        const url = URL.createObjectURL(file)
+        loadFbxFromUrl(url, file.name)
+      } else {
+        showError('请拖放 .fbx 文件')
+      }
+    })
+
+    // --- Toolbar buttons ---
+    resetCameraBtn.addEventListener('click', () => {
+      if (currentModel) fitCameraToObject(currentModel)
+      else { camera.position.set(100, 100, 100); controls.target.set(0,0,0); controls.update() }
+    })
+
+    toggleGridBtn.addEventListener('click', () => {
+      gridHelper.visible = !gridHelper.visible
+      axesHelper.visible = gridHelper.visible
+      toggleGridBtn.style.background = gridHelper.visible ? 'rgba(124,138,255,0.3)' : ''
+    })
+
+    toggleWireframeBtn.addEventListener('click', () => {
+      if (!currentModel) return
+      wireframeMode = !wireframeMode
+      currentModel.traverse((child) => {
+        if (child.isMesh) {
+          if (wireframeMode) {
+            child.material = new THREE.MeshBasicMaterial({
+              color: 0x7c8aff,
+              wireframe: true,
+              transparent: true,
+              opacity: 0.6,
+            })
+          } else {
+            const orig = originalMaterials.get(child.uuid)
+            if (orig) child.material = orig
+          }
+        }
+      })
+      toggleWireframeBtn.style.background = wireframeMode ? 'rgba(124,138,255,0.3)' : ''
+    })
+
+    autoRotateBtn.addEventListener('click', () => {
+      controls.autoRotate = !controls.autoRotate
+      autoRotateBtn.style.background = controls.autoRotate ? 'rgba(124,138,255,0.3)' : ''
+    })
+
+    // Init button states
+  </script>
+</body>
+</html>

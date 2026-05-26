@@ -75,6 +75,7 @@ export function MainPanel({ onAssetSelect }: MainPanelProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const streamingMsgRef = useRef<string | null>(null)
+  const streamingMsgRefs = useRef<Record<string, string | null>>({})
   const [visibleCount, setVisibleCount] = useState(50)
   const [contextCutoff, setContextCutoff] = useState<number | null>(null)
   const [activeTools, setActiveTools] = useState<Map<string, { name: string; startTime: number }>>(new Map())
@@ -84,25 +85,32 @@ export function MainPanel({ onAssetSelect }: MainPanelProps) {
   const [mentionAssets, setMentionAssets] = useState<Array<{ id: string; name: string }>>([])
   const [isAtBottom, setIsAtBottom] = useState(true)
   const [streamingTabs, setStreamingTabs] = useState<Set<string>>(new Set())
+  const [promptSuggestion, setPromptSuggestion] = useState<string | null>(null)
 
   // 当前标签的消息
   // Ref 保持 openTabIds 在事件回调中最新
   const openTabIdsRef = useRef(openTabIds)
   openTabIdsRef.current = openTabIds
+  const activeTabIdRef = useRef(activeTabId)
+  activeTabIdRef.current = activeTabId
   const tabMessagesRef = useRef(tabMessages)
   tabMessagesRef.current = tabMessages
 
   // 当前标签的消息（activeTabId 为 null 时显示空数组）
   const messages = activeTabId ? (tabMessages[activeTabId] || []) : []
   const sessionId = activeTabId
-  const setMessages = useCallback((updater: ChatMessageType[] | ((prev: ChatMessageType[]) => ChatMessageType[])) => {
-    if (!activeTabId) return
-    const tabId = activeTabId
+  const isActiveTabStreaming = activeTabId ? streamingTabs.has(activeTabId) : isStreaming
+  const activeStreamingMsgId = activeTabId ? streamingMsgRefs.current[activeTabId] : streamingMsgRef.current
+  const setMessagesForTab = useCallback((tabId: string | null | undefined, updater: ChatMessageType[] | ((prev: ChatMessageType[]) => ChatMessageType[])) => {
+    if (!tabId) return
     setTabMessages(prev => {
-      const current = prev[tabId] || MOCK_MESSAGES
+      const current = prev[tabId] || []
       return { ...prev, [tabId]: typeof updater === 'function' ? updater(current) : updater }
     })
-  }, [activeTabId])
+  }, [])
+  const setMessages = useCallback((updater: ChatMessageType[] | ((prev: ChatMessageType[]) => ChatMessageType[])) => {
+    setMessagesForTab(activeTabIdRef.current, updater)
+  }, [setMessagesForTab])
 
   // 持久化 openTabs
   useEffect(() => {
@@ -114,23 +122,34 @@ export function MainPanel({ onAssetSelect }: MainPanelProps) {
     if (activeTabId) localStorage.setItem('tagent-active-tab', activeTabId)
   }, [activeTabId])
 
+  useEffect(() => {
+    if (!activeTabId || sessionRefreshKey === 0) return
+    getSession(activeTabId).then(meta => {
+      if (meta?.title) setTabTitles(prev => ({ ...prev, [activeTabId]: meta.title }))
+    }).catch(() => {})
+  }, [activeTabId, sessionRefreshKey])
+
 const loadTabHistory = useCallback(async (tabId: string) => {
     try {
       const history = await getSessionMessages(tabId, 50)
       if (history.length > 0) {
-        // 第一遍：收集工具结果摘要（避免加载完整结果导致卡顿）
-        const toolResultSummaries: Record<string, string> = {}
+        // 第一遍：收集工具结果。结构化 JSON 必须完整保留，否则历史回放会退化成纯文本/参数展示。
+        const toolResults: Record<string, string> = {}
         history.forEach((msg: Record<string, unknown>) => {
           if (msg.role === 'tool' && msg.toolCallId) {
             const content = (msg.content as string) || ''
-            // 只保留摘要（前 200 字符），避免加载过长内容
-            toolResultSummaries[msg.toolCallId as string] = content.length > 200
-              ? content.slice(0, 200) + '...[已截断]'
-              : content
+            try {
+              JSON.parse(content)
+              toolResults[msg.toolCallId as string] = content
+            } catch {
+              toolResults[msg.toolCallId as string] = content.length > 500
+                ? content.slice(0, 500) + '...[已截断]'
+                : content
+            }
           }
         })
 
-        // 第二遍：构建消息，关联工具结果摘要
+        // 第二遍：构建消息，关联工具结果
         const converted: ChatMessageType[] = history
           .filter((msg: Record<string, unknown>) => {
             const role = msg.role as string
@@ -161,8 +180,8 @@ const loadTabHistory = useCallback(async (tabId: string) => {
             const _toolResults: Record<string, string> = {}
             if (toolCalls) {
               toolCalls.forEach((tc: ToolCall) => {
-                if (toolResultSummaries[tc.id]) {
-                  _toolResults[tc.id] = toolResultSummaries[tc.id]
+                if (toolResults[tc.id]) {
+                  _toolResults[tc.id] = toolResults[tc.id]
                 }
               })
             }
@@ -175,14 +194,14 @@ const loadTabHistory = useCallback(async (tabId: string) => {
               _toolResults,
             }
           })
-        setTabMessages(prev => ({ ...prev, [tabId]: converted.length > 0 ? converted : MOCK_MESSAGES }))
+        setTabMessages(prev => ({ ...prev, [tabId]: converted }))
         setVisibleCount(Math.max(converted.length, 50))
       } else {
-        setTabMessages(prev => ({ ...prev, [tabId]: MOCK_MESSAGES }))
+        setTabMessages(prev => ({ ...prev, [tabId]: [] }))
       }
     } catch (e) {
       console.error('[Session] 加载历史消息失败:', e)
-      setTabMessages(prev => ({ ...prev, [tabId]: MOCK_MESSAGES }))
+      setTabMessages(prev => ({ ...prev, [tabId]: [] }))
     }
   }, [])
 
@@ -346,32 +365,37 @@ const loadTabHistory = useCallback(async (tabId: string) => {
 
     // 流式文本
     const unsubText = tagentClient.on('stream_text', (payload: any) => {
-      const { text } = payload
-      setMessages((prev) => {
+      const { text, sessionId } = payload
+      const targetTabId = sessionId || activeTabIdRef.current
+      setMessagesForTab(targetTabId, (prev) => {
         const last = prev[prev.length - 1]
+        const streamId = targetTabId ? streamingMsgRefs.current[targetTabId] : streamingMsgRef.current
         // 情况 1：追加到当前流式消息
-        if (last && last.id === streamingMsgRef.current) {
+        if (last && last.id === streamId) {
           return [...prev.slice(0, -1), { ...last, content: last.content + text }]
         }
         // 情况 2：最后一条是 thinking 消息，替换为流式消息（保留思考内容）
         if (last && last.role === 'assistant' && !last.toolCalls && !(last as any)._toolStatus) {
           const id = `stream-${Date.now()}`
           streamingMsgRef.current = id
+          if (targetTabId) streamingMsgRefs.current[targetTabId] = id
           const thinkingContent = last.content?.startsWith('💭') ? last.content : undefined
           return [...prev.slice(0, -1), { id, role: 'assistant', content: text, timestamp: Date.now(), _startTime: Date.now(), _thinking: thinkingContent }]
         }
         // 情况 3：创建新的流式消息
         const id = `stream-${Date.now()}`
         streamingMsgRef.current = id
+        if (targetTabId) streamingMsgRefs.current[targetTabId] = id
         return [...prev, { id, role: 'assistant', content: text, timestamp: Date.now(), _startTime: Date.now() }]
       })
     })
 
     // Agent 思考（不设置 ref，让后续 stream 替换 thinking 消息）
     const unsubThinking = tagentClient.on('agent_thinking', (payload: any) => {
-      if (streamingMsgRef.current) return  // 流式输出进行中，跳过
-      const { text } = payload
-      setMessages((prev) => {
+      const { text, sessionId } = payload
+      const targetTabId = sessionId || activeTabIdRef.current
+      if (targetTabId && streamingMsgRefs.current[targetTabId]) return  // 流式输出进行中，跳过
+      setMessagesForTab(targetTabId, (prev) => {
         const last = prev[prev.length - 1]
         if (last && last.role === 'assistant' && !last.toolCalls && !(last as any)._toolStatus) {
           return [...prev.slice(0, -1), {
@@ -390,9 +414,10 @@ const loadTabHistory = useCallback(async (tabId: string) => {
 
     // 工具调用开始（同类工具合并到一条消息）
     const unsubToolStart = tagentClient.on('tool_start', (payload: any) => {
-      const { toolCall } = payload
+      const { toolCall, sessionId } = payload
+      const targetTabId = sessionId || activeTabIdRef.current
       setActiveTools((prev) => new Map(prev).set(toolCall.id, { name: toolCall.name, startTime: Date.now() }))
-      setMessages((prev) => {
+      setMessagesForTab(targetTabId, (prev) => {
         const last = prev[prev.length - 1]
         const newToolCall: ToolCall = {
           id: toolCall.id,
@@ -427,17 +452,18 @@ const loadTabHistory = useCallback(async (tabId: string) => {
         } as any]
       })
       streamingMsgRef.current = null
+      if (targetTabId) streamingMsgRefs.current[targetTabId] = null
     })
 
     // 工具调用结果（支持合并消息的独立结果）
     const unsubToolResult = tagentClient.on('tool_result', (payload: any) => {
-      const { toolCallId, name, result } = payload
+      const { toolCallId, name, result, sessionId } = payload
       setActiveTools((prev) => {
         const next = new Map(prev)
         next.delete(toolCallId)
         return next
       })
-      setMessages((prev) => {
+      setMessagesForTab(sessionId || activeTabIdRef.current, (prev) => {
         return prev.map((msg: any) => {
           if (msg.toolCalls?.some((tc: ToolCall) => tc.id === toolCallId)) {
             const results = { ...(msg._toolResults || {}), [toolCallId]: typeof result === 'string' ? result : JSON.stringify(result, null, 2) }
@@ -453,28 +479,52 @@ const loadTabHistory = useCallback(async (tabId: string) => {
           return msg
         })
       })
+
+      // 联机模式：同步工具结果到服务器
+      import('@/services/sync').then(({ syncToolResult }) => {
+        syncToolResult(name, result).catch(err => {
+          console.error('[Sync] 同步工具结果失败:', err)
+        })
+      })
     })
 
     // 完成
     const unsubDone = tagentClient.on('done', (payload: any) => {
-      const { content } = payload
-      const streamId = streamingMsgRef.current
+      const { content, sessionId, suggestion } = payload
+      console.log('[MainPanel] done event received:', { suggestion, sessionId })
+      const currentTabId = sessionId || activeTabIdRef.current
+      const streamId = currentTabId ? streamingMsgRefs.current[currentTabId] : streamingMsgRef.current
       streamingMsgRef.current = null
+      if (currentTabId) streamingMsgRefs.current[currentTabId] = null
       setIsStreaming(false)
       setActiveTools(new Map())
       setProgress(null) // 兜底：清除进度条
       setSessionRefreshKey((k) => k + 1) // 刷新会话标题
+
+      // 设置建议（如果有）
+      if (suggestion) {
+        setPromptSuggestion(suggestion)
+      }
+
+      // 联机模式：记录 LLM 用量（粗略估算）
+      if (content) {
+        const tokensEstimate = content.length * 2 // 粗略估算：中文约 2 token/字
+        import('@/services/sync').then(({ logLlmUsage }) => {
+          logLlmUsage('agent', tokensEstimate).catch(() => {})
+        })
+      }
+
       // 移除当前标签的运行状态
-      if (activeTabId) {
+      if (currentTabId) {
         setStreamingTabs(prev => {
           const next = new Set(prev)
-          next.delete(activeTabId)
+          next.delete(currentTabId)
           return next
         })
       }
 
       if (content) {
-        setMessages((prev) => {
+        setMessagesForTab(currentTabId, (prev) => {
           const last = prev[prev.length - 1]
           // 如果最后一条是流式消息，替换为完整内容 + 计算用时
           if (last && last.id === streamId) {
@@ -503,19 +553,21 @@ const loadTabHistory = useCallback(async (tabId: string) => {
 
     // 错误
     const unsubError = tagentClient.on('error', (payload: any) => {
-      const { error } = payload
+      const { error, sessionId } = payload
+      const currentTabId = sessionId || activeTabIdRef.current
       streamingMsgRef.current = null
+      if (currentTabId) streamingMsgRefs.current[currentTabId] = null
       setIsStreaming(false)
       setActiveTools(new Map())
       // 移除当前标签的运行状态
-      if (activeTabId) {
+      if (currentTabId) {
         setStreamingTabs(prev => {
           const next = new Set(prev)
-          next.delete(activeTabId)
+          next.delete(currentTabId)
           return next
         })
       }
-      setMessages((prev) => [...prev, {
+      setMessagesForTab(currentTabId, (prev) => [...prev, {
         id: `error-${Date.now()}`,
         role: 'assistant' as const,
         content: `❌ ${error}`,
@@ -535,12 +587,21 @@ const loadTabHistory = useCallback(async (tabId: string) => {
       unsubError()
       // 不断开 WebSocket，由 App 层管理连接
     }
-  }, [loadTabHistory])
+  }, [loadTabHistory, setMessagesForTab])
 
   const handleSend = useCallback(async () => {
-    if (!input.trim() || isStreaming) return
+    const targetTabId = activeTabIdRef.current
+    console.log('[handleSend] called', { input: input.trim(), targetTabId, streamingTabs: Array.from(streamingTabs) })
+
+    if (!input.trim() || !targetTabId || streamingTabs.has(targetTabId)) {
+      console.log('[handleSend] blocked', { hasInput: !!input.trim(), hasTab: !!targetTabId, isStreaming: streamingTabs.has(targetTabId) })
+      return
+    }
 
     let content = input.trim()
+
+    // 清除建议
+    setPromptSuggestion(null)
 
     // 如果有 @ 引用的资产，附加到消息末尾
     if (mentionAssets.length > 0) {
@@ -553,10 +614,9 @@ const loadTabHistory = useCallback(async (tabId: string) => {
     setMentionQuery(null)
     setIsStreaming(true)
     streamingMsgRef.current = null
+    streamingMsgRefs.current[targetTabId] = null
     // 标记当前标签为运行中
-    if (activeTabId) {
-      setStreamingTabs(prev => new Set(prev).add(activeTabId))
-    }
+    setStreamingTabs(prev => new Set(prev).add(targetTabId))
 
     // 添加用户消息
     const userMsg: ChatMessageType = {
@@ -565,15 +625,21 @@ const loadTabHistory = useCallback(async (tabId: string) => {
       content,
       timestamp: Date.now(),
     }
-    setMessages((prev) => [...prev, userMsg])
+    setMessagesForTab(targetTabId, (prev) => [...prev, userMsg])
 
     if (connectionStatus === 'connected') {
       // 真实模式：通过 WebSocket 发送
       try {
-        await tagentClient.sendMessage(content, contextCutoff)
+        await tagentClient.sendMessage(content, contextCutoff, targetTabId)
+        setTimeout(() => setSessionRefreshKey((k) => k + 1), 300)
       } catch (e: any) {
         setIsStreaming(false)
-        setMessages((prev) => [...prev, {
+        setStreamingTabs(prev => {
+          const next = new Set(prev)
+          next.delete(targetTabId)
+          return next
+        })
+        setMessagesForTab(targetTabId, (prev) => [...prev, {
           id: `error-${Date.now()}`,
           role: 'assistant',
           content: `❌ 发送失败: ${e.message}`,
@@ -584,21 +650,26 @@ const loadTabHistory = useCallback(async (tabId: string) => {
       // Mock 模式
       setTimeout(() => {
         const response = generateMockResponse(content)
-        setMessages((prev) => [...prev, {
+        setMessagesForTab(targetTabId, (prev) => [...prev, {
           id: `mock-${Date.now()}`,
           role: 'assistant',
           content: response,
           timestamp: Date.now(),
         }])
         setIsStreaming(false)
+        setStreamingTabs(prev => {
+          const next = new Set(prev)
+          next.delete(targetTabId)
+          return next
+        })
       }, 1500)
     }
-  }, [input, isStreaming, connectionStatus])
+  }, [input, connectionStatus, mentionAssets, contextCutoff, streamingTabs, setMessagesForTab])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      if (!isStreaming) {
+      if (!isActiveTabStreaming) {
         handleSend()
       }
     }
@@ -607,7 +678,15 @@ const loadTabHistory = useCallback(async (tabId: string) => {
   // 停止当前对话（断开重连以中断 Agent）
   const handleStop = useCallback(() => {
     streamingMsgRef.current = null
+    if (sessionId) streamingMsgRefs.current[sessionId] = null
     setIsStreaming(false)
+    if (sessionId) {
+      setStreamingTabs(prev => {
+        const next = new Set(prev)
+        next.delete(sessionId)
+        return next
+      })
+    }
     // 断开并重连以中断后端 Agent
     tagentClient.disconnect()
     setTimeout(() => tagentClient.connect(sessionId || undefined), 500)
@@ -648,6 +727,7 @@ const loadTabHistory = useCallback(async (tabId: string) => {
             activeTabId={activeTabId}
             tabTitles={tabTitles}
             streamingTabs={streamingTabs}
+            sessionRefreshKey={sessionRefreshKey}
             onTabSelect={handleTabSelect}
             onTabClose={handleTabClose}
             onNewTab={handleNewTab}
@@ -736,7 +816,7 @@ const loadTabHistory = useCallback(async (tabId: string) => {
         )}
 
         {/* 工具活动 + 分析进度（在滚动区内，随消息一起滚动） */}
-        {(isStreaming || progress) && (
+        {(isActiveTabStreaming || progress) && (
           <div className="py-2">
             {/* 分析进度条 */}
             {progress && (
@@ -780,7 +860,7 @@ const loadTabHistory = useCallback(async (tabId: string) => {
               </div>
             )}
             {/* 思考中 */}
-            {!progress && activeTools.size === 0 && !streamingMsgRef.current && (
+            {!progress && activeTools.size === 0 && !activeStreamingMsgId && (
               <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 rounded-lg">
                 <ThinkingDots text="思考中..." />
               </div>
@@ -802,7 +882,7 @@ const loadTabHistory = useCallback(async (tabId: string) => {
       />
 
       {/* 滚动到底部按钮 */}
-      {!isAtBottom && isStreaming && (
+      {!isAtBottom && isActiveTabStreaming && (
         <button
           onClick={() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })}
           className="absolute bottom-2 right-2 z-10 px-3 py-1.5 text-xs bg-card border border-border/50 rounded-full shadow-md hover:bg-accent transition-colors text-muted-foreground"
@@ -814,8 +894,29 @@ const loadTabHistory = useCallback(async (tabId: string) => {
 
       {/* 输入框 */}
       <div className="p-4 border-t border-border/50 overflow-x-hidden">
+        {/* 建议卡片 */}
+        {promptSuggestion && (
+          <div className="flex items-center gap-2 mb-3 animate-msg-pop">
+            <button
+              onClick={() => {
+                setInput(promptSuggestion)
+                setPromptSuggestion(null)
+              }}
+              className="flex items-center gap-2 px-3 py-1.5 bg-muted hover:bg-accent rounded-full text-sm text-muted-foreground hover:text-foreground transition-colors border border-border/50"
+            >
+              <span className="text-xs opacity-60">→</span>
+              <span className="truncate">{promptSuggestion}</span>
+            </button>
+            <button
+              onClick={() => setPromptSuggestion(null)}
+              className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              ×
+            </button>
+          </div>
+        )}
         <div className="relative">
-          {isStreaming && (
+          {isActiveTabStreaming && (
             <div
               className="absolute left-0 right-0 bottom-0 h-16 rounded-b-xl animate-input-breathe pointer-events-none overflow-hidden"
               style={{
@@ -824,7 +925,7 @@ const loadTabHistory = useCallback(async (tabId: string) => {
               }}
             />
           )}
-          <div className={`relative flex items-end gap-2 rounded-xl p-3 transition-all duration-300 ${isStreaming ? 'bg-primary/10 ring-1 ring-primary/40' : 'bg-muted'}`}>
+          <div className={`relative flex items-end gap-2 rounded-xl p-3 transition-all duration-300 ${isActiveTabStreaming ? 'bg-primary/10 ring-1 ring-primary/40' : 'bg-muted'}`}>
           <textarea
             value={input}
             onChange={(e) => {
@@ -868,23 +969,18 @@ const loadTabHistory = useCallback(async (tabId: string) => {
             />
           )}
           <button
-            onClick={isStreaming ? handleStop : handleSend}
-            disabled={!isStreaming && !input.trim()}
+            onClick={isActiveTabStreaming ? handleStop : handleSend}
+            disabled={!isActiveTabStreaming && !input.trim()}
             className={`disabled:opacity-50 transition-colors p-1 rounded ${
-              isStreaming
+              isActiveTabStreaming
                 ? 'text-destructive hover:bg-destructive/10'
                 : 'text-muted-foreground hover:text-primary'
             }`}
           >
-            {isStreaming ? <Square size={18} /> : <Send size={18} />}
+            {isActiveTabStreaming ? <Square size={18} /> : <Send size={18} />}
           </button>
         </div>
         </div>
-        <p className="text-xs text-muted-foreground mt-2 text-center">
-          TAgent v0.1.0 · 游戏 TA AI Agent
-          {connectionStatus !== 'connected' && ' · Mock 模式'}
-          {contextCutoff !== null && ` · 上下文: ${messages.length - contextCutoff} 条消息`}
-        </p>
       </div>
     </div>
   )

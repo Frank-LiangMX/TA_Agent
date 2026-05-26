@@ -1,0 +1,28 @@
+# TAgent Server 配置文件
+# 部署时由技术人员配置
+
+# 服务器配置
+server:
+  host: "0.0.0.0"
+  port: 8081
+
+# 数据目录
+data_dir: "./data"
+
+# 初始超级管理员（部署时配置）
+# 这些用户在服务器首次启动时自动创建
+super_admins:
+  - user_id: "liangmingxuan"
+    name: "梁明轩"
+    department: "技术美术组"
+
+# 用量限制
+limits:
+  calls_per_5h: 1500  # 每 5 小时调用上限
+  tokens_per_call: 4096  # 单次 Token 上限
+
+# LLM 配置（预留，当前由客户端本地处理）
+llm:
+  provider: "local"  # local | proxy
+  base_url: ""
+  api_key: ""

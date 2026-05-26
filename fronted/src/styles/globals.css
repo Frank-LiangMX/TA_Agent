@@ -500,3 +500,36 @@ pre code,
 .animate-tab-fade {
   animation: tab-fade-in 0.2s ease-out;
 }
+
+/* ===== 表单元素样式修复 ===== */
+
+/* 确保 select、input、textarea 在所有主题下文字可见 */
+select,
+input[type="text"],
+input[type="password"],
+input[type="number"],
+input[type="email"],
+textarea {
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--background));
+}
+
+/* select 的 option 需要显式设置颜色 */
+select option {
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--background));
+}
+
+/* placeholder 颜色 */
+input::placeholder,
+textarea::placeholder {
+  color: hsl(var(--muted-foreground));
+}
+
+/* disabled 状态 */
+input:disabled,
+select:disabled,
+textarea:disabled {
+  color: hsl(var(--muted-foreground));
+  background-color: hsl(var(--muted));
+}

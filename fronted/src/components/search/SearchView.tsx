@@ -7,7 +7,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Search, Package, RefreshCw, X } from 'lucide-react'
 import { tagentClient } from '@/services/websocket'
-import { API_BASE } from '@/lib/api'
+import { getDataSource } from '@/lib/cache'
 
 interface SearchResult {
   asset_id: string
@@ -87,7 +87,8 @@ export function SearchView({ onAssetSelect }: SearchViewProps) {
   // 获取资产详情
   const handleAssetClick = async (assetId: string) => {
     try {
-      const res = await fetch(`${API_BASE}/api/assets/${assetId}`)
+      const dataSource = await getDataSource()
+      const res = await fetch(`${dataSource}/api/assets/${assetId}`)
       const data = await res.json()
       if (!data.error) {
         onAssetSelect(data)

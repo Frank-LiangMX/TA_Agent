@@ -18,6 +18,15 @@
 - **禁止在根目录创建新的 .py 代码文件**：新增模块必须放入对应的子目录（`tools/`、`tags/`、`core/` 等）
 - **历史遗留**：根目录现有的 `analyzer.py`、`config.py`、`session_manager.py`、`batch_render.py`、`run_render.py`、`quickstart.py` 是历史债务，后续重构时逐步迁入 `core/` 或 `scripts/`
 
+### 运行数据目录规范
+- **本地 Agent 运行数据统一存放在 AppData 子目录**：`%APPDATA%\tagent-desktop\agent-running-data`
+- **唯一入口**：Python 代码必须从 `config.py` 导入 `RUNTIME_DIR`、`SESSIONS_DIR`、`MEMORY_DIR`、`CONFIGS_DIR`、`TAG_STORE_DIR`、`PIPELINE_RUNS_FILE`、`PREVIEWS_DIR` 等路径常量
+- **禁止硬编码运行数据路径**：不要写死 `F:\ta_agent`、`.ta_agent`、`tag_store`、`sessions`、`pipeline_runs.jsonl` 等运行数据路径
+- **禁止自己拼运行根目录**：如需新增运行数据目录，先在 `config.py` 增加路径常量，再由业务代码导入使用
+- **环境变量覆盖**：仅允许 `TAGENT_RUNTIME_DIR` 作为显式调试覆盖；Electron 兼容 `ELECTRON_USER_DATA`，但仍应指向 `agent-running-data`
+- **Electron userData 分层**：Electron/Chromium 自身缓存留在 `%APPDATA%\tagent-desktop`，Agent 会话、记忆、资产库、流水线记录、日志必须放入 `agent-running-data`
+- **中心服务器例外**：根目录 `server/` 是中心服务器，使用 `TAGENT_DATA_DIR` / `server/config.py` 管理共享服务数据，不与本地 Agent 的 `RUNTIME_DIR` 混用
+
 ## 工具开发规范
 
 ### 新增工具标准模板

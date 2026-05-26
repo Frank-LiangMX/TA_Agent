@@ -180,7 +180,9 @@ def append_message(session_id: str, message: dict):
     追加消息到会话（append-only）。
 
     自动添加 timestamp，自动更新索引（lastActive、messageCount）。
-    工具结果超过 2000 字符时自动截断，避免会话文件过大。
+    非 JSON 工具结果超过 2000 字符时自动截断，避免会话文件过大。
+    JSON 工具结果需要保留合法结构，供前端历史回放恢复可视化组件；
+    对大结果工具会保存轻量展示摘要，而不是完整原始结果。
 
     消息格式:
         {"role": "user", "content": "..."}
@@ -191,12 +193,38 @@ def append_message(session_id: str, message: dict):
     msg = {**message}
     msg["timestamp"] = datetime.now().isoformat(timespec="seconds")
 
-    # 截断过大的工具结果
-    MAX_TOOL_CONTENT = 2000
+    # 截断过大的工具结果。结构化 JSON 截断后会失效，前端历史回放无法渲染专用组件。
+    MAX_TEXT_TOOL_CONTENT = 2000
+    MAX_JSON_TOOL_CONTENT = 8000
     if msg.get("role") == "tool" and msg.get("content"):
         content = msg["content"]
-        if len(content) > MAX_TOOL_CONTENT:
-            msg["content"] = content[:MAX_TOOL_CONTENT] + f"\n... [截断，原长 {len(content)} 字符]"
+        try:
+            parsed = json.loads(content)
+            tool_name = msg.get("name", "")
+
+            # analyze_assets 的完整结果可能很大；历史回放卡片只需要汇总字段。
+            if tool_name == "analyze_assets" and isinstance(parsed, dict):
+                compact = {
+                    key: parsed[key]
+                    for key in ("total_assets", "summary", "need_inference_confirm", "message")
+                    if key in parsed
+                }
+                if "report_markdown" in parsed:
+                    report = str(parsed.get("report_markdown") or "")
+                    compact["report_markdown"] = report[:1200] + ("...[已截断]" if len(report) > 1200 else "")
+                msg["content"] = json.dumps(compact, ensure_ascii=False)
+                content = msg["content"]
+
+            if len(content) > MAX_JSON_TOOL_CONTENT:
+                msg["content"] = json.dumps({
+                    "truncated": True,
+                    "original_length": len(content),
+                    "tool": tool_name,
+                    "preview": content[:MAX_JSON_TOOL_CONTENT],
+                }, ensure_ascii=False)
+        except (TypeError, json.JSONDecodeError):
+            if len(content) > MAX_TEXT_TOOL_CONTENT:
+                msg["content"] = content[:MAX_TEXT_TOOL_CONTENT] + f"\n... [截断，原长 {len(content)} 字符]"
 
     # 截断 assistant 消息中的 toolCalls 参数
     if msg.get("role") == "assistant" and msg.get("toolCalls"):

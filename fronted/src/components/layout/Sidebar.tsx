@@ -4,6 +4,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { API_BASE } from '@/lib/api'
+import { getConfig } from '@/services/config'
 import agentIcon from '@/assets/icon.png'
 import { BlurText } from '../animations'
 import {
@@ -23,6 +24,17 @@ interface SidebarProps {
   onViewChange: (view: ViewType) => void
 }
 
+/** 获取数据源 API 地址 */
+async function getDataSource(): Promise<string> {
+  try {
+    const config = await getConfig()
+    if (config.mode === 'online' && config.online.server_host) {
+      return `http://${config.online.server_host}:${config.online.server_port || 8081}`
+    }
+  } catch {}
+  return API_BASE
+}
+
 export function Sidebar({ activeView, onViewChange }: SidebarProps) {
   const [reviewCount, setReviewCount] = useState(0)
 
@@ -30,7 +42,8 @@ export function Sidebar({ activeView, onViewChange }: SidebarProps) {
   useEffect(() => {
     const fetchCount = async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/reviews/pending`)
+        const dataSource = await getDataSource()
+        const res = await fetch(`${dataSource}/api/reviews/pending`)
         const data = await res.json()
         setReviewCount(data.total_pending || 0)
       } catch {
@@ -45,10 +58,12 @@ export function Sidebar({ activeView, onViewChange }: SidebarProps) {
   // 切换到审核页面时立即刷新
   useEffect(() => {
     if (activeView === 'review') {
-      fetch(`${API_BASE}/api/reviews/pending`)
-        .then((res) => res.json())
-        .then((data) => setReviewCount(data.total_pending || 0))
-        .catch(() => {})
+      getDataSource().then(dataSource => {
+        fetch(`${dataSource}/api/reviews/pending`)
+          .then((res) => res.json())
+          .then((data) => setReviewCount(data.total_pending || 0))
+          .catch(() => {})
+      })
     }
   }, [activeView])
 

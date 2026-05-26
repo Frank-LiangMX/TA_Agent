@@ -1,92 +1,155 @@
 /**
- * 模型设置（对接后端 LLM 配置 API）
+ * 模型设置
+ *
+ * 本地模式：完整的模型管理（增删改查 + 切换启用）
  */
 
 import React, { useState, useEffect } from 'react'
-import { Cpu, Check, Loader2, Plus, X } from 'lucide-react'
+import { Cpu, Check, Loader2, Plus, X, Edit2, Trash2, Star, StarOff } from 'lucide-react'
 import { SettingsSection, SettingsCard, SettingsRow } from './primitives'
 import { API_BASE } from '@/lib/api'
 
-interface LLMConfig {
-  key: string
+interface Model {
+  id: string
   name: string
-  type: string
   base_url: string
   model: string
-  active: boolean
+  api_key?: string
+  protocol?: 'openai' | 'anthropic'
+  extra_headers?: Record<string, string>
+  has_api_key?: boolean
+}
+
+interface ModelWithKey extends Model {
+  api_key: string
 }
 
 export function ModelSettings() {
-  const [configs, setConfigs] = useState<LLMConfig[]>([])
-  const [activeKey, setActiveKey] = useState('')
+  const [models, setModels] = useState<Model[]>([])
+  const [activeId, setActiveId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [switching, setSwitching] = useState('')
-  const [showAdd, setShowAdd] = useState(false)
-  const [addError, setAddError] = useState('')
-  const [adding, setAdding] = useState(false)
-
-  // 添加表单
-  const [form, setForm] = useState({
-    key: '',
+  const [editing, setEditing] = useState<string | null>(null) // editing model id
+  const [isNew, setIsNew] = useState(false)
+  const [form, setForm] = useState<ModelWithKey>({
+    id: '',
     name: '',
     base_url: '',
     model: '',
     api_key: '',
-    type: 'cloud',
+    protocol: 'openai',
+    extra_headers: {},
   })
+  const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState<string | null>(null)
+  const [error, setError] = useState('')
 
-  useEffect(() => { fetchConfigs() }, [])
+  useEffect(() => { fetchModels() }, [])
 
-  const fetchConfigs = async () => {
+  const fetchModels = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/config/llm`)
-      const data = await res.json()
-      setConfigs(data.configs || [])
-      setActiveKey(data.active || '')
-    } catch {} finally { setLoading(false) }
-  }
-
-  const handleSwitch = async (key: string) => {
-    if (key === activeKey) return
-    setSwitching(key)
-    try {
-      const res = await fetch(`${API_BASE}/api/config/llm/switch`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: key }),
-      })
-      const data = await res.json()
-      if (data.success) {
-        setActiveKey(key)
-        setConfigs((prev) => prev.map((c) => ({ ...c, active: c.key === key })))
+      const res = await fetch(`${API_BASE}/api/config/models`)
+      if (res.ok) {
+        const data = await res.json()
+        setModels(data.models || [])
+        setActiveId(data.active_id || null)
       }
-    } catch {} finally { setSwitching('') }
-  }
-
-  const handleAdd = async () => {
-    if (!form.key || !form.base_url || !form.model) {
-      setAddError('key、API 地址、模型名称不能为空')
-      return
+    } catch {} finally {
+      setLoading(false)
     }
-    setAdding(true)
-    setAddError('')
+  }
+
+  const handleAdd = () => {
+    setIsNew(true)
+    setEditing('new')
+    setForm({ id: '', name: '', base_url: '', model: '', api_key: '', protocol: 'openai', extra_headers: {} })
+    setError('')
+  }
+
+  const handleEdit = (model: Model) => {
+    setIsNew(false)
+    setEditing(model.id)
+    // 如果已有 API Key，显示为掩码；否则为空
+    setForm({
+      ...model,
+      api_key: model.has_api_key ? '••••••••' : '',
+      protocol: model.protocol || 'openai',
+      extra_headers: model.extra_headers || {},
+    })
+    setError('')
+  }
+
+  const handleCancel = () => {
+    setEditing(null)
+    setIsNew(false)
+    setError('')
+  }
+
+  const handleSave = async () => {
+    if (!form.name) { setError('名称不能为空'); return }
+    if (!form.base_url) { setError('Base URL 不能为空'); return }
+    if (!form.model) { setError('模型不能为空'); return }
+    if (!form.api_key && isNew) { setError('API Key 不能为空'); return }
+
+    setSaving(true)
+    setError('')
+
     try {
-      const res = await fetch(`${API_BASE}/api/config/llm/add`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      })
+      // 如果 api_key 是掩码 '••••••••'，不发送（保持原样）
+      const apiKeyToSave = form.api_key === '••••••••' ? '' : form.api_key
+
+      let res: Response
+      if (isNew) {
+        res = await fetch(`${API_BASE}/api/config/models`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...form, api_key: apiKeyToSave }),
+        })
+      } else {
+        res = await fetch(`${API_BASE}/api/config/models/${editing}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...form, api_key: apiKeyToSave }),
+        })
+      }
+
       const data = await res.json()
       if (data.success) {
-        setShowAdd(false)
-        setForm({ key: '', name: '', base_url: '', model: '', api_key: '', type: 'cloud' })
-        fetchConfigs()
+        setEditing(null)
+        setIsNew(false)
+        fetchModels()
       } else {
-        setAddError(data.error || '添加失败')
+        setError(data.error || '保存失败')
       }
-    } catch (e: any) {
-      setAddError(e.message || '网络错误')
-    } finally { setAdding(false) }
+    } catch {
+      setError('网络错误')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('确定删除这个模型？')) return
+    setDeleting(id)
+    try {
+      const res = await fetch(`${API_BASE}/api/config/models/${id}`, { method: 'DELETE' })
+      const data = await res.json()
+      if (data.success) {
+        fetchModels()
+      }
+    } finally {
+      setDeleting(null)
+    }
+  }
+
+  const handleActivate = async (id: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/config/models/${id}/activate`, { method: 'POST' })
+      const data = await res.json()
+      if (data.success) {
+        setActiveId(id)
+        fetchModels()
+      }
+    } catch {}
   }
 
   if (loading) {
@@ -100,137 +163,165 @@ export function ModelSettings() {
 
   return (
     <div className="space-y-6">
-      {/* 已有模型列表 */}
       <SettingsSection
         title="模型配置"
-        description="选择当前使用的 LLM 模型"
+        description="管理多个 LLM 模型配置"
         action={
-          <button
-            onClick={() => setShowAdd(!showAdd)}
-            className="flex items-center gap-1 text-xs text-primary hover:underline"
-          >
-            {showAdd ? <X size={12} /> : <Plus size={12} />}
-            {showAdd ? '取消' : '添加模型'}
-          </button>
+          editing ? null : (
+            <button
+              onClick={handleAdd}
+              className="flex items-center gap-1 text-xs text-primary hover:underline"
+            >
+              <Plus size={12} />
+              添加模型
+            </button>
+          )
         }
       >
         <SettingsCard>
-          {configs.map((cfg) => (
-            <SettingsRow
-              key={cfg.key}
-              label={cfg.name}
-              description={`${cfg.type === 'cloud' ? '云端' : '本地'} · ${cfg.model} · ${cfg.base_url}`}
-              icon={<Cpu size={16} />}
-            >
-              <div className="flex items-center gap-2">
-                {switching === cfg.key ? (
-                  <Loader2 size={16} className="animate-spin text-muted-foreground" />
-                ) : cfg.active ? (
-                  <div className="flex items-center gap-1 text-xs text-primary font-medium">
-                    <Check size={14} />
-                    使用中
+          {/* 编辑/新增表单 */}
+          {editing && (
+            <div className="px-4 py-3 border-b border-border bg-muted/50">
+              <div className="text-xs font-medium mb-3">{isNew ? '添加新模型' : '编辑模型'}</div>
+              <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs text-muted-foreground">名称</label>
+                    <input
+                      value={form.name}
+                      onChange={(e) => setForm({ ...form, name: e.target.value })}
+                      placeholder="如: Claude 3.5"
+                      className="w-full mt-0.5 px-2 py-1.5 text-xs bg-background border border-border rounded outline-none focus:ring-1 focus:ring-ring"
+                    />
                   </div>
-                ) : (
-                  <button
-                    onClick={() => handleSwitch(cfg.key)}
-                    className="text-xs text-primary hover:underline"
-                  >
-                    切换
-                  </button>
-                )}
-              </div>
-            </SettingsRow>
-          ))}
-        </SettingsCard>
-      </SettingsSection>
-
-      {/* 添加模型表单 */}
-      {showAdd && (
-        <SettingsSection title="添加自定义模型" description="支持 OpenAI 兼容接口的云端或本地模型">
-          <SettingsCard>
-            <div className="px-4 py-3 space-y-3">
-              <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-muted-foreground">模型</label>
+                    <input
+                      value={form.model}
+                      onChange={(e) => setForm({ ...form, model: e.target.value })}
+                      placeholder="如: claude-3-5-sonnet-20241022"
+                      className="w-full mt-0.5 px-2 py-1.5 text-xs bg-background border border-border rounded outline-none focus:ring-1 focus:ring-ring"
+                    />
+                  </div>
+                </div>
                 <div>
-                  <label className="text-xs text-muted-foreground">标识 (key)</label>
+                  <label className="text-xs text-muted-foreground">Base URL</label>
                   <input
-                    value={form.key}
-                    onChange={(e) => setForm({ ...form, key: e.target.value })}
-                    placeholder="如: qwen-14b"
-                    className="w-full mt-1 px-2 py-1.5 text-xs bg-muted border border-border rounded outline-none focus:ring-1 focus:ring-ring"
+                    value={form.base_url}
+                    onChange={(e) => setForm({ ...form, base_url: e.target.value })}
+                    placeholder="https://api.anthropic.com/v1"
+                    className="w-full mt-0.5 px-2 py-1.5 text-xs bg-background border border-border rounded outline-none focus:ring-1 focus:ring-ring"
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-muted-foreground">显示名称</label>
-                  <input
-                    value={form.name}
-                    onChange={(e) => setForm({ ...form, name: e.target.value })}
-                    placeholder="如: Qwen-14B (本地)"
-                    className="w-full mt-1 px-2 py-1.5 text-xs bg-muted border border-border rounded outline-none focus:ring-1 focus:ring-ring"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground">API 地址</label>
-                <input
-                  value={form.base_url}
-                  onChange={(e) => setForm({ ...form, base_url: e.target.value })}
-                  placeholder="https://api.example.com/v1"
-                  className="w-full mt-1 px-2 py-1.5 text-xs bg-muted border border-border rounded outline-none focus:ring-1 focus:ring-ring"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-muted-foreground">模型名称</label>
-                  <input
-                    value={form.model}
-                    onChange={(e) => setForm({ ...form, model: e.target.value })}
-                    placeholder="deepseek-v4-pro"
-                    className="w-full mt-1 px-2 py-1.5 text-xs bg-muted border border-border rounded outline-none focus:ring-1 focus:ring-ring"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">类型</label>
+                  <label className="text-xs text-muted-foreground">协议</label>
                   <select
-                    value={form.type}
-                    onChange={(e) => setForm({ ...form, type: e.target.value })}
-                    className="w-full mt-1 px-2 py-1.5 text-xs bg-muted border border-border rounded outline-none focus:ring-1 focus:ring-ring"
+                    value={form.protocol || 'openai'}
+                    onChange={(e) => setForm({ ...form, protocol: e.target.value as 'openai' | 'anthropic' })}
+                    className="w-full mt-0.5 px-2 py-1.5 text-xs bg-background border border-border rounded outline-none focus:ring-1 focus:ring-ring"
                   >
-                    <option value="cloud">云端 API</option>
-                    <option value="local">本地模型</option>
+                    <option value="openai">OpenAI（/v1/chat/completions）</option>
+                    <option value="anthropic">Anthropic（/v1/messages）</option>
                   </select>
                 </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">API Key {isNew && <span className="text-destructive">*</span>}</label>
+                  <input
+                    type="password"
+                    value={form.api_key}
+                    onChange={(e) => setForm({ ...form, api_key: e.target.value })}
+                    placeholder={isNew ? 'sk-ant-...' : '不修改则留空'}
+                    className="w-full mt-0.5 px-2 py-1.5 text-xs bg-background border border-border rounded outline-none focus:ring-1 focus:ring-ring"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Extra Headers (JSON)</label>
+                  <input
+                    value={JSON.stringify(form.extra_headers || {})}
+                    onChange={(e) => {
+                      try {
+                        setForm({ ...form, extra_headers: JSON.parse(e.target.value) })
+                      } catch {}
+                    }}
+                    placeholder='{"anthropic-version": "2023-06-01"}'
+                    className="w-full mt-0.5 px-2 py-1.5 text-xs bg-background border border-border rounded outline-none focus:ring-1 focus:ring-ring"
+                  />
+                </div>
+                {error && <p className="text-xs text-destructive">{error}</p>}
+                <div className="flex gap-2 pt-1">
+                  <button
+                    onClick={handleSave}
+                    disabled={saving}
+                    className="text-xs bg-primary text-primary-foreground px-3 py-1.5 rounded hover:bg-primary/80 disabled:opacity-50"
+                  >
+                    {saving ? '保存中...' : '保存'}
+                  </button>
+                  <button
+                    onClick={handleCancel}
+                    className="text-xs bg-muted text-muted-foreground px-3 py-1.5 rounded hover:bg-muted/80"
+                  >
+                    取消
+                  </button>
+                </div>
               </div>
-              <div>
-                <label className="text-xs text-muted-foreground">API Key（本地模型可填 none）</label>
-                <input
-                  value={form.api_key}
-                  onChange={(e) => setForm({ ...form, api_key: e.target.value })}
-                  placeholder="sk-..."
-                  className="w-full mt-1 px-2 py-1.5 text-xs bg-muted border border-border rounded outline-none focus:ring-1 focus:ring-ring"
-                />
-              </div>
-              {addError && (
-                <p className="text-xs text-destructive">{addError}</p>
-              )}
-              <button
-                onClick={handleAdd}
-                disabled={adding}
-                className="text-xs bg-primary text-primary-foreground px-4 py-1.5 rounded-lg hover:bg-primary/80 disabled:opacity-50 transition-colors"
-              >
-                {adding ? '添加中...' : '添加模型'}
-              </button>
             </div>
-          </SettingsCard>
-        </SettingsSection>
-      )}
+          )}
 
-      <SettingsSection title="视觉模型" description="用于资产图片分析的多模态模型">
-        <SettingsCard>
-          <SettingsRow label="视觉分析" description="使用多模态模型分析资产图片">
-            <span className="text-sm text-muted-foreground">已启用</span>
-          </SettingsRow>
+          {/* 模型列表 */}
+          {models.length === 0 && !editing ? (
+            <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+              暂无模型，点击上方添加
+            </div>
+          ) : (
+            models.map((m) => (
+              <SettingsRow
+                key={m.id}
+                label={
+                  <div className="flex items-center gap-2">
+                    <Cpu size={14} className="text-muted-foreground" />
+                    <span>{m.name}</span>
+                    {activeId === m.id && (
+                      <span className="text-xs text-primary bg-primary/10 px-1.5 py-0.5 rounded">已启用</span>
+                    )}
+                  </div>
+                }
+                description={`${m.model} · ${m.base_url}`}
+              >
+                <div className="flex items-center gap-2">
+                  {activeId !== m.id && (
+                    <button
+                      onClick={() => handleActivate(m.id)}
+                      title="设为启用"
+                      className="p-1 text-muted-foreground hover:text-primary"
+                    >
+                      <Star size={14} />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleEdit(m)}
+                    title="编辑"
+                    className="p-1 text-muted-foreground hover:text-foreground"
+                  >
+                    <Edit2 size={14} />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(m.id)}
+                    disabled={deleting === m.id}
+                    title="删除"
+                    className="p-1 text-muted-foreground hover:text-destructive disabled:opacity-50"
+                  >
+                    {deleting === m.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                  </button>
+                </div>
+              </SettingsRow>
+            ))
+          )}
         </SettingsCard>
       </SettingsSection>
+
+      <div className="text-xs text-muted-foreground px-2">
+        💡 点击星标启用模型，被启用的模型会用于所有 LLM 调用
+      </div>
     </div>
   )
 }

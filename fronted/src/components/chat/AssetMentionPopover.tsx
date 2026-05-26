@@ -6,7 +6,7 @@
 
 import React, { useState, useEffect, useRef } from 'react'
 import { Search, Package } from 'lucide-react'
-import { API_BASE } from '@/lib/api'
+import { getDataSource } from '@/lib/cache'
 
 interface AssetMentionPopoverProps {
   query: string
@@ -23,17 +23,19 @@ export function AssetMentionPopover({ query, onSelect, onClose }: AssetMentionPo
   useEffect(() => {
     if (!query && query !== '') return
     setLoading(true)
-    fetch(`${API_BASE}/api/assets`)
-      .then((res) => res.json())
-      .then((data) => {
-        const assets = (data.assets || [])
-          .filter((a: any) => a.asset_name.toLowerCase().includes(query.toLowerCase()))
-          .slice(0, 10)
-        setResults(assets)
-        setSelectedIndex(0)
-      })
-      .catch(() => setResults([]))
-      .finally(() => setLoading(false))
+    getDataSource().then(dataSource => {
+      fetch(`${dataSource}/api/assets`)
+        .then((res) => res.json())
+        .then((data) => {
+          const assets = (data.assets || [])
+            .filter((a: any) => a.asset_name.toLowerCase().includes(query.toLowerCase()))
+            .slice(0, 10)
+          setResults(assets)
+          setSelectedIndex(0)
+        })
+        .catch(() => setResults([]))
+        .finally(() => setLoading(false))
+    })
   }, [query])
 
   // 键盘导航

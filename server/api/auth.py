@@ -83,3 +83,55 @@ async def list_users():
         "users": [u.to_dict() for u in users],
         "count": len(users),
     }
+
+
+class AddUserRequest(BaseModel):
+    """添加用户请求"""
+    user_id: str
+    name: Optional[str] = None
+    role: str = "user"
+
+
+@router.post("/users")
+async def add_user(request: AddUserRequest):
+    """添加用户（仅超级管理员）"""
+    if not _db:
+        raise HTTPException(status_code=500, detail="数据库未初始化")
+
+    # 检查用户是否已存在
+    existing = _db.get_user(request.user_id)
+    if existing:
+        # 更新用户信息
+        existing.name = request.name or existing.name
+        existing.role = request.role
+        _db.save_user(existing)
+        return {"success": True, "user": existing.to_dict()}
+
+    # 创建新用户
+    user = User(
+        user_id=request.user_id,
+        user_name=request.name or request.user_id,
+        role=request.role,
+    )
+    _db.save_user(user)
+    return {"success": True, "user": user.to_dict()}
+
+
+@router.delete("/users/{user_id}")
+async def remove_user(user_id: str):
+    """移除用户（仅超级管理员）"""
+    if not _db:
+        raise HTTPException(status_code=500, detail="数据库未初始化")
+
+    # 检查用户是否存在
+    user = _db.get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    # 不能删除超级管理员
+    if user.role == "super_admin":
+        raise HTTPException(status_code=400, detail="不能删除超级管理员")
+
+    # 删除用户
+    _db.delete_user(user_id)
+    return {"success": True}

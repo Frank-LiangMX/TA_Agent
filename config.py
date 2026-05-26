@@ -1,7 +1,10 @@
 """
 TA Agent 配置文件
-切换 LLM 只需要修改这里的配置
 """
+
+import json
+import os
+from pathlib import Path
 
 # ========== LLM 配置 ==========
 
@@ -12,14 +15,14 @@ LLM_CONFIGS = {
         "name": "DeepSeek-V4-pro",
         "type": "cloud",
         "base_url": "https://api.deepseek.com/v1",
-        "api_key": "sk-fa07dc15b2464cf6bfb4a6d752c865bb",
+        "api_key": "",
         "model": "deepseek-v4-pro",
     },
     "glm": {
         "name": "GLM-5",
         "type": "cloud",
         "base_url": "https://api.sfkey.cn/v1",
-        "api_key": "sk-6tO7dFcZFeuyIxYx7GRxjo7W4r7EHvhXt59YeAqpBJkLwbNn",
+        "api_key": "",
         "model": "glm-5",
     },
     # 自建模型（按需启用）
@@ -35,15 +38,100 @@ LLM_CONFIGS = {
 # 当前使用的 LLM
 ACTIVE_LLM = "glm"  # 可选: LLM_CONFIGS 中的任意 key
 
+def _get_runtime_app_config() -> dict:
+    """读取运行目录里的前端/桌面配置。"""
+    config_dir = CONFIGS_DIR
+    if not config_dir:
+        return {}
+    config_path = os.path.join(config_dir, "app-config.json")
+    if not os.path.exists(config_path):
+        return {}
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+def _get_runtime_llm_config() -> dict | None:
+    app_config = _get_runtime_app_config()
+    if app_config.get("mode", "local") != "local":
+        return None
+
+    # 优先使用用户自定义模型列表中的激活模型
+    active_model = get_active_model()
+    if active_model:
+        # 模型必须有自己的 API Key，不 fallback 到旧配置
+        api_key = active_model.get("api_key") or ""
+        base_url = active_model.get("base_url") or ""
+        model = active_model.get("model") or ""
+        extra_headers = active_model.get("extra_headers") or {}
+
+        if not base_url or not model:
+            return None
+
+        return {
+            "name": active_model.get("name", "Custom"),
+            "type": "custom",
+            "base_url": base_url,
+            "api_key": api_key,
+            "model": model,
+            "protocol": active_model.get("protocol", "openai"),
+            "extra_headers": extra_headers,
+        }
+
+    # 兼容旧配置：从 local 配置读取（仅在没有自定义模型时）
+    local = app_config.get("local") or {}
+    api_key = local.get("llm_api_key") or ""
+    llm_base_url = local.get("llm_base_url") or ""
+    model = local.get("llm_model") or ""
+
+    if not llm_base_url or not model:
+        return None
+
+    extra_headers = local.get("llm_extra_headers") or {}
+
+    return {
+        "name": local.get("llm_name") or "Custom",
+        "type": "custom",
+        "base_url": llm_base_url,
+        "api_key": api_key,
+        "model": model,
+        "extra_headers": extra_headers,
+    }
+
 def get_llm_config():
     """获取当前活跃的 LLM 配置"""
+    runtime_config = _get_runtime_llm_config()
+    if runtime_config:
+        if not runtime_config.get("api_key"):
+            raise ValueError("LLM API Key 未配置，请先在启动向导或设置页配置本地模式。")
+        return runtime_config
     if ACTIVE_LLM not in LLM_CONFIGS:
         raise ValueError(f"未知的 LLM: {ACTIVE_LLM}，可用: {list(LLM_CONFIGS.keys())}")
-    return LLM_CONFIGS[ACTIVE_LLM]
+    config = LLM_CONFIGS[ACTIVE_LLM]
+    if not config.get("api_key"):
+        raise ValueError("LLM API Key 未配置，请先在启动向导或设置页配置本地模式。")
+    return config
 
 def list_llm_configs():
     """列出所有可用的 LLM 配置（不暴露 api_key）"""
     result = []
+
+    # 添加用户已保存的自定义配置（来自 app-config.json）
+    app_config = _get_runtime_app_config()
+    local = app_config.get("local", {})
+    if local.get("llm_base_url") and local.get("llm_model"):
+        result.append({
+            "key": "user_custom",
+            "name": local.get("llm_name") or "自定义配置",
+            "type": local.get("llm_type", "custom"),
+            "base_url": local.get("llm_base_url"),
+            "model": local.get("llm_model"),
+            "active": True,  # 用户自定义配置始终是当前使用的
+        })
+
+    # 添加预设（仅供选择，不暴露 api_key）
     for key, cfg in LLM_CONFIGS.items():
         result.append({
             "key": key,
@@ -51,7 +139,7 @@ def list_llm_configs():
             "type": cfg.get("type", "cloud"),
             "base_url": cfg["base_url"],
             "model": cfg["model"],
-            "active": key == ACTIVE_LLM,
+            "active": not local.get("llm_base_url") and key == ACTIVE_LLM,
         })
     return result
 
@@ -74,6 +162,110 @@ def add_llm_config(key: str, name: str, base_url: str, model: str, api_key: str 
         "model": model,
     }
     return {"success": True, "key": key, "message": f"已添加 {name}，使用 /llm switch {key} 切换"}
+
+# ========== 用户自定义模型管理（存储在 app-config.json）==========
+
+def _get_models() -> list:
+    """获取用户自定义模型列表"""
+    app_config = _get_runtime_app_config()
+    return app_config.get("models", [])
+
+def _save_models(models: list) -> None:
+    """保存用户自定义模型列表"""
+    app_config = _get_runtime_app_config()
+    app_config["models"] = models
+    # 保存到文件
+    config_dir = CONFIGS_DIR
+    if not config_dir:
+        return
+    os.makedirs(config_dir, exist_ok=True)
+    config_path = os.path.join(config_dir, "app-config.json")
+    with open(config_path, "w", encoding="utf-8") as f:
+        json.dump(app_config, f, ensure_ascii=False, indent=2)
+
+def list_models() -> list:
+    """列出所有用户自定义模型（不暴露 api_key）"""
+    models = _get_models()
+    result = []
+    for m in models:
+        item = {k: v for k, v in m.items() if k != "api_key"}
+        item["has_api_key"] = bool(m.get("api_key"))
+        result.append(item)
+    return result
+
+def get_model(model_id: str) -> dict | None:
+    """获取指定模型"""
+    models = _get_models()
+    for m in models:
+        if m.get("id") == model_id:
+            return m
+    return None
+
+def add_model(name: str, base_url: str, model: str, api_key: str, extra_headers: dict = None, protocol: str = "openai") -> dict:
+    """添加新模型"""
+    import uuid
+    models = _get_models()
+    new_model = {
+        "id": str(uuid.uuid4())[:8],
+        "name": name,
+        "base_url": base_url,
+        "model": model,
+        "api_key": api_key,
+        "protocol": protocol,
+        "extra_headers": extra_headers or {},
+    }
+    models.append(new_model)
+    _save_models(models)
+    return {"success": True, "id": new_model["id"], "model": {k: v for k, v in new_model.items() if k != "api_key"}}
+
+def update_model(model_id: str, updates: dict) -> dict:
+    """更新模型"""
+    models = _get_models()
+    for i, m in enumerate(models):
+        if m.get("id") == model_id:
+            # 不允许通过 updates 修改 id
+            updates.pop("id", None)
+            # 如果 api_key 为空，保留原来的
+            if not updates.get("api_key"):
+                updates.pop("api_key", None)
+            models[i].update(updates)
+            _save_models(models)
+            return {"success": True, "model": {k: v for k, v in models[i].items() if k != "api_key"}}
+    return {"success": False, "error": "模型不存在"}
+
+def delete_model(model_id: str) -> dict:
+    """删除模型"""
+    models = _get_models()
+    original_len = len(models)
+    models = [m for m in models if m.get("id") != model_id]
+    if len(models) == original_len:
+        return {"success": False, "error": "模型不存在"}
+    _save_models(models)
+    return {"success": True}
+
+def get_active_model() -> dict | None:
+    """获取当前启用的模型"""
+    models = _get_models()
+    for m in models:
+        if m.get("active"):
+            return m
+    # 如果没有激活的，返回第一个
+    if models:
+        return models[0]
+    return None
+
+def set_active_model(model_id: str) -> dict:
+    """激活指定模型"""
+    models = _get_models()
+    found = False
+    for m in models:
+        m["active"] = (m.get("id") == model_id)
+        if m.get("id") == model_id:
+            found = True
+    if not found:
+        return {"success": False, "error": "模型不存在"}
+    _save_models(models)
+    return {"success": True}
 
 # ========== Blender 配置 ==========
 
@@ -104,7 +296,7 @@ USE_VISION = True
 # ModelScope 配置（阿里达摩院，国内可用，OpenAI 兼容接口）
 VISION_CONFIG = {
     "base_url": "https://api-inference.modelscope.cn/v1",
-    "api_key": "ms-23fcf550-22f9-4ce3-9833-e41507664fa6",
+    "api_key": "",
     "model": "Qwen/Qwen3-VL-8B-Instruct",   # 视觉模型，可换成其他 VL 模型
 }
 
@@ -209,24 +401,23 @@ PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 
 # 运行时数据根目录
 # 开发模式：使用项目内的 .ta_agent 目录
-# 打包模式：使用用户目录（%LOCALAPPDATA%\TAgent\），确保用户数据在更新后保留
+# 打包模式：使用用户目录（%APPDATA%\tagent-desktop\agent-running-data）
 def _get_runtime_dir() -> str:
-    # 判断是否在打包环境中（PyInstaller 会设置 sys.frozen）
+    # 显式覆盖（调试用）
+    override = os.environ.get("TAGENT_RUNTIME_DIR")
+    if override:
+        return override
+
+    # 打包模式：使用用户目录，确保用户数据在更新后保留
     if getattr(sys, 'frozen', False):
-        # 打包模式：使用用户目录
-        if sys.platform == 'win32':
-            # Windows: C:\Users\<用户名>\AppData\Local\TAgent\
-            base = os.environ.get('LOCALAPPDATA', os.path.expanduser('~'))
-            return os.path.join(base, 'TAgent')
-        elif sys.platform == 'darwin':
-            # macOS: ~/Library/Application Support/TAgent/
-            return os.path.join(os.path.expanduser('~'), 'Library', 'Application Support', 'TAgent')
-        else:
-            # Linux: ~/.local/share/TAgent/
-            return os.path.join(os.path.expanduser('~'), '.local', 'share', 'TAgent')
-    else:
-        # 开发模式：使用项目内的 .ta_agent 目录
-        return os.path.join(PROJECT_ROOT, '.ta_agent')
+        appdata = os.environ.get(
+            "APPDATA",
+            os.path.join(os.path.expanduser("~"), "AppData", "Roaming"),
+        )
+        return os.path.join(appdata, "tagent-desktop", "agent-running-data")
+
+    # 开发模式：使用项目内的 .ta_agent 目录
+    return os.path.join(PROJECT_ROOT, '.ta_agent')
 
 RUNTIME_DIR = _get_runtime_dir()
 

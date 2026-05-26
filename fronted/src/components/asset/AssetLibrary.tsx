@@ -8,7 +8,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { Search, Package, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react'
 import { tagentClient } from '@/services/websocket'
-import { useAssets } from '@/lib/cache'
+import { useAssets, getDataSource } from '@/lib/cache'
 import { API_BASE } from '@/lib/api'
 
 interface AssetItem {
@@ -66,11 +66,17 @@ export function AssetLibrary({ onAssetSelect }: AssetLibraryProps) {
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [sortBy, setSortBy] = useState<'name' | 'type' | 'tri_count'>('name')
   const [currentPage, setCurrentPage] = useState(1)
+  const [dataSource, setDataSource] = useState(API_BASE)
+
+  // 获取数据源
+  useEffect(() => {
+    getDataSource().then(setDataSource)
+  }, [])
 
   // 获取资产详情
   const handleAssetClick = async (assetId: string) => {
     try {
-      const res = await fetch(`${API_BASE}/api/assets/${assetId}`)
+      const res = await fetch(`${dataSource}/api/assets/${assetId}`)
       const data = await res.json()
       if (!data.error) onAssetSelect(data)
     } catch {}
@@ -233,7 +239,7 @@ export function AssetLibrary({ onAssetSelect }: AssetLibraryProps) {
                 >
                   <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center shrink-0 overflow-hidden">
                     <img
-                      src={`${API_BASE}/api/preview/${asset.asset_id}`}
+                      src={`${dataSource}/api/preview/${asset.asset_id}`}
                       alt=""
                       className="w-full h-full object-cover"
                       onError={(e) => {

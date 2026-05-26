@@ -7,6 +7,7 @@
 
 import { WS_URL } from '@/lib/api'
 import { getUserQueryParams } from '@/lib/user-config'
+import { getConfig } from './config'
 
 type EventCallback = (payload: unknown) => void
 type CleanupFn = () => void
@@ -32,9 +33,23 @@ export class TAgentClient {
   private _status: ConnectionStatus = 'disconnected'
   private statusListeners = new Set<(status: ConnectionStatus) => void>()
   private _sessionId: string | null = null
+  private _connectedPayload: any = null  // 缓存 connected 事件
 
   constructor(url: string = WS_URL) {
     this.url = url
+  }
+
+  /** 获取 WebSocket URL（根据模式选择） */
+  private async getWebSocketUrl(): Promise<string> {
+    try {
+      const config = await getConfig()
+      if (config.mode === 'online' && config.online.server_host) {
+        const host = config.online.server_host
+        const port = config.online.server_port || 8081
+        return `ws://${host}:${port}/ws`
+      }
+    } catch {}
+    return this.url
   }
 
   /** 当前连接状态 */
@@ -48,7 +63,7 @@ export class TAgentClient {
   }
 
   /** 连接到服务器（支持 sessionId 恢复会话） */
-  connect(sessionId?: string): void {
+  async connect(sessionId?: string): Promise<void> {
     // 已连接或正在连接中，跳过
     if (this.ws?.readyState === WebSocket.OPEN) return
     if (this.ws?.readyState === WebSocket.CONNECTING) return
@@ -63,12 +78,13 @@ export class TAgentClient {
 
     this._sessionId = sessionId || null
     this.setStatus('connecting')
-    this._doConnect()
+    await this._doConnect()
   }
 
-  private _doConnect(): void {
-    const userParams = getUserQueryParams()
-    let wsUrl = this._sessionId ? `${this.url}?sessionId=${this._sessionId}` : this.url
+  private async _doConnect(): Promise<void> {
+    const baseUrl = await this.getWebSocketUrl()
+    let wsUrl = this._sessionId ? `${baseUrl}?sessionId=${this._sessionId}` : baseUrl
+    const userParams = getUserQueryParams(this._sessionId ? '&' : '?')
     if (userParams) wsUrl += userParams
     this.ws = new WebSocket(wsUrl)
 
@@ -84,6 +100,11 @@ export class TAgentClient {
         if (data.type === 'event') {
           // 事件推送
           console.log(`[TAgent] ← 事件: ${data.event}`, data.payload)
+          // 缓存 connected 事件，并更新 sessionId
+          if (data.event === 'connected' && data.payload?.sessionId) {
+            this._connectedPayload = data.payload
+            this._sessionId = data.payload.sessionId
+          }
           this.emit(data.event, data.payload)
         } else if (data.id) {
           // RPC 响应
@@ -130,12 +151,13 @@ export class TAgentClient {
     }
     this.ws = null
     this._sessionId = null
+    this._connectedPayload = null  // 清除缓存
     this.reconnectAttempts = 0
     this.setStatus('disconnected')
   }
 
   /** 切换会话（断开后重连到新 sessionId） */
-  reconnectWithSession(sessionId: string): void {
+  async reconnectWithSession(sessionId: string): Promise<void> {
     // 清除所有重连定时器
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer)
@@ -153,7 +175,7 @@ export class TAgentClient {
     this.setStatus('connecting')
 
     // 直接建立新连接，跳过健康检查（刚断开说明后端在线）
-    this._doConnect()
+    await this._doConnect()
   }
 
   /** 发送 RPC 请求 */
@@ -179,8 +201,11 @@ export class TAgentClient {
   }
 
   /** 发送消息（不等待完整响应，事件通过订阅获取） */
-  async sendMessage(content: string, contextCutoff?: number | null): Promise<void> {
+  async sendMessage(content: string, contextCutoff?: number | null, sessionId?: string | null): Promise<void> {
     const params: Record<string, unknown> = { content }
+    if (sessionId) {
+      params.sessionId = sessionId
+    }
     if (contextCutoff != null) {
       params.contextCutoff = contextCutoff
     }
@@ -230,6 +255,10 @@ export class TAgentClient {
       this.listeners.set(event, new Set())
     }
     this.listeners.get(event)!.add(callback)
+    // 如果是 connected 事件且有缓存，立即触发
+    if (event === 'connected' && this._connectedPayload) {
+      try { callback(this._connectedPayload) } catch (e) { console.error('[TAgent] 事件处理错误:', e) }
+    }
     return () => {
       this.listeners.get(event)?.delete(callback)
     }
@@ -261,7 +290,9 @@ export class TAgentClient {
     const sid = this._sessionId
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null
-      this.connect(sid || undefined)
+      this.connect(sid || undefined).catch(err => {
+        console.error('[TAgent] 重连失败:', err)
+      })
     }, delay)
   }
 }

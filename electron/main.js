@@ -40,8 +40,62 @@ function getAppIconPath() {
   return undefined
 }
 
+function getConfigPath() {
+  return path.join(getAgentDataDir(), 'configs', 'app-config.json')
+}
+
+function getAgentDataDir() {
+  // 开发模式：使用项目内的 .ta_agent 目录（与 Python 后端一致）
+  if (!app.isPackaged) {
+    return path.join(__dirname, '..', '.ta_agent')
+  }
+  // 打包模式：使用 AppData 目录
+  return path.join(app.getPath('userData'), 'agent-running-data')
+}
+
+function loadConfig() {
+  const configPath = getConfigPath()
+  if (fs.existsSync(configPath)) {
+    try {
+      return JSON.parse(fs.readFileSync(configPath, 'utf8'))
+    } catch (err) {
+      console.error('[Electron] 读取配置失败:', err)
+    }
+  }
+  // 默认配置
+  return {
+    mode: 'local',
+    local: {
+      llm_provider: 'glm',
+      llm_api_key: '',
+      llm_base_url: '',
+      llm_model: 'glm-5',
+      blender_path: '',
+    },
+    online: {
+      server_host: '',
+      server_port: 8081,
+      user_id: '',
+      user_name: '',
+    },
+  }
+}
+
+function saveConfig(config) {
+  const configPath = getConfigPath()
+  try {
+    fs.mkdirSync(path.dirname(configPath), { recursive: true })
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8')
+    console.log('[Electron] 配置已保存:', configPath)
+    return { success: true }
+  } catch (err) {
+    console.error('[Electron] 保存配置失败:', err)
+    return { success: false, error: err.message }
+  }
+}
+
 function getBackendLogPath() {
-  return path.join(app.getPath('userData'), 'backend.log')
+  return path.join(getAgentDataDir(), 'backend.log')
 }
 
 function registerIpcHandlers() {
@@ -57,9 +111,24 @@ function registerIpcHandlers() {
     return { ok: !error, error: error || undefined, path: logPath }
   })
   ipcMain.handle('open-user-data-dir', async () => {
-    const dir = app.getPath('userData')
+    const dir = getAgentDataDir()
+    fs.mkdirSync(dir, { recursive: true })
     const error = await shell.openPath(dir)
     return { ok: !error, error: error || undefined, path: dir }
+  })
+
+  // 配置管理
+  ipcMain.handle('get-config', () => loadConfig())
+  ipcMain.handle('save-config', (event, config) => saveConfig(config))
+  ipcMain.handle('get-mode', () => {
+    const config = loadConfig()
+    return config.mode || 'local'
+  })
+  ipcMain.handle('set-mode', (event, mode) => {
+    const config = loadConfig()
+    config.mode = mode
+    saveConfig(config)
+    return config
   })
 }
 
@@ -107,14 +176,23 @@ function startPythonBackend() {
   console.log(`[Electron] 启动后端: ${exePath}`)
   
   // 打包模式下，将后端输出写入日志文件
-  const logPath = path.join(app.getPath('userData'), 'backend.log')
+  const agentDataDir = getAgentDataDir()
+  fs.mkdirSync(agentDataDir, { recursive: true })
+  const logPath = path.join(agentDataDir, 'backend.log')
   console.log(`[Electron] 后端日志: ${logPath}`)
+  
+  // 设置数据目录环境变量，让 Python 后端使用统一的路径
+  console.log(`[Electron] 数据目录: ${agentDataDir}`)
   
   pythonProcess = spawn(exePath, [], {
     cwd: path.dirname(exePath),
     stdio: ['ignore', 'pipe', 'pipe'],  // 分离输出
     windowsHide: true,
-    env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
+    env: { 
+      ...process.env, 
+      PYTHONIOENCODING: 'utf-8',
+      ELECTRON_USER_DATA: agentDataDir  // 传给 Python 后端
+    }
   })
 
   // 记录后端输出到日志
@@ -178,6 +256,14 @@ function createWindow() {
 
   // 隐藏默认菜单栏
   Menu.setApplicationMenu(null)
+
+  // 注册快捷键打开 DevTools
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i')) {
+      mainWindow.webContents.toggleDevTools()
+      event.preventDefault()
+    }
+  })
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show()

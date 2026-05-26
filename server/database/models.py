@@ -178,11 +178,12 @@ class User:
     """用户信息"""
     user_id: str
     user_name: str = ""
-    role: str = "user"  # user, manager, admin
+    role: str = "user"  # user, manager, admin, super_admin
     department: str = ""
     email: str = ""
     created_at: str = ""
     last_login: str = ""
+    last_login_ip: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -193,4 +194,5 @@ class User:
             "email": self.email,
             "created_at": self.created_at,
             "last_login": self.last_login,
+            "last_login_ip": self.last_login_ip,
         }

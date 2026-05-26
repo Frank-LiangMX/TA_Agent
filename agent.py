@@ -766,7 +766,7 @@ def agent_loop(user_message: str, history: list = None, workflow_mode: str = Non
 
             # 内容输出后换行
             if content_buffer:
-                print()  # 换行
+                print()
 
             llm_elapsed = time.time() - llm_start
             if llm_elapsed >= 60:
@@ -777,14 +777,11 @@ def agent_loop(user_message: str, history: list = None, workflow_mode: str = Non
                 print(f"  (LLM 思考耗时: {llm_elapsed:.1f}s)")
             sys.stdout.flush()
 
-            # 构造模拟的 response message 对象
+            # 构造统一格式的 tool_calls
             from openai.types.chat import ChatCompletionMessage
-            from openai.types.chat.chat_completion import ChatCompletion, Choice
-
-            # 构造 tool_calls 对象
+            from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageToolCall, Function
             parsed_tool_calls = None
             if tool_calls_buffer:
-                from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageToolCall, Function
                 parsed_tool_calls = []
                 for idx in sorted(tool_calls_buffer.keys()):
                     tc = tool_calls_buffer[idx]
@@ -804,9 +801,9 @@ def agent_loop(user_message: str, history: list = None, workflow_mode: str = Non
             )
         except KeyboardInterrupt:
             _stop_timer.set()
-            raise  # 向上传递给 main() 处理
+            raise
         except Exception as e:
-            _stop_timer.set()  # 停止等待提示
+            _stop_timer.set()
             print(f"\n❌ LLM API 调用失败: {e}")
             sys.stdout.flush()
             return f"LLM API 调用失败: {e}", history
@@ -834,8 +831,14 @@ def agent_loop(user_message: str, history: list = None, workflow_mode: str = Non
         print(f"\n🔧 Agent 调用工具:")
         sys.stdout.flush()
 
-        # 把 LLM 的回复（包含 tool_calls）加入消息
-        messages.append(message)
+        # 把 LLM 的回复（包含 tool_calls）加入消息（转为 dict 兼容 Anthropic 后续迭代）
+        msg_dict = {
+            "role": "assistant",
+            "content": message.content,
+        }
+        if message.tool_calls:
+            msg_dict["tool_calls"] = message.tool_calls
+        messages.append(msg_dict)
 
         # 逐个执行工具
         for tool_call in tool_calls:
@@ -909,11 +912,12 @@ def agent_loop(user_message: str, history: list = None, workflow_mode: str = Non
                     pass
 
             # 把工具结果加入消息（截断过大的结果避免上下文溢出）
-            messages.append({
+            tool_msg = {
                 "role": "tool",
                 "tool_call_id": tool_call.id,
                 "content": _truncate_tool_result(result),
-            })
+            }
+            messages.append(tool_msg)
 
     # 如果循环次数用完
     final_answer = "抱歉，处理过程中遇到了问题，请尝试简化您的请求。"

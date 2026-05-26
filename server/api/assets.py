@@ -2,7 +2,9 @@
 资产 API
 """
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import FileResponse
 from typing import Optional, List
+from pathlib import Path
 from pydantic import BaseModel
 
 from database.models import Asset
@@ -139,3 +141,24 @@ async def delete_asset(asset_id: str):
         raise HTTPException(status_code=404, detail="资产不存在")
 
     return {"success": True}
+
+
+@router.get("/{asset_id}/file")
+async def download_asset_file(asset_id: str):
+    """下载资产原始文件"""
+    if not _db:
+        raise HTTPException(status_code=500, detail="数据库未初始化")
+
+    asset = _db.get_asset(asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="资产不存在")
+
+    file_path = Path(asset.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=f"文件不存在: {asset.file_path}")
+
+    return FileResponse(
+        path=str(file_path),
+        filename=file_path.name,
+        media_type="application/octet-stream",
+    )

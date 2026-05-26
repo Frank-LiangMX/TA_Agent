@@ -11,7 +11,7 @@ import {
   ChevronDown, ChevronRight, Trash2, ArrowRight, Clock, Play, Loader2,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { useStats } from '@/lib/cache'
+import { useStats, getDataSource } from '@/lib/cache'
 import { API_BASE } from '@/lib/api'
 
 interface PipelineStage {
@@ -60,12 +60,17 @@ export function WorkflowView({ onNavigate }: WorkflowViewProps) {
   const [customStages, setCustomStages] = useState<PipelineStage[]>([])
   const [branchTarget, setBranchTarget] = useState<string | null>(null)
   const [newBranch, setNewBranch] = useState({ label: '', description: '', prompt: '' })
+  const [dataSource, setDataSource] = useState(API_BASE)
 
-  useEffect(() => { fetchPipeline(); fetchRuns() }, [])
+  useEffect(() => {
+    getDataSource().then(setDataSource)
+    fetchPipeline()
+    fetchRuns()
+  }, [])
 
   const fetchPipeline = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/pipeline`)
+      const res = await fetch(`${dataSource}/api/pipeline`)
       const data = await res.json()
       setCoreStages(data.core_stages || [])
       setCustomStages(data.custom_stages || [])
@@ -74,7 +79,7 @@ export function WorkflowView({ onNavigate }: WorkflowViewProps) {
 
   const fetchRuns = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/pipeline/runs?limit=200`)
+      const res = await fetch(`${dataSource}/api/pipeline/runs?limit=200`)
       const data = await res.json()
       setRuns(data.runs || [])
     } catch {}
@@ -82,7 +87,7 @@ export function WorkflowView({ onNavigate }: WorkflowViewProps) {
 
   const savePipeline = async (core: PipelineStage[], custom: PipelineStage[]) => {
     try {
-      await fetch(`${API_BASE}/api/pipeline`, {
+      await fetch(`${dataSource}/api/pipeline`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ version: 1, core_stages: core, custom_stages: custom }),
       })

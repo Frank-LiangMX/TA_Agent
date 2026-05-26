@@ -18,6 +18,7 @@ interface SessionTabBarProps {
   activeTabId: string | null
   tabTitles: Record<string, string>
   streamingTabs?: Set<string>
+  sessionRefreshKey?: number
   onTabSelect: (id: string) => void
   onTabClose: (id: string) => void
   onNewTab: () => void
@@ -49,7 +50,7 @@ const PREVIEW_MAX_HEIGHT = 320
 const PREVIEW_OPEN_DELAY = 450
 
 export function SessionTabBar({
-  openTabs, activeTabId, tabTitles, streamingTabs,
+  openTabs, activeTabId, tabTitles, streamingTabs, sessionRefreshKey = 0,
   onTabSelect, onTabClose, onNewTab,
 }: SessionTabBarProps) {
   const [showPopover, setShowPopover] = useState(false)
@@ -105,6 +106,9 @@ export function SessionTabBar({
   }
 
   const handleTabMouseEnter = (e: React.MouseEvent, tabId: string) => {
+    // 当前活跃标签不触发预览浮窗
+    if (tabId === activeTabId) return
+    
     if (hideTimer.current) clearTimeout(hideTimer.current)
     if (showTimer.current) clearTimeout(showTimer.current)
 
@@ -263,6 +267,7 @@ export function SessionTabBar({
       {showPopover && (
         <SessionPopover
           currentSessionId={activeTabId}
+          refreshKey={sessionRefreshKey}
           onSelect={(sid) => { setShowPopover(false); onTabSelect(sid) }}
           onNewSession={() => { setShowPopover(false); onNewTab() }}
           onClose={() => setShowPopover(false)}

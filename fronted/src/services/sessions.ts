@@ -4,12 +4,13 @@
  * 封装后端 REST API 调用
  */
 
-import { API_BASE } from '@/lib/api'
+import { getDataSource } from '@/lib/cache'
 import { loadUserConfig } from '@/lib/user-config'
 import type { SessionMeta } from '@/types'
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const dataSource = await getDataSource()
+  const res = await fetch(`${dataSource}${path}`, {
     headers: { 'Content-Type': 'application/json' },
     ...options,
   })

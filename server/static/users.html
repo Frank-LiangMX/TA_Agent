@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TAgent 用户管理</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; padding: 20px; }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    h1 { font-size: 24px; color: #333; }
+    .stats { display: flex; gap: 20px; margin-bottom: 20px; }
+    .stat-card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); min-width: 150px; }
+    .stat-card h3 { font-size: 14px; color: #666; margin-bottom: 8px; }
+    .stat-card .value { font-size: 28px; font-weight: bold; color: #333; }
+    .table-container { background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid #eee; }
+    th { background: #f8f9fa; font-weight: 600; color: #333; font-size: 14px; }
+    td { font-size: 14px; color: #666; }
+    tr:hover { background: #f8f9fa; }
+    .role { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+    .role-super_admin { background: #ffd700; color: #333; }
+    .role-admin { background: #007bff; color: white; }
+    .role-user { background: #6c757d; color: white; }
+    .btn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+    .btn-primary { background: #007bff; color: white; }
+    .btn-primary:hover { background: #0056b3; }
+    .btn-danger { background: #dc3545; color: white; }
+    .btn-danger:hover { background: #c82333; }
+    .btn-sm { padding: 4px 8px; font-size: 12px; }
+    .search-bar { display: flex; gap: 10px; margin-bottom: 20px; }
+    .search-bar input { padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; width: 300px; }
+    .search-bar select { padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+    .actions { display: flex; gap: 8px; }
+    .loading { text-align: center; padding: 40px; color: #666; }
+    .empty { text-align: center; padding: 40px; color: #999; }
+    .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; }
+    .modal-content { background: white; margin: 100px auto; padding: 20px; border-radius: 8px; width: 500px; max-width: 90%; }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .modal-header h2 { font-size: 18px; }
+    .modal-close { background: none; border: none; font-size: 24px; cursor: pointer; color: #666; }
+    .form-group { margin-bottom: 15px; }
+    .form-group label { display: block; margin-bottom: 5px; font-weight: 500; }
+    .form-group input, .form-group select { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+    .config-info { background: #e9ecef; padding: 15px; border-radius: 4px; margin-bottom: 20px; font-size: 14px; color: #666; }
+    .config-info code { background: #fff; padding: 2px 6px; border-radius: 3px; font-family: monospace; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>用户管理</h1>
+    <button class="btn btn-primary" onclick="refresh()">刷新</button>
+  </div>
+
+  <div class="config-info">
+    <strong>说明：</strong>超级管理员由部署时配置文件指定（<code>config.yaml</code>），此处管理的是普通管理员权限。
+  </div>
+
+  <div class="stats">
+    <div class="stat-card">
+      <h3>总用户数</h3>
+      <div class="value" id="totalUsers">-</div>
+    </div>
+    <div class="stat-card">
+      <h3>管理员</h3>
+      <div class="value" id="adminCount">-</div>
+    </div>
+    <div class="stat-card">
+      <h3>普通用户</h3>
+      <div class="value" id="userCount">-</div>
+    </div>
+  </div>
+
+  <div class="search-bar">
+    <input type="text" id="searchInput" placeholder="搜索用户ID或名称..." onkeyup="filterUsers()">
+    <select id="roleFilter" onchange="filterUsers()">
+      <option value="">所有角色</option>
+      <option value="super_admin">超级管理员</option>
+      <option value="admin">管理员</option>
+      <option value="user">普通用户</option>
+    </select>
+    <button class="btn btn-primary" onclick="openAddModal()">添加管理员</button>
+  </div>
+
+  <div class="table-container">
+    <table>
+      <thead>
+        <tr>
+          <th>用户ID</th>
+          <th>用户名</th>
+          <th>角色</th>
+          <th>部门</th>
+          <th>最后登录</th>
+          <th>登录IP</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="usersTable">
+        <tr><td colspan="7" class="loading">加载中...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 添加管理员弹窗 -->
+  <div id="addModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>添加管理员</h2>
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+      </div>
+      <div class="form-group">
+        <label>用户ID <span style="color: red;">*</span></label>
+        <input type="text" id="userId" placeholder="请输入 SSO 用户ID">
+      </div>
+      <div class="form-group">
+        <label>用户名</label>
+        <input type="text" id="userName" placeholder="请输入显示名称（可选）">
+      </div>
+      <div class="form-group">
+        <label>角色</label>
+        <select id="userRole">
+          <option value="admin">管理员</option>
+          <option value="user">普通用户</option>
+        </select>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-primary" onclick="addUser()">添加</button>
+        <button class="btn" onclick="closeModal()">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let allUsers = [];
+
+    async function loadUsers() {
+      try {
+        const res = await fetch('/api/auth/users');
+        const data = await res.json();
+        allUsers = data.users || [];
+        updateStats();
+        filterUsers();
+      } catch (err) {
+        console.error('加载失败:', err);
+        document.getElementById('usersTable').innerHTML =
+          '<tr><td colspan="6" class="empty">加载失败，请检查服务器连接</td></tr>';
+      }
+    }
+
+    function updateStats() {
+      const total = allUsers.length;
+      const admins = allUsers.filter(u => u.role === 'admin' || u.role === 'super_admin').length;
+      const users = allUsers.filter(u => u.role === 'user').length;
+
+      document.getElementById('totalUsers').textContent = total;
+      document.getElementById('adminCount').textContent = admins;
+      document.getElementById('userCount').textContent = users;
+    }
+
+    function filterUsers() {
+      const search = document.getElementById('searchInput').value.toLowerCase();
+      const role = document.getElementById('roleFilter').value;
+
+      let filtered = allUsers;
+
+      if (search) {
+        filtered = filtered.filter(u =>
+          (u.user_id && u.user_id.toLowerCase().includes(search)) ||
+          (u.name && u.name.toLowerCase().includes(search))
+        );
+      }
+      if (role) {
+        filtered = filtered.filter(u => u.role === role);
+      }
+
+      renderUsers(filtered);
+    }
+
+    function renderUsers(users) {
+      const tbody = document.getElementById('usersTable');
+      if (users.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无用户数据</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = users.map(user => `
+        <tr>
+          <td><strong>${user.user_id || '-'}</strong></td>
+          <td>${user.name || '-'}</td>
+          <td><span class="role role-${user.role}">${getRoleLabel(user.role)}</span></td>
+          <td>${user.department || '-'}</td>
+          <td>${user.last_login || '-'}</td>
+          <td>${user.last_login_ip || '-'}</td>
+          <td class="actions">
+            ${user.role !== 'super_admin' ? `
+              <button class="btn btn-danger btn-sm" onclick="removeUser('${user.user_id}')">移除</button>
+            ` : '-'}
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function getRoleLabel(role) {
+      const labels = {
+        'super_admin': '超级管理员',
+        'admin': '管理员',
+        'user': '普通用户'
+      };
+      return labels[role] || role || '-';
+    }
+
+    function openAddModal() {
+      document.getElementById('userId').value = '';
+      document.getElementById('userName').value = '';
+      document.getElementById('userRole').value = 'admin';
+      document.getElementById('addModal').style.display = 'block';
+    }
+
+    function closeModal() {
+      document.getElementById('addModal').style.display = 'none';
+    }
+
+    async function addUser() {
+      const userId = document.getElementById('userId').value.trim();
+      const userName = document.getElementById('userName').value.trim();
+      const role = document.getElementById('userRole').value;
+
+      if (!userId) {
+        alert('请输入用户ID');
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/auth/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: userId,
+            name: userName || userId,
+            role: role
+          })
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          closeModal();
+          loadUsers();
+        } else {
+          alert('添加失败: ' + (data.error || '未知错误'));
+        }
+      } catch (err) {
+        alert('添加失败: ' + err.message);
+      }
+    }
+
+    async function removeUser(userId) {
+      if (!confirm(`确定移除用户 ${userId} 的管理员权限？`)) return;
+
+      try {
+        const res = await fetch(`/api/auth/users/${userId}`, {
+          method: 'DELETE'
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          loadUsers();
+        } else {
+          alert('移除失败: ' + (data.error || '未知错误'));
+        }
+      } catch (err) {
+        alert('移除失败: ' + err.message);
+      }
+    }
+
+    function refresh() {
+      loadUsers();
+    }
+
+    // 初始加载
+    loadUsers();
+
+    // 每 30 秒自动刷新
+    setInterval(loadUsers, 30000);
+  </script>
+</body>
+</html>

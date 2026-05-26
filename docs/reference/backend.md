@@ -50,6 +50,47 @@
 
 ---
 
+## 运行数据目录规范
+
+本地 Agent 的运行数据不写入工程目录。所有本地模式（`dev-web`、`dev-electron`、`dev-cli`、打包 Electron）默认使用同一套运行目录：
+
+```text
+%APPDATA%\tagent-desktop\agent-running-data
+```
+
+Windows 当前展开示例：
+
+```text
+C:\Users\<user>\AppData\Roaming\tagent-desktop\agent-running-data
+```
+
+目录职责：
+
+```text
+agent-running-data/
+├─ sessions/             # 会话记录
+├─ memory/               # 本地记忆
+├─ configs/              # Agent 运行配置，如 pipeline.json
+├─ tag_store/            # 本地资产标签库和预览缓存
+├─ checkpoints/          # 流水线检查点
+├─ previews/             # 预览图
+├─ logs/                 # 后端日志目录
+├─ ue5_bridge/           # UE5 文件通信
+└─ pipeline_runs.jsonl   # 流水线运行记录
+```
+
+路径规则：
+
+- Python 代码必须从 `config.py` 导入路径常量，例如 `RUNTIME_DIR`、`SESSIONS_DIR`、`MEMORY_DIR`、`CONFIGS_DIR`、`TAG_STORE_DIR`、`PIPELINE_RUNS_FILE`、`PREVIEWS_DIR`。
+- 不允许业务代码硬编码 `F:\ta_agent`、`.ta_agent`、`tag_store`、`sessions`、`pipeline_runs.jsonl` 等运行数据路径。
+- 新增运行数据目录时，先在 `config.py` 增加常量，再在业务代码中引用该常量。
+- `TAGENT_RUNTIME_DIR` 是唯一推荐的本地调试覆盖入口。
+- `ELECTRON_USER_DATA` 仅作为 Electron 兼容入口，传入值应为 `.../tagent-desktop/agent-running-data`。
+- Electron/Chromium 自身的 `Cache`、`Local Storage`、`Preferences` 等仍位于 `%APPDATA%\tagent-desktop`，不要和 Agent 运行数据混放。
+- 根目录 `server/` 是中心服务器，使用 `TAGENT_DATA_DIR` / `server/config.py` 管理共享服务数据，不与本地 Agent 的 `RUNTIME_DIR` 混用。
+
+---
+
 ## 二、资产身份系统（Asset Identity）
 
 ### 2.1 身份数据结构
@@ -253,7 +294,7 @@ class MemoryProvider(Protocol):
 ### 5.1 存储方案
 
 ```
-~/.ta_agent/sessions/
+%APPDATA%/tagent-desktop/agent-running-data/sessions/
 ├── index.json              # 会话索引
 ├── sess_a1b2c3.jsonl       # 每个会话一个文件，每行一条消息
 └── ...
@@ -564,12 +605,12 @@ python main.py
 
 ```
 本地模式数据：
-├── .ta_agent/sessions/     # 会话记录
-├── .ta_agent/memory/       # 记忆系统
-└── tag_store/              # 资产数据库
+├── %APPDATA%/tagent-desktop/agent-running-data/sessions/    # 会话记录
+├── %APPDATA%/tagent-desktop/agent-running-data/memory/      # 记忆系统
+└── %APPDATA%/tagent-desktop/agent-running-data/tag_store/   # 资产数据库
 
 联机模式数据：
-├── .ta_agent/sessions/     # 会话记录（本地）
+├── %APPDATA%/tagent-desktop/agent-running-data/sessions/    # 会话记录（本地）
 └── 服务器同步              # 资产、配置、记忆（服务器）
 ```
 

@@ -36,9 +36,11 @@ def _build_review_criteria(tags: AssetTags) -> dict:
             "determined": {
                 "tri_count": {"value": tags.mesh.tri_count, "label": "面数"},
                 "vertex_count": {"value": tags.mesh.vertex_count, "label": "顶点数"},
-                "has_skeleton": {"value": tags.mesh.has_skeleton, "label": "骨骼"},
+                "has_skeleton": {"value": "是" if tags.mesh.has_skeleton else "否", "label": "骨骼"},
+                "bone_count": {"value": tags.mesh.bone_count if tags.mesh.has_skeleton else "-", "label": "骨骼数"},
                 "material_count": {"value": tags.mesh.material_count, "label": "材质数"},
-                "has_uv": {"value": tags.mesh.has_uv, "label": "UV"},
+                "has_uv": {"value": "是" if tags.mesh.has_uv else "否", "label": "UV"},
+                "uv_channel_count": {"value": tags.mesh.uv_channel_count if tags.mesh.has_uv else "-", "label": "UV通道数"},
                 "material_names": {"value": ", ".join(tags.mesh.material_names) or "-", "label": "材质名"},
             },
         }

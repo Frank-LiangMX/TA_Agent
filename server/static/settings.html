@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TAgent 系统设置</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; padding: 20px; }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    h1 { font-size: 24px; color: #333; }
+    .section { background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; overflow: hidden; }
+    .section-header { padding: 15px 20px; background: #f8f9fa; border-bottom: 1px solid #eee; }
+    .section-header h2 { font-size: 16px; color: #333; }
+    .section-body { padding: 20px; }
+    .form-group { margin-bottom: 15px; }
+    .form-group label { display: block; margin-bottom: 5px; font-weight: 500; color: #333; }
+    .form-group .hint { font-size: 12px; color: #666; margin-top: 3px; }
+    .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+    .form-group textarea { height: 100px; resize: vertical; }
+    .form-row { display: flex; gap: 15px; }
+    .form-row .form-group { flex: 1; }
+    .btn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+    .btn-primary { background: #007bff; color: white; }
+    .btn-primary:hover { background: #0056b3; }
+    .btn-danger { background: #dc3545; color: white; }
+    .btn-danger:hover { background: #c82333; }
+    .btn-success { background: #28a745; color: white; }
+    .btn-success:hover { background: #218838; }
+    .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+    .status { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+    .status-ok { background: #d4edda; color: #155724; }
+    .status-error { background: #f8d7da; color: #721c24; }
+    .status-unknown { background: #e2e3e5; color: #383d41; }
+    .info-box { background: #e9ecef; padding: 15px; border-radius: 4px; margin-bottom: 20px; font-size: 14px; color: #666; }
+    .info-box code { background: #fff; padding: 2px 6px; border-radius: 3px; font-family: monospace; }
+    .config-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #eee; }
+    .config-item:last-child { border-bottom: none; }
+    .config-item .label { font-weight: 500; color: #333; }
+    .config-item .value { color: #666; }
+    .config-item .actions { display: flex; gap: 8px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>系统设置</h1>
+    <button class="btn btn-primary" onclick="refresh()">刷新</button>
+  </div>
+
+  <div class="info-box">
+    <strong>说明：</strong>此页面仅限超级管理员访问。修改配置后需要重启服务器生效。
+  </div>
+
+  <!-- 服务器信息 -->
+  <div class="section">
+    <div class="section-header">
+      <h2>服务器信息</h2>
+    </div>
+    <div class="section-body">
+      <div class="config-item">
+        <span class="label">服务器版本</span>
+        <span class="value" id="serverVersion">-</span>
+      </div>
+      <div class="config-item">
+        <span class="label">运行状态</span>
+        <span class="value"><span class="status status-ok" id="serverStatus">正常</span></span>
+      </div>
+      <div class="config-item">
+        <span class="label">数据库大小</span>
+        <span class="value" id="dbSize">-</span>
+      </div>
+      <div class="config-item">
+        <span class="label">启动时间</span>
+        <span class="value" id="startTime">-</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 服务器配置 -->
+  <div class="section">
+    <div class="section-header">
+      <h2>服务器配置</h2>
+    </div>
+    <div class="section-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label>监听地址</label>
+          <input type="text" id="serverHost" value="0.0.0.0" disabled>
+          <div class="hint">修改 config.yaml 中的 SERVER_HOST</div>
+        </div>
+        <div class="form-group">
+          <label>监听端口</label>
+          <input type="number" id="serverPort" value="8081" disabled>
+          <div class="hint">修改 config.yaml 中的 SERVER_PORT</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>数据目录</label>
+        <input type="text" id="dataDir" value="" disabled>
+        <div class="hint">修改 config.yaml 中的 DATA_DIR</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LLM 配置 -->
+  <div class="section">
+    <div class="section-header">
+      <h2>LLM 配置（预留）</h2>
+    </div>
+    <div class="section-body">
+      <div class="info-box">
+        LLM 代理功能尚未实现。当前联机模式下，LLM 调用由客户端本地处理。
+      </div>
+      <div class="form-group">
+        <label>LLM 提供商</label>
+        <select id="llmProvider" disabled>
+          <option value="local">本地（客户端处理）</option>
+          <option value="proxy">服务器代理（未实现）</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>API 地址</label>
+        <input type="text" id="llmBaseUrl" placeholder="https://api.openai.com/v1" disabled>
+      </div>
+      <div class="form-group">
+        <label>API Key</label>
+        <input type="password" id="llmApiKey" placeholder="sk-..." disabled>
+      </div>
+    </div>
+  </div>
+
+  <!-- 用量限制 -->
+  <div class="section">
+    <div class="section-header">
+      <h2>用量限制</h2>
+    </div>
+    <div class="section-body">
+      <div class="form-group">
+        <label>每 5 小时调用上限</label>
+        <input type="number" id="limit5h" value="1500" disabled>
+        <div class="hint">修改 api/usage.py 中的 LIMIT_5H</div>
+      </div>
+      <div class="form-group">
+        <label>单次 Token 上限</label>
+        <input type="number" id="tokenLimit" value="4096" disabled>
+        <div class="hint">单次 LLM 调用的最大 Token 数</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 系统操作 -->
+  <div class="section">
+    <div class="section-header">
+      <h2>系统操作</h2>
+    </div>
+    <div class="section-body">
+      <div class="config-item">
+        <span class="label">清理过期数据</span>
+        <div class="actions">
+          <button class="btn btn-danger" onclick="cleanupData()">清理</button>
+        </div>
+      </div>
+      <div class="config-item">
+        <span class="label">导出数据库</span>
+        <div class="actions">
+          <button class="btn btn-primary" onclick="exportDb()">导出</button>
+        </div>
+      </div>
+      <div class="config-item">
+        <span class="label">重启服务器</span>
+        <div class="actions">
+          <button class="btn btn-danger" onclick="restartServer()">重启</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    async function loadServerInfo() {
+      try {
+        const res = await fetch('/health');
+        const data = await res.json();
+        document.getElementById('serverVersion').textContent = data.version || '-';
+        document.getElementById('serverStatus').textContent = '正常';
+        document.getElementById('serverStatus').className = 'status status-ok';
+      } catch (err) {
+        document.getElementById('serverStatus').textContent = '异常';
+        document.getElementById('serverStatus').className = 'status status-error';
+      }
+
+      // 获取服务器配置
+      try {
+        const res = await fetch('/');
+        const data = await res.json();
+        // 这里可以加载更多配置信息
+      } catch {}
+    }
+
+    function refresh() {
+      loadServerInfo();
+    }
+
+    function cleanupData() {
+      if (!confirm('确定要清理过期数据？此操作不可撤销。')) return;
+      alert('功能待实现');
+    }
+
+    function exportDb() {
+      alert('功能待实现');
+    }
+
+    function restartServer() {
+      if (!confirm('确定要重启服务器？所有连接将断开。')) return;
+      alert('请手动重启服务器：\n1. 停止当前进程\n2. 重新运行 python main.py');
+    }
+
+    // 初始加载
+    loadServerInfo();
+  </script>
+</body>
+</html>

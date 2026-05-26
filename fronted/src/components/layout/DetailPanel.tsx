@@ -6,8 +6,10 @@
  */
 
 import React from 'react'
-import { X, Package, Loader2, Camera, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { X, Package, Loader2, Camera, CheckCircle2, AlertTriangle, Box } from 'lucide-react'
+import { getDataSource } from '@/lib/cache'
 import { API_BASE } from '@/lib/api'
+import { FbxViewerModal } from '@/components/viewer'
 import type { FieldConfig } from './detailFields'
 import {
   MESH_FIELDS, TEXTURE_FIELDS, ANIMATION_FIELDS,
@@ -60,6 +62,7 @@ export function DetailPanel({ asset, onClose }: DetailPanelProps) {
           assetId={String(asset.asset_id || '')}
           assetName={name}
           assetType={assetType}
+          filePath={filePath}
           triCount={asset.mesh?.tri_count}
         />
 
@@ -248,29 +251,36 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 
 // ===== 预览图组件 =====
 
-function PreviewImage({ assetId, assetName, assetType, triCount }: { assetId: string; assetName: string; assetType?: string; triCount?: number }) {
+function PreviewImage({ assetId, assetName, assetType, filePath, triCount }: { assetId: string; assetName: string; assetType?: string; filePath?: string; triCount?: number }) {
   const [src, setSrc] = React.useState<string | null>(null)
   const [error, setError] = React.useState(false)
   const [rendering, setRendering] = React.useState(false)
   const [renderMsg, setRenderMsg] = React.useState<string | null>(null)
+  const [viewerOpen, setViewerOpen] = React.useState(false)
+  const [dataSource, setDataSource] = React.useState(API_BASE)
+
+  React.useEffect(() => {
+    getDataSource().then(setDataSource)
+  }, [])
 
   React.useEffect(() => {
     if (!assetId) return
     setError(false)
     setRenderMsg(null)
-    setSrc(`${API_BASE}/api/preview/${assetId}`)
-  }, [assetId])
+    setSrc(`${dataSource}/api/preview/${assetId}`)
+  }, [assetId, dataSource])
 
   const canRender = assetId && assetType && !['animation', 'texture', 'material'].includes(assetType) && (triCount || 0) > 0
+  const can3DPreview = filePath?.toLowerCase().endsWith('.fbx') && (assetType === 'mesh' || assetType === 'skeletal_mesh' || assetType === 'static_mesh')
 
   const handleRender = async () => {
     setRendering(true)
     setRenderMsg(null)
     try {
-      const res = await fetch(`${API_BASE}/api/preview/${assetId}/render`, { method: 'POST' })
+      const res = await fetch(`${dataSource}/api/preview/${assetId}/render`, { method: 'POST' })
       const data = await res.json()
       if (data.success) {
-        setSrc(`${API_BASE}/api/preview/${assetId}?t=${Date.now()}`)
+        setSrc(`${dataSource}/api/preview/${assetId}?t=${Date.now()}`)
         setError(false)
         setRenderMsg('预览图已生成')
       } else {
@@ -328,6 +338,15 @@ function PreviewImage({ assetId, assetName, assetType, triCount }: { assetId: st
           {renderMsg}
         </p>
       )}
+      {can3DPreview && (
+        <button
+          onClick={() => setViewerOpen(true)}
+          className="w-full flex items-center justify-center gap-2 text-xs text-primary hover:text-primary/80 bg-primary/10 hover:bg-primary/15 py-2 rounded-lg transition-colors"
+        >
+          <Box size={14} /> 3D 预览
+        </button>
+      )}
+      <FbxViewerModal open={viewerOpen} onClose={() => setViewerOpen(false)} assetId={assetId} assetName={assetName} filePath={filePath} />
     </div>
   )
 }

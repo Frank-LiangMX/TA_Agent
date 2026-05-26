@@ -16,6 +16,7 @@ import {
   ChevronDown,
   ChevronRight,
   CheckSquare,
+  CheckCircle2,
   Square,
   X,
 } from 'lucide-react'
@@ -24,12 +25,13 @@ import type { SessionMeta } from '@/types'
 
 interface SessionPopoverProps {
   currentSessionId: string | null
+  refreshKey?: number
   onSelect: (sessionId: string) => void
   onNewSession: () => void
   onClose: () => void
 }
 
-export function SessionPopover({ currentSessionId, onSelect, onNewSession, onClose }: SessionPopoverProps) {
+export function SessionPopover({ currentSessionId, refreshKey = 0, onSelect, onNewSession, onClose }: SessionPopoverProps) {
   const [sessions, setSessions] = useState<SessionMeta[]>([])
   const [search, setSearch] = useState('')
   const [showArchived, setShowArchived] = useState(false)
@@ -38,6 +40,7 @@ export function SessionPopover({ currentSessionId, onSelect, onNewSession, onClo
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
   const loadSessions = async () => {
+    setLoading(true)
     try {
       const data = await listSessions(showArchived)
       setSessions(data)
@@ -50,7 +53,7 @@ export function SessionPopover({ currentSessionId, onSelect, onNewSession, onClo
 
   useEffect(() => {
     loadSessions()
-  }, [showArchived])
+  }, [showArchived, refreshKey])
 
   // 搜索过滤
   const filtered = useMemo(() => {
@@ -345,7 +348,7 @@ function SessionItem({
       className={`
         group flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer transition-colors relative
         ${isActive && !selectMode
-          ? 'bg-foreground/[0.08] shadow-[0_1px_2px_0_rgba(0,0,0,0.05)]'
+          ? 'bg-foreground/[0.08] text-foreground shadow-[0_1px_2px_0_rgba(0,0,0,0.05)] ring-1 ring-border/50'
           : isSelected
             ? 'bg-primary/10'
             : 'hover:bg-accent'
@@ -363,11 +366,23 @@ function SessionItem({
           )}
         </div>
       ) : (
-        <MessageSquare size={14} className="text-muted-foreground shrink-0" />
+        <MessageSquare size={14} className={`${isActive ? 'text-primary' : 'text-muted-foreground'} shrink-0`} />
+      )}
+
+      {isActive && !selectMode && (
+        <div className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-primary" />
       )}
 
       <div className="flex-1 min-w-0">
-        <div className="text-sm truncate">{session.title}</div>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <div className="text-sm truncate">{session.title}</div>
+          {isActive && !selectMode && (
+            <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+              <CheckCircle2 size={10} />
+              当前
+            </span>
+          )}
+        </div>
         <div className="text-[11px] text-muted-foreground">
           {session.messageCount} 条消息 · {timeStr}
         </div>

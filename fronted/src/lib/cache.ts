@@ -7,6 +7,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { API_BASE } from './api'
+import { getConfig } from '../services/config'
 
 // 内存缓存
 const cache = {
@@ -28,6 +29,17 @@ export function clearCache() {
   cache.assetDetail.clear()
 }
 
+/** 获取数据源 API 地址 */
+export async function getDataSource(): Promise<string> {
+  try {
+    const config = await getConfig()
+    if (config.mode === 'online' && config.online.server_host) {
+      return `http://${config.online.server_host}:${config.online.server_port || 8081}`
+    }
+  } catch {}
+  return API_BASE
+}
+
 /** 获取资产列表（带缓存） */
 export function useAssets() {
   const [assets, setAssets] = useState<any[]>(cache.assets || [])
@@ -42,7 +54,8 @@ export function useAssets() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`${API_BASE}/api/assets`)
+      const dataSource = await getDataSource()
+      const res = await fetch(`${dataSource}/api/assets`)
       const data = await res.json()
       if (data.error) {
         setError(data.error)
@@ -76,7 +89,8 @@ export function useReviews() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`${API_BASE}/api/reviews/pending`)
+      const dataSource = await getDataSource()
+      const res = await fetch(`${dataSource}/api/reviews/pending`)
       const result = await res.json()
       if (result.error) {
         setError(result.error)
@@ -107,16 +121,18 @@ export function useAssetDetail(assetId: string | null) {
     if (cached) { setDetail(cached); return }
 
     setLoading(true)
-    fetch(`${API_BASE}/api/assets/${assetId}`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (!data.error) {
-          cache.assetDetail.set(assetId, data)
-          setDetail(data)
-        }
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false))
+    getDataSource().then(dataSource => {
+      fetch(`${dataSource}/api/assets/${assetId}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (!data.error) {
+            cache.assetDetail.set(assetId, data)
+            setDetail(data)
+          }
+        })
+        .catch(() => {})
+        .finally(() => setLoading(false))
+    })
   }, [assetId])
 
   return { detail, loading }
@@ -131,7 +147,8 @@ export function useStats() {
     if (!force && cache.stats) { setStats(cache.stats); return }
     setLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/api/stats`)
+      const dataSource = await getDataSource()
+      const res = await fetch(`${dataSource}/api/stats`)
       const data = await res.json()
       cache.stats = data
       setStats(data)
@@ -152,7 +169,8 @@ export function useSessionStats() {
     if (!force && cache.sessionStats) { setStats(cache.sessionStats); return }
     setLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/api/sessions/stats`)
+      const dataSource = await getDataSource()
+      const res = await fetch(`${dataSource}/api/sessions/stats`)
       const data = await res.json()
       cache.sessionStats = data
       setStats(data)
@@ -173,7 +191,8 @@ export function useMemoryStats() {
     if (!force && cache.memoryStats) { setStats(cache.memoryStats); return }
     setLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/api/memory/stats`)
+      const dataSource = await getDataSource()
+      const res = await fetch(`${dataSource}/api/memory/stats`)
       const data = await res.json()
       cache.memoryStats = data
       setStats(data)

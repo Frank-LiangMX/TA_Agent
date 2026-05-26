@@ -35,6 +35,7 @@ docs/
 | 分布式架构设计 | `decisions/distributed-architecture.md` |
 | 用户认证设计 | `decisions/user-auth-design.md` |
 | 客户端双模式设计 | `decisions/client-dual-mode-design.md` |
+| 管理员分配机制 | `decisions/user-auth-design.md` (5.2 节) |
 
 ## 写入规则
 

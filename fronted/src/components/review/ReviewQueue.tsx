@@ -402,10 +402,11 @@ function ReviewItem({ asset, index, isExpanded, isSelected, isLoading, isProcess
               {Object.entries(criteria).map(([key, c]) => (
                 <div key={key} className="flex items-center gap-2">
                   <span className="text-xs text-muted-foreground w-14 shrink-0">{c.label}</span>
-                  <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden">
+                  <span className="text-xs truncate flex-1">{String(c.value)}</span>
+                  <div className="w-12 h-1 bg-muted rounded-full overflow-hidden shrink-0">
                     <div className={`h-full rounded-full ${c.confidence >= 0.9 ? 'bg-success' : c.confidence >= 0.6 ? 'bg-warning' : c.confidence > 0 ? 'bg-destructive' : 'bg-muted-foreground/30'}`} style={{ width: `${Math.max(Math.round(c.confidence * 100), c.confidence > 0 ? 2 : 0)}%` }} />
                   </div>
-                  <span className={`text-[11px] font-mono w-8 text-right ${c.confidence >= 0.9 ? 'text-success' : c.confidence >= 0.6 ? 'text-warning' : c.confidence > 0 ? 'text-destructive' : 'text-muted-foreground/50'}`}>
+                  <span className={`text-[11px] font-mono w-7 text-right shrink-0 ${c.confidence >= 0.9 ? 'text-success' : c.confidence >= 0.6 ? 'text-warning' : c.confidence > 0 ? 'text-destructive' : 'text-muted-foreground/50'}`}>
                     {c.confidence > 0 ? `${(c.confidence * 100).toFixed(0)}%` : '—'}
                   </span>
                 </div>
