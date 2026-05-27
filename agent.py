@@ -938,11 +938,14 @@ def _session_msgs_to_history(messages: list) -> list:
                 entry["tool_calls"] = msg["toolCalls"]
             history.append(entry)
         elif role == "tool":
-            history.append({
-                "role": "tool",
-                "tool_call_id": msg.get("toolCallId", ""),
-                "content": msg.get("content", ""),
-            })
+            # 过滤掉没有 toolCallId 的工具结果消息
+            tool_call_id = msg.get("toolCallId", "")
+            if tool_call_id:
+                history.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call_id,
+                    "content": msg.get("content", ""),
+                })
     return history
 
 
