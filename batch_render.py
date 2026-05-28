@@ -8,7 +8,7 @@ import sys
 sys.stdout.reconfigure(encoding='utf-8')
 
 BLENDER = r"D:\Program Files\Blender Foundation\Blender 4.3\blender.exe"
-RENDER_SCRIPT = os.path.join(os.path.dirname(__file__), "tools", "blender_asset_renderer.py")
+RENDER_SCRIPT = os.path.join(os.path.dirname(__file__), "tools", "core", "blender_asset_renderer.py")
 BASE_DIR = r"D:\Trunk_Projects\Main\Assets\Art\MapSources\Architecture\Common\Building"
 
 # Scan all High FBX

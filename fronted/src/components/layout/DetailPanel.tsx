@@ -9,7 +9,7 @@ import React from 'react'
 import { X, Package, Loader2, Camera, CheckCircle2, AlertTriangle, Box } from 'lucide-react'
 import { getDataSource } from '@/lib/cache'
 import { API_BASE } from '@/lib/api'
-import { FbxViewerModal } from '@/components/viewer'
+import { FbxViewerModal, FbxViewerInline } from '@/components/viewer'
 import type { FieldConfig } from './detailFields'
 import {
   MESH_FIELDS, TEXTURE_FIELDS, ANIMATION_FIELDS,
@@ -303,23 +303,27 @@ function PreviewImage({ assetId, assetName, assetType, filePath, triCount }: { a
 
   return (
     <div className="space-y-2">
-      <div className="aspect-square bg-muted rounded-lg overflow-hidden flex items-center justify-center relative">
-        {src && !error ? (
-          <img
-            src={src}
-            alt={assetName}
-            className="w-full h-full object-contain"
-            onError={() => setError(true)}
-          />
-        ) : (
-          <Package size={48} className="text-muted-foreground/30" />
-        )}
-        {rendering && (
-          <div className="absolute inset-0 bg-background/80 flex items-center justify-center">
-            <Loader2 size={24} className="animate-spin text-primary" />
-          </div>
-        )}
-      </div>
+      {can3DPreview ? (
+        <FbxViewerInline assetId={assetId} filePath={filePath} onExpand={() => setViewerOpen(true)} />
+      ) : (
+        <div className="aspect-square bg-muted rounded-lg overflow-hidden flex items-center justify-center relative">
+          {src && !error ? (
+            <img
+              src={src}
+              alt={assetName}
+              className="w-full h-full object-contain"
+              onError={() => setError(true)}
+            />
+          ) : (
+            <Package size={48} className="text-muted-foreground/30" />
+          )}
+          {rendering && (
+            <div className="absolute inset-0 bg-background/80 flex items-center justify-center">
+              <Loader2 size={24} className="animate-spin text-primary" />
+            </div>
+          )}
+        </div>
+      )}
       {canRender && (!src || error) && (
         <button
           onClick={handleRender}
@@ -337,14 +341,6 @@ function PreviewImage({ assetId, assetName, assetType, filePath, triCount }: { a
         <p className={`text-xs ${renderMsg.includes('已生成') ? 'text-success' : 'text-warning'}`}>
           {renderMsg}
         </p>
-      )}
-      {can3DPreview && (
-        <button
-          onClick={() => setViewerOpen(true)}
-          className="w-full flex items-center justify-center gap-2 text-xs text-primary hover:text-primary/80 bg-primary/10 hover:bg-primary/15 py-2 rounded-lg transition-colors"
-        >
-          <Box size={14} /> 3D 预览
-        </button>
       )}
       <FbxViewerModal open={viewerOpen} onClose={() => setViewerOpen(false)} assetId={assetId} assetName={assetName} filePath={filePath} />
     </div>

@@ -3,11 +3,13 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Square, Wifi, WifiOff, Settings2, Trash2, Loader2, CheckCircle2, FolderSearch, Brain, FileCheck, Package, MessageSquare, Bot } from 'lucide-react'
+import { Send, Square, Wifi, WifiOff, Loader2, CheckCircle2, FolderSearch, Brain, FileCheck, Package, MessageSquare, Bot, Paperclip } from 'lucide-react'
 import { ChatMessage } from '../chat/ChatMessage'
 import { ContextDivider } from '../chat/ContextDivider'
 import { ScrollMinimap } from '../chat/ScrollMinimap'
 import { AssetMentionPopover } from '../chat/AssetMentionPopover'
+import { ModelSelector } from './ModelSelector'
+import { AttachmentPreview, type Attachment } from './AttachmentPreview'
 import { SessionTabBar } from '../session/SessionTabBar'
 import { ThinkingDots, SkeletonBlock } from '../animations'
 import { tagentClient, type ConnectionStatus } from '@/services/websocket'
@@ -60,7 +62,11 @@ export function MainPanel({ onAssetSelect }: MainPanelProps) {
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(tagentClient.status)
-  const [workflowMode, setWorkflowMode] = useState<'step_by_step' | 'auto'>('step_by_step')
+  const [thinkingEnabled, setThinkingEnabled] = useState(() => {
+    return localStorage.getItem('tagent-thinking-enabled') === 'true'
+  })
+  const [attachments, setAttachments] = useState<Attachment[]>([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // ===== 多标签会话管理 =====
   const [openTabIds, setOpenTabIds] = useState<string[]>(() => {
@@ -379,7 +385,7 @@ const loadTabHistory = useCallback(async (tabId: string) => {
         const streamId = targetTabId ? streamingMsgRefs.current[targetTabId] : streamingMsgRef.current
         // 情况 1：追加到当前流式消息
         if (last && last.id === streamId) {
-          return [...prev.slice(0, -1), { ...last, content: last.content + text }]
+          return [...prev.slice(0, -1), { ...last, content: last.content + text, _streaming: true }]
         }
         // 情况 2：最后一条是 thinking 消息，替换为流式消息（保留思考内容）
         if (last && last.role === 'assistant' && !last.toolCalls && !(last as any)._toolStatus) {
@@ -387,13 +393,13 @@ const loadTabHistory = useCallback(async (tabId: string) => {
           streamingMsgRef.current = id
           if (targetTabId) streamingMsgRefs.current[targetTabId] = id
           const thinkingContent = last.content?.startsWith('💭') ? last.content : undefined
-          return [...prev.slice(0, -1), { id, role: 'assistant', content: text, timestamp: Date.now(), _startTime: Date.now(), _thinking: thinkingContent }]
+          return [...prev.slice(0, -1), { id, role: 'assistant', content: text, timestamp: Date.now(), _startTime: Date.now(), _thinking: thinkingContent, _streaming: true }]
         }
         // 情况 3：创建新的流式消息
         const id = `stream-${Date.now()}`
         streamingMsgRef.current = id
         if (targetTabId) streamingMsgRefs.current[targetTabId] = id
-        return [...prev, { id, role: 'assistant', content: text, timestamp: Date.now(), _startTime: Date.now() }]
+        return [...prev, { id, role: 'assistant', content: text, timestamp: Date.now(), _startTime: Date.now(), _streaming: true }]
       })
     })
 
@@ -596,6 +602,27 @@ const loadTabHistory = useCallback(async (tabId: string) => {
     }
   }, [loadTabHistory, setMessagesForTab])
 
+  const handleFilesSelected = useCallback((files: FileList | null) => {
+    if (!files) return
+    const newAttachments: Attachment[] = Array.from(files).map((file) => ({
+      id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined,
+      _file: file,
+    }))
+    setAttachments((prev) => [...prev, ...newAttachments])
+  }, [])
+
+  const handleRemoveAttachment = useCallback((id: string) => {
+    setAttachments((prev) => {
+      const removed = prev.find((a) => a.id === id)
+      if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl)
+      return prev.filter((a) => a.id !== id)
+    })
+  }, [])
+
   const handleSend = useCallback(async () => {
     const targetTabId = activeTabIdRef.current
     console.log('[handleSend] called', { input: input.trim(), targetTabId, streamingTabs: Array.from(streamingTabs) })
@@ -625,6 +652,26 @@ const loadTabHistory = useCallback(async (tabId: string) => {
     // 标记当前标签为运行中
     setStreamingTabs(prev => new Set(prev).add(targetTabId))
 
+    // 读取附件（图片转 base64）
+    const imageAttachments: { name: string; data: string }[] = []
+    const fileAttachments: { name: string; path: string }[] = []
+    for (const att of attachments) {
+      if (att.type.startsWith('image/') && att._file) {
+        const file = att._file
+        const base64 = await new Promise<string>((resolve) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result as string)
+          reader.readAsDataURL(file)
+        })
+        imageAttachments.push({ name: att.name, data: base64 })
+      } else if (att._file) {
+        fileAttachments.push({ name: att.name, path: att.name })
+      }
+    }
+    // 清除附件
+    attachments.forEach((a) => { if (a.previewUrl) URL.revokeObjectURL(a.previewUrl) })
+    setAttachments([])
+
     // 添加用户消息
     const userMsg: ChatMessageType = {
       id: `user-${Date.now()}`,
@@ -637,7 +684,7 @@ const loadTabHistory = useCallback(async (tabId: string) => {
     if (connectionStatus === 'connected') {
       // 真实模式：通过 WebSocket 发送
       try {
-        await tagentClient.sendMessage(content, contextCutoff, targetTabId)
+        await tagentClient.sendMessage(content, contextCutoff, targetTabId, thinkingEnabled, imageAttachments.length > 0 ? imageAttachments : undefined, fileAttachments.length > 0 ? fileAttachments : undefined)
         setTimeout(() => setSessionRefreshKey((k) => k + 1), 300)
       } catch (e: any) {
         setIsStreaming(false)
@@ -683,7 +730,7 @@ const loadTabHistory = useCallback(async (tabId: string) => {
   }
 
   // 停止当前对话（断开重连以中断 Agent）
-  const handleStop = useCallback(() => {
+  const handleStop = useCallback(async () => {
     streamingMsgRef.current = null
     if (sessionId) streamingMsgRefs.current[sessionId] = null
     setIsStreaming(false)
@@ -694,18 +741,13 @@ const loadTabHistory = useCallback(async (tabId: string) => {
         return next
       })
     }
-    // 断开并重连以中断后端 Agent
-    tagentClient.disconnect()
-    setTimeout(() => tagentClient.connect(sessionId || undefined), 500)
-  }, [sessionId])
-
-  const handleClear = async () => {
-    if (connectionStatus === 'connected') {
-      await tagentClient.clearHistory()
+    // 发送中断消息（不断开连接）
+    try {
+      await tagentClient.stopGeneration()
+    } catch {
+      // 如果发送失败（连接已断），忽略
     }
-    setMessages(MOCK_MESSAGES)
-    setContextCutoff(null)
-  }
+  }, [sessionId])
 
   const handleClearContext = async () => {
     // 在最后一条消息后设置分割点
@@ -742,27 +784,6 @@ const loadTabHistory = useCallback(async (tabId: string) => {
         </div>
         <div className="flex items-center gap-2 shrink-0 h-9">
           <ConnectionBadge status={connectionStatus} />
-          <select
-            value={workflowMode}
-            onChange={(e) => {
-              const mode = e.target.value as 'step_by_step' | 'auto'
-              setWorkflowMode(mode)
-              if (connectionStatus === 'connected') {
-                tagentClient.setMode(mode)
-              }
-            }}
-            className="text-xs bg-muted border border-border rounded px-2 py-1 outline-none"
-          >
-            <option value="step_by_step">逐步模式</option>
-            <option value="auto">自动模式</option>
-          </select>
-          <button
-            onClick={handleClear}
-            className="text-muted-foreground hover:text-foreground transition-colors p-1.5 rounded hover:bg-muted"
-            title="清除对话"
-          >
-            <Trash2 size={16} />
-          </button>
         </div>
       </div>
 
@@ -922,7 +943,8 @@ const loadTabHistory = useCallback(async (tabId: string) => {
             </button>
           </div>
         )}
-        <div className="relative">
+        <div className="relative rounded-xl border border-border/50 bg-background/70 backdrop-blur-sm transition-all duration-200 focus-within:border-foreground/20">
+          {/* 流式动画 */}
           {isActiveTabStreaming && (
             <div
               className="absolute left-0 right-0 bottom-0 h-16 rounded-b-xl animate-input-breathe pointer-events-none overflow-hidden"
@@ -932,29 +954,60 @@ const loadTabHistory = useCallback(async (tabId: string) => {
               }}
             />
           )}
-          <div className={`relative flex items-end gap-2 rounded-xl p-3 transition-all duration-300 ${isActiveTabStreaming ? 'bg-primary/10 ring-1 ring-primary/40' : 'bg-muted'}`}>
+          {/* 附件预览 */}
+          <AttachmentPreview attachments={attachments} onRemove={handleRemoveAttachment} />
+          {/* 隐藏的文件输入 */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => handleFilesSelected(e.target.files)}
+          />
+          {/* 文本输入 */}
           <textarea
             value={input}
             onChange={(e) => {
               const val = e.target.value
               setInput(val)
-              // 检测 @ 提及
               const atMatch = val.match(/@([^\s@]*)$/)
               setMentionQuery(atMatch ? atMatch[1] : null)
             }}
             onKeyDown={(e) => {
-              // 如果 mention 弹出框打开，让弹出框处理方向键和回车
               if (mentionQuery !== null && (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'Enter')) {
                 return
               }
               handleKeyDown(e)
+            }}
+            onPaste={(e) => {
+              const items = e.clipboardData?.items
+              if (!items) return
+              const imageFiles: File[] = []
+              for (let i = 0; i < items.length; i++) {
+                if (items[i].type.startsWith('image/')) {
+                  const file = items[i].getAsFile()
+                  if (file) imageFiles.push(file)
+                }
+              }
+              if (imageFiles.length > 0) {
+                e.preventDefault()
+                const newAttachments: Attachment[] = imageFiles.map((file) => ({
+                  id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                  name: file.name || `clipboard-${Date.now()}.png`,
+                  size: file.size,
+                  type: file.type,
+                  previewUrl: URL.createObjectURL(file),
+                  _file: file,
+                }))
+                setAttachments((prev) => [...prev, ...newAttachments])
+              }
             }}
             placeholder={connectionStatus === 'connected'
               ? '输入消息... (Enter 发送, Shift+Enter 换行)'
               : '未连接后端，将以 Mock 模式响应...'
             }
             rows={1}
-            className="flex-1 bg-transparent resize-none outline-none text-sm placeholder:text-muted-foreground min-h-[24px] max-h-[120px]"
+            className="w-full bg-transparent resize-none outline-none text-sm placeholder:text-muted-foreground min-h-[24px] max-h-[120px] px-3 pt-2 scrollbar-none"
             style={{ height: 'auto' }}
             onInput={(e) => {
               const target = e.target as HTMLTextAreaElement
@@ -967,7 +1020,6 @@ const loadTabHistory = useCallback(async (tabId: string) => {
             <AssetMentionPopover
               query={mentionQuery}
               onSelect={(asset) => {
-                // 替换 @query 为 @assetName
                 setInput((prev) => prev.replace(/@[^\s@]*$/, `@${asset.name} `))
                 setMentionQuery(null)
                 setMentionAssets((prev) => [...prev, { id: asset.id, name: asset.name }])
@@ -975,18 +1027,49 @@ const loadTabHistory = useCallback(async (tabId: string) => {
               onClose={() => setMentionQuery(null)}
             />
           )}
-          <button
-            onClick={isActiveTabStreaming ? handleStop : handleSend}
-            disabled={!isActiveTabStreaming && !input.trim()}
-            className={`disabled:opacity-50 transition-colors p-1 rounded ${
-              isActiveTabStreaming
-                ? 'text-destructive hover:bg-destructive/10'
-                : 'text-muted-foreground hover:text-primary'
-            }`}
-          >
-            {isActiveTabStreaming ? <Square size={18} /> : <Send size={18} />}
-          </button>
-        </div>
+          {/* 工具栏 */}
+          <div className="flex items-center justify-between px-2 py-1 h-[40px]">
+            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+              {/* 附件按钮 */}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                title="添加附件"
+              >
+                <Paperclip size={18} />
+              </button>
+              {/* 模型选择器 */}
+              <ModelSelector />
+              {/* 思考模式开关 */}
+              <button
+                onClick={() => {
+                  const next = !thinkingEnabled
+                  setThinkingEnabled(next)
+                  localStorage.setItem('tagent-thinking-enabled', String(next))
+                }}
+                className={`p-1.5 rounded-md transition-colors ${
+                  thinkingEnabled
+                    ? 'text-success hover:bg-success/10'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                }`}
+                title={thinkingEnabled ? '关闭思考模式' : '开启思考模式'}
+              >
+                <Brain size={18} />
+              </button>
+            </div>
+            {/* 发送/停止按钮 */}
+            <button
+              onClick={isActiveTabStreaming ? handleStop : handleSend}
+              disabled={!isActiveTabStreaming && !input.trim()}
+              className={`p-1.5 rounded-md transition-colors ${
+                isActiveTabStreaming
+                  ? 'text-destructive hover:bg-destructive/10'
+                  : 'text-muted-foreground hover:text-primary disabled:opacity-30'
+              }`}
+            >
+              {isActiveTabStreaming ? <Square size={18} /> : <Send size={18} />}
+            </button>
+          </div>
         </div>
       </div>
     </div>

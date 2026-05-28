@@ -16,6 +16,7 @@ docs/
 │   └── distributed-architecture.md # 分布式架构设计
 ├── experiments/              # 实验/试错——过程记录 (追加，成功/失败都保留)
 │   ├── backend/
+│   │   └── 2026-05-27-hidden-bugs-audit.md  # 隐藏问题排查报告
 │   └── frontend/
 │       ├── 2026-05-21-prompt-suggestion.md  # 提示建议功能实验
 │       └── 2026-05-22-bug-report.md         # Bug 排查报告
@@ -42,6 +43,7 @@ docs/
 | 客户端双模式设计 | `decisions/client-dual-mode-design.md` |
 | 管理员分配机制 | `decisions/user-auth-design.md` (5.2 节) |
 | Bug 排查记录 | `experiments/frontend/2026-05-22-bug-report.md` |
+| 隐藏问题排查 | `experiments/backend/2026-05-27-hidden-bugs-audit.md` |
 
 ## 写入规则
 

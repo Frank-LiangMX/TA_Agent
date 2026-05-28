@@ -54,6 +54,16 @@ export function ReviewQueue() {
     setTimeout(() => refresh(), 2000)
   }, [refresh])
 
+  // 自动切到有内容的 tab：优先低置信度（需要审核），其次高置信度
+  useEffect(() => {
+    if (!data) return
+    const hasLow = (data.low_confidence || []).length > 0
+    const hasHigh = (data.high_confidence || []).length > 0
+    if (!hasLow && hasHigh) setActiveTab('high')
+    else if (hasLow && !hasHigh) setActiveTab('low')
+    else if (!hasLow && !hasHigh) setActiveTab('high') // 都空时保持默认
+  }, [data])
+
   const currentList = activeTab === 'high' ? (data?.high_confidence || []) : (data?.low_confidence || [])
   const currentPage = activeTab === 'high' ? highPage : lowPage
   const setCurrentPage = activeTab === 'high' ? setHighPage : setLowPage

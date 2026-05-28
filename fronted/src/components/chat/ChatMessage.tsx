@@ -150,7 +150,7 @@ export function ChatMessage({ message, onAssetClick, onSetDivider }: ChatMessage
             )
           })()}
 
-          <div className="flex items-center gap-2 mt-1">
+          <div className={`flex items-center gap-2 mt-1 ${(message as any)._streaming ? 'invisible h-0 mt-0' : ''}`}>
             <span className="text-xs text-muted-foreground">
               {new Date(message.timestamp).toLocaleTimeString()}
             </span>
@@ -236,7 +236,7 @@ export function ChatMessage({ message, onAssetClick, onSetDivider }: ChatMessage
           )}
         </div>
 
-        <div className={`flex items-center gap-2 mt-1 ${isUser ? 'justify-end' : ''}`}>
+        <div className={`flex items-center gap-2 mt-1 ${(message as any)._streaming ? 'invisible h-0 mt-0' : ''} ${isUser ? 'justify-end' : ''}`}>
           <span className="text-xs text-muted-foreground">
             {new Date(message.timestamp).toLocaleTimeString()}
           </span>
@@ -248,14 +248,12 @@ export function ChatMessage({ message, onAssetClick, onSetDivider }: ChatMessage
               }
             </span>
           )}
-          {!isUser && (
-            <button
-              onClick={handleCopy}
-              className="text-muted-foreground hover:text-foreground transition-colors"
-            >
-              {copied ? <Check size={12} /> : <Copy size={12} />}
-            </button>
-          )}
+          <button
+            onClick={handleCopy}
+            className="text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {copied ? <Check size={12} /> : <Copy size={12} />}
+          </button>
         </div>
       </div>
     </div>

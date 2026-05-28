@@ -1,7 +1,8 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js'
+// Patched FBXLoader with skeleton null-check fix
+import { FBXLoader } from './FBXLoader.js'
 import { TGALoader } from 'three/examples/jsm/loaders/TGALoader.js'
 import { RotateCcw, Grid3x3, Box, Orbit } from 'lucide-react'
 
@@ -38,6 +39,7 @@ export function FbxViewer({ fbxFile, textureFiles, className }: FbxViewerProps) 
   const gridRef = useRef<THREE.GridHelper | null>(null)
   const axesRef = useRef<THREE.AxesHelper | null>(null)
   const animFrameRef = useRef<number>(0)
+  const needsRenderRef = useRef(true)
 
   const [stats, setStats] = useState<ModelStats | null>(null)
   const [loading, setLoading] = useState(false)
@@ -51,15 +53,21 @@ export function FbxViewer({ fbxFile, textureFiles, className }: FbxViewerProps) 
   useEffect(() => {
     if (!canvasRef.current) return
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false })
+    // Create a canvas element for the renderer
+    const canvas = document.createElement('canvas')
+    canvas.style.display = 'block'
+    canvas.style.width = '100%'
+    canvas.style.height = '100%'
+    canvasRef.current.appendChild(canvas)
+
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.outputColorSpace = THREE.SRGBColorSpace
     renderer.toneMapping = THREE.NoToneMapping
-    canvasRef.current.appendChild(renderer.domElement)
     rendererRef.current = renderer
 
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color(0x1a1a2e)
+    scene.background = new THREE.Color(0x505050)
     sceneRef.current = scene
 
     const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 10000)
@@ -72,19 +80,19 @@ export function FbxViewer({ fbxFile, textureFiles, className }: FbxViewerProps) 
     controls.rotateSpeed = 1.2
     controlsRef.current = controls
 
-    // Lights
-    const ambient = new THREE.AmbientLight(0xffffff, 1.5)
+    // Lights — high intensity for r170 physically-based units
+    const ambient = new THREE.AmbientLight(0xffffff, 8.0)
     scene.add(ambient)
-    const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 1.2)
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 6.0)
     hemi.position.set(0, 500, 0)
     scene.add(hemi)
-    const dir1 = new THREE.DirectionalLight(0xffffff, 1.5)
+    const dir1 = new THREE.DirectionalLight(0xffffff, 8.0)
     dir1.position.set(200, 300, 200)
     scene.add(dir1); scene.add(dir1.target)
-    const dir2 = new THREE.DirectionalLight(0x8888ff, 0.8)
+    const dir2 = new THREE.DirectionalLight(0xffffff, 4.0)
     dir2.position.set(-200, 100, -200)
     scene.add(dir2); scene.add(dir2.target)
-    const dir3 = new THREE.DirectionalLight(0xffffff, 0.6)
+    const dir3 = new THREE.DirectionalLight(0xffffff, 3.0)
     dir3.position.set(0, -100, 200)
     scene.add(dir3); scene.add(dir3.target)
     lightsRef.current = { ambient, hemi, dir1, dir2, dir3 }
@@ -109,20 +117,34 @@ export function FbxViewer({ fbxFile, textureFiles, className }: FbxViewerProps) 
     })
     resizeObserver.observe(containerRef.current!)
 
-    // Initial size
-    const { clientWidth: w, clientHeight: h } = containerRef.current!
-    renderer.setSize(w, h)
-    camera.aspect = w / h
-    camera.updateProjectionMatrix()
+    // Initial size — use rAF to wait for modal animation to finish
+    const initSize = () => {
+      if (!containerRef.current) return
+      const { clientWidth: w, clientHeight: h } = containerRef.current
+      if (w > 0 && h > 0) {
+        renderer.setSize(w, h)
+        camera.aspect = w / h
+        camera.updateProjectionMatrix()
+      } else {
+        requestAnimationFrame(initSize)
+      }
+    }
+    requestAnimationFrame(initSize)
 
-    // Animation loop
+    // On-demand rendering: only render when interacting
+    needsRenderRef.current = true
+    controls.addEventListener('change', () => { needsRenderRef.current = true })
+
     let frameCount = 0
     let lastFpsTime = performance.now()
     const animate = () => {
       animFrameRef.current = requestAnimationFrame(animate)
-      controls.update()
-      renderer.render(scene, camera)
-      frameCount++
+      const didUpdate = controls.update()
+      if (needsRenderRef.current || didUpdate || controls.autoRotate) {
+        renderer.render(scene, camera)
+        needsRenderRef.current = false
+        frameCount++
+      }
       const now = performance.now()
       if (now - lastFpsTime >= 1000) {
         setFps(frameCount)
@@ -152,114 +174,145 @@ export function FbxViewer({ fbxFile, textureFiles, className }: FbxViewerProps) 
     setLoadProgress(0)
     setStats(null)
 
-    // Clear old model
-    if (modelRef.current) {
-      scene.remove(modelRef.current)
-      modelRef.current.traverse((child) => {
-        if ((child as THREE.Mesh).isMesh) {
-          const mesh = child as THREE.Mesh
-          mesh.geometry?.dispose()
-          const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
-          mats.forEach((m) => m.dispose())
+    let cancelled = false
+
+    // Wait for container to have non-zero size (modal animation)
+    const waitForSize = (): Promise<void> => {
+      return new Promise((resolve) => {
+        const check = () => {
+          if (cancelled) return
+          if (containerRef.current && containerRef.current.clientWidth > 0 && containerRef.current.clientHeight > 0) {
+            resolve()
+          } else {
+            requestAnimationFrame(check)
+          }
         }
-      })
-      modelRef.current = null
-      originalMatsRef.current.clear()
-    }
-
-    // Setup manager with texture resolver
-    const manager = new THREE.LoadingManager()
-    manager.addHandler(/\.tga$/i, new TGALoader())
-    if (textureFiles && textureFiles.size > 0) {
-      manager.setURLModifier((url) => {
-        const filename = url.split(/[/\\]/).pop()!
-        if (textureFiles.has(filename)) return textureFiles.get(filename)!
-        return url
+        check()
       })
     }
 
-    const loader = new FBXLoader(manager)
-    const blobUrl = URL.createObjectURL(fbxFile)
+    waitForSize().then(() => {
+      if (cancelled) return
 
-    loader.load(
-      blobUrl,
-      (object) => {
-        URL.revokeObjectURL(blobUrl)
-        modelRef.current = object
-
-        // Fix materials
-        object.traverse((child) => {
+      // Clear old model
+      if (modelRef.current) {
+        scene.remove(modelRef.current)
+        modelRef.current.traverse((child) => {
           if ((child as THREE.Mesh).isMesh) {
             const mesh = child as THREE.Mesh
-            if (!mesh.geometry.attributes.normal) {
-              mesh.geometry.computeVertexNormals()
-            }
-            const oldMats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
-            const newMats = oldMats.map((mat) => {
-              const hasTexture = (mat as THREE.MeshStandardMaterial).map != null
-              if (mat instanceof THREE.MeshBasicMaterial && !hasTexture) {
-                const m = new THREE.MeshStandardMaterial({
-                  color: mat.color || 0x888888, roughness: 0.7, metalness: 0.1, side: mat.side,
-                })
-                m.name = mat.name; mat.dispose(); return m
-              }
-              if (mat instanceof THREE.MeshPhongMaterial || mat instanceof THREE.MeshLambertMaterial) {
-                const m = new THREE.MeshStandardMaterial({
-                  color: mat.color || 0x888888,
-                  map: (mat as THREE.MeshPhongMaterial).map || null,
-                  normalMap: (mat as THREE.MeshPhongMaterial).normalMap || null,
-                  roughness: 0.7, metalness: 0.1, side: mat.side,
-                })
-                m.name = mat.name; mat.dispose(); return m
-              }
-              if (hasTexture) return mat
-              if (mat instanceof THREE.MeshStandardMaterial && mat.color) {
-                const b = (mat.color.r + mat.color.g + mat.color.b) / 3
-                if (b < 0.15) mat.color.setRGB(0.5, 0.5, 0.5)
-              }
-              return mat
-            })
-            mesh.material = Array.isArray(mesh.material) ? newMats : newMats[0]
-            originalMatsRef.current.set(mesh.uuid, mesh.material as THREE.Material)
-          }
-        })
-
-        scene.add(object)
-        fitCamera(object)
-
-        // Compute stats
-        let verts = 0, tris = 0, meshCount = 0
-        const matNames = new Set<string>()
-        object.traverse((child) => {
-          if ((child as THREE.Mesh).isMesh) {
-            meshCount++
-            const mesh = child as THREE.Mesh
-            const geo = mesh.geometry
-            if (geo.attributes.position) verts += geo.attributes.position.count
-            if (geo.index) tris += geo.index.count / 3
-            else if (geo.attributes.position) tris += geo.attributes.position.count / 3
+            mesh.geometry?.dispose()
             const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
-            mats.forEach((m) => matNames.add(m.name || '(unnamed)'))
+            mats.forEach((m) => m.dispose())
           }
         })
-        setStats({
-          fileName: fbxFile.name,
-          vertices: verts,
-          triangles: Math.round(tris),
-          meshes: meshCount,
-          materials: matNames.size,
-        })
-        setLoading(false)
-      },
-      (xhr) => {
-        if (xhr.total > 0) setLoadProgress(Math.round((xhr.loaded / xhr.total) * 100))
-      },
-      (err) => {
-        URL.revokeObjectURL(blobUrl)
-        console.error('[FbxViewer] load error:', err)
-        setLoading(false)
+        modelRef.current = null
+        originalMatsRef.current.clear()
       }
-    )
+
+      // Setup manager with texture resolver
+      const manager = new THREE.LoadingManager()
+      manager.addHandler(/\.tga$/i, new TGALoader())
+      if (textureFiles && textureFiles.size > 0) {
+        manager.setURLModifier((url) => {
+          const filename = url.split(/[/\\]/).pop()!
+          if (textureFiles.has(filename)) return textureFiles.get(filename)!
+          return url
+        })
+      }
+
+      const loader = new FBXLoader(manager)
+      const blobUrl = URL.createObjectURL(fbxFile)
+
+      loader.load(
+        blobUrl,
+        (object: THREE.Group) => {
+          URL.revokeObjectURL(blobUrl)
+          if (cancelled) return
+          modelRef.current = object
+
+          // Fix materials
+          object.traverse((child: THREE.Object3D) => {
+            if ((child as THREE.Mesh).isMesh) {
+              const mesh = child as THREE.Mesh
+              if (!mesh.geometry.attributes.normal) {
+                mesh.geometry.computeVertexNormals()
+              }
+              const oldMats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+              const newMats = oldMats.map((mat) => {
+                const srcMat = mat as any
+                const hasTexture = srcMat.map != null
+                const baseColor = srcMat.color ? srcMat.color.clone() : new THREE.Color(0x888888)
+                // Brighten dark colors
+                const brightness = (baseColor.r + baseColor.g + baseColor.b) / 3
+                if (brightness < 0.4) baseColor.setRGB(0.6, 0.6, 0.6)
+
+                const m = new THREE.MeshStandardMaterial({
+                  color: baseColor,
+                  map: hasTexture ? srcMat.map : null,
+                  normalMap: srcMat.normalMap || null,
+                  roughness: 0.9,
+                  metalness: 0.0,
+                  side: THREE.DoubleSide,
+                })
+                m.name = mat.name
+                mat.dispose()
+                return m
+              })
+              mesh.material = Array.isArray(mesh.material) ? newMats : newMats[0]
+              originalMatsRef.current.set(mesh.uuid, mesh.material as THREE.Material)
+            }
+          })
+
+          scene.add(object)
+          needsRenderRef.current = true
+
+          // Force resize then fit camera
+          if (containerRef.current && rendererRef.current && cameraRef.current) {
+            const { clientWidth: w, clientHeight: h } = containerRef.current
+            if (w > 0 && h > 0) {
+              rendererRef.current.setSize(w, h)
+              cameraRef.current.aspect = w / h
+              cameraRef.current.updateProjectionMatrix()
+            }
+          }
+          fitCamera(object)
+
+          // Compute stats
+          let verts = 0, tris = 0, meshCount = 0
+          const matNames = new Set<string>()
+          object.traverse((child: THREE.Object3D) => {
+            if ((child as THREE.Mesh).isMesh) {
+              meshCount++
+              const mesh = child as THREE.Mesh
+              const geo = mesh.geometry
+              if (geo.attributes.position) verts += geo.attributes.position.count
+              if (geo.index) tris += geo.index.count / 3
+              else if (geo.attributes.position) tris += geo.attributes.position.count / 3
+              const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+              mats.forEach((m) => matNames.add(m.name || '(unnamed)'))
+            }
+          })
+          setStats({
+            fileName: fbxFile.name,
+            vertices: verts,
+            triangles: Math.round(tris),
+            meshes: meshCount,
+            materials: matNames.size,
+          })
+          setLoading(false)
+        },
+        (xhr: ProgressEvent) => {
+          if (xhr.total > 0) setLoadProgress(Math.round((xhr.loaded / xhr.total) * 100))
+        },
+        (err: unknown) => {
+          URL.revokeObjectURL(blobUrl)
+          console.error('[FbxViewer] load error:', err)
+          setLoading(false)
+        }
+      )
+    })
+
+    return () => { cancelled = true }
   }, [fbxFile, textureFiles])
 
   // --- Fit camera to model ---
@@ -286,6 +339,15 @@ export function FbxViewer({ fbxFile, textureFiles, className }: FbxViewerProps) 
     camera.updateProjectionMatrix()
     controls.update()
 
+    // Point light at camera position for fill
+    const camLight = new THREE.PointLight(0xffffff, 5.0, dist * 5)
+    camLight.position.copy(camera.position)
+    // Remove old camera light if exists
+    const oldCamLight = sceneRef.current?.getObjectByName('camLight')
+    if (oldCamLight) sceneRef.current?.remove(oldCamLight)
+    camLight.name = 'camLight'
+    sceneRef.current?.add(camLight)
+
     lights.dir1.position.set(center.x + maxDim, center.y + maxDim * 1.5, center.z + maxDim)
     lights.dir1.target.position.copy(center)
     lights.dir2.position.set(center.x - maxDim, center.y + maxDim * 0.5, center.z - maxDim)
@@ -301,6 +363,7 @@ export function FbxViewer({ fbxFile, textureFiles, className }: FbxViewerProps) 
   // --- Toggle handlers ---
   const handleResetCamera = useCallback(() => {
     if (modelRef.current) fitCamera(modelRef.current)
+    needsRenderRef.current = true
   }, [fitCamera])
 
   const handleToggleGrid = useCallback(() => {
@@ -308,6 +371,7 @@ export function FbxViewer({ fbxFile, textureFiles, className }: FbxViewerProps) 
       const next = !v
       if (gridRef.current) gridRef.current.visible = next
       if (axesRef.current) axesRef.current.visible = next
+      needsRenderRef.current = true
       return next
     })
   }, [])
@@ -328,6 +392,7 @@ export function FbxViewer({ fbxFile, textureFiles, className }: FbxViewerProps) 
           if (orig) mesh.material = orig
         }
       })
+      needsRenderRef.current = true
       return next
     })
   }, [])
@@ -336,6 +401,7 @@ export function FbxViewer({ fbxFile, textureFiles, className }: FbxViewerProps) 
     setAutoRotate((v) => {
       const next = !v
       if (controlsRef.current) controlsRef.current.autoRotate = next
+      needsRenderRef.current = true
       return next
     })
   }, [])

@@ -70,10 +70,10 @@ def patch_analyzer_progress():
     不修改原文件，通过模块级回调实现。
     """
     try:
-        import tools.identity as identity
+        import tools.core.identity as identity
 
         # 使用模块级回调注入
         identity.set_progress_callback(emit_progress)
-        print("  [进度回调] analyze_assets 已注入进度回调")
+        print("  [进度回调] run_ai_inference 已注入进度回调")
     except Exception as e:
         print(f"  [进度回调] 注入失败: {e}")

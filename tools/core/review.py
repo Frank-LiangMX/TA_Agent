@@ -182,20 +182,15 @@ def get_pending_reviews(store_dir: str = None, confidence_threshold: float = 0.9
 
     total = len(high_conf) + len(low_conf)
 
-    # 截断：只返回前 20 个详情，避免上下文过大导致 LLM 响应慢
-    MAX_DETAIL = 20
     return {
         "total_pending": total,
         "high_confidence_count": len(high_conf),
         "low_confidence_count": len(low_conf),
-        "high_confidence": high_conf[:MAX_DETAIL],
-        "high_confidence_truncated": len(high_conf) > MAX_DETAIL,
-        "low_confidence": low_conf[:MAX_DETAIL],
-        "low_confidence_truncated": len(low_conf) > MAX_DETAIL,
-        "high_confidence_ids": [a["asset_id"] for a in high_conf],  # 全量 ID 供批量操作用
-        "summary": f"共 {total} 个待审核：{len(high_conf)} 高置信度，{len(low_conf)} 低置信度" + (
-            f"（高置信度仅显示前 {MAX_DETAIL} 个）" if len(high_conf) > MAX_DETAIL else ""
-        ),
+        "high_confidence": high_conf,
+        "low_confidence": low_conf,
+        "high_confidence_ids": [a["asset_id"] for a in high_conf],
+        "low_confidence_ids": [a["asset_id"] for a in low_conf],
+        "summary": f"共 {total} 个待审核：{len(high_conf)} 高置信度，{len(low_conf)} 低置信度",
     }
 
 

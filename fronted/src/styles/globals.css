@@ -533,3 +533,11 @@ textarea:disabled {
   color: hsl(var(--muted-foreground));
   background-color: hsl(var(--muted));
 }
+
+/* 隐藏滚动条但保留滚动功能 */
+.scrollbar-none {
+  scrollbar-width: none; /* Firefox */
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none; /* Chrome/Safari */
+}

@@ -1,7 +1,7 @@
 import subprocess, os
 
 blender = r"D:\Program Files\Blender Foundation\Blender 4.3\blender.exe"
-script = r"F:\ta_agent\tools\blender_asset_renderer.py"
+script = os.path.join(os.path.dirname(__file__), "tools", "core", "blender_asset_renderer.py")
 fbx_dir = r"D:\Trunk_Projects\Main\Assets\Art\MapSources\Architecture\Common\Building\Common_Building_A\FBX\High"
 out = os.path.join(fbx_dir, ".previews")
 

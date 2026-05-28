@@ -585,45 +585,79 @@ def _compress_history(history: list, keep_recent: int = 12) -> list:
     """
     智能压缩对话历史，避免请求体过大同时保留关键上下文。
 
-    策略：
-    - 保留前 2 条（初始上下文）
-    - 保留最近 keep_recent 条（近期上下文）
-    - 中间部分只保留 user 消息和非工具调用的 assistant 消息（关键决策）
-    - tool 消息和工具调用中间过程丢弃
-    - 对保留的消息中的大内容也做截断
+    策略（参考 Proma）：
+    - 只保留最近 keep_recent 条消息
+    - 工具结果只保留摘要，不保留完整内容
+    - assistant 消息中的 tool_calls 保留，但工具结果截断
     """
-    if len(history) <= keep_recent + 4:
+    if len(history) <= keep_recent:
         return history
 
-    # 前 2 条（初始上下文）
-    head = history[:2]
+    # 只保留最近的消息
+    recent = history[-keep_recent:]
+    compressed = []
 
-    # 中间部分：只保留 user 消息和 assistant 的最终回复（非工具调用）
-    middle_raw = history[2:-keep_recent]
-    middle = []
-    for msg in middle_raw:
-        if msg.get("role") == "user":
-            middle.append(msg)
-        elif msg.get("role") == "assistant" and msg.get("content") and not msg.get("tool_calls"):
-            # 只保留有内容且不是工具调用的 assistant 消息
-            # 截断过长的回复
-            content = msg["content"]
+    for msg in recent:
+        role = msg.get("role")
+
+        if role == "tool":
+            # 工具结果：只保留摘要
+            content = msg.get("content", "")
+            tool_name = msg.get("name", "")
+
+            # 尝试解析 JSON，提取关键信息
+            try:
+                data = json.loads(content)
+                if isinstance(data, dict):
+                    # 提取摘要字段
+                    summary = data.get("message") or data.get("summary") or ""
+                    if not summary and "report_markdown" in data:
+                        summary = str(data["report_markdown"])[:200]
+                    if not summary:
+                        # 取前 200 字符作为摘要
+                        summary = content[:200] + "..." if len(content) > 200 else content
+
+                    compressed.append({
+                        "role": "tool",
+                        "tool_call_id": msg.get("tool_call_id", ""),
+                        "content": f"[{tool_name}] {summary}",
+                    })
+                else:
+                    # 非 dict，直接截断
+                    compressed.append({
+                        "role": "tool",
+                        "tool_call_id": msg.get("tool_call_id", ""),
+                        "content": content[:200] + "..." if len(content) > 200 else content,
+                    })
+            except (json.JSONDecodeError, TypeError):
+                # 非 JSON，直接截断
+                compressed.append({
+                    "role": "tool",
+                    "tool_call_id": msg.get("tool_call_id", ""),
+                    "content": content[:200] + "..." if len(content) > 200 else content,
+                })
+
+        elif role == "assistant":
+            # assistant 消息：保留内容，截断过长
+            content = msg.get("content") or ""
+            if len(content) > 1000:
+                content = content[:1000] + "\n... [已截断]"
+
+            entry = {"role": "assistant", "content": content}
+            if msg.get("tool_calls"):
+                entry["tool_calls"] = msg["tool_calls"]
+            compressed.append(entry)
+
+        elif role == "user":
+            # user 消息：保留，截断过长
+            content = msg.get("content", "")
             if len(content) > 2000:
-                msg = {**msg, "content": content[:2000] + "\n... [历史消息已截断]"}
-            middle.append(msg)
+                content = content[:2000] + "\n... [已截断]"
+            compressed.append({"role": "user", "content": content})
 
-    # 最近的消息：也截断过大的 tool 结果
-    tail = []
-    for msg in history[-keep_recent:]:
-        if msg.get("role") == "tool" and msg.get("content") and len(msg["content"]) > 2000:
-            msg = {**msg, "content": _truncate_tool_result(msg["content"])}
-        tail.append(msg)
-
-    compressed = head + middle + tail
-
-    # 如果压缩后还是太长，进一步丢弃中间部分
-    if len(compressed) > 30:
-        compressed = head + tail
+        else:
+            # 其他消息：直接保留
+            compressed.append(msg)
 
     return compressed
 
@@ -648,10 +682,11 @@ def agent_loop(user_message: str, history: list = None, workflow_mode: str = Non
     # 构建消息列表（只发送 cutoff 之后的历史）
     messages = [{"role": "system", "content": build_system_prompt(workflow_mode)}]
 
-    # 智能压缩历史：保留关键消息，丢弃中间过程
+    # 智能压缩历史：限制消息数量，工具结果只保留摘要
     active_history = history[context_cutoff:]
-    if len(active_history) > 20:
-        compressed = _compress_history(active_history)
+    MAX_CONTEXT_MESSAGES = 20  # 最多发送 20 条历史消息
+    if len(active_history) > MAX_CONTEXT_MESSAGES:
+        compressed = _compress_history(active_history, keep_recent=MAX_CONTEXT_MESSAGES)
         messages.extend(compressed)
     else:
         messages.extend(active_history)
@@ -1029,7 +1064,7 @@ def main():
     _print_status()
 
     # 初始化记忆系统（使用统一路径配置）
-    from config import MEMORY_DIR
+    from config import MEMORY_DIR, RUNTIME_DIR, SESSIONS_DIR
 
     try:
         memory_provider = FileMemoryProvider()
@@ -1046,10 +1081,10 @@ def main():
         set_memory_provider(NullMemoryProvider())
 
     # 初始化会话管理器
-    session_manager.init(os.path.join(project_root, ".ta_agent"))
+    session_manager.init(RUNTIME_DIR)
     session_stats = session_manager.get_stats()
     print(f"\n  会话管理: OK")
-    print(f"  存储位置: {os.path.join(project_root, '.ta_agent', 'sessions')}")
+    print(f"  存储位置: {SESSIONS_DIR}")
     print(f"  历史会话: {session_stats['active_sessions']} 个, {session_stats['total_messages']} 条消息")
 
     # 加载最近的活跃会话，或创建新会话

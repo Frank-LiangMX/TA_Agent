@@ -42,6 +42,8 @@ export function ModelSettings() {
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [error, setError] = useState('')
+  const [discoveredModels, setDiscoveredModels] = useState<{ id: string; name: string }[]>([])
+  const [discovering, setDiscovering] = useState(false)
 
   useEffect(() => { fetchModels() }, [])
 
@@ -63,6 +65,7 @@ export function ModelSettings() {
     setEditing('new')
     setForm({ id: '', name: '', base_url: '', model: '', api_key: '', protocol: 'openai', extra_headers: {} })
     setError('')
+    setDiscoveredModels([])
   }
 
   const handleEdit = (model: Model) => {
@@ -82,6 +85,7 @@ export function ModelSettings() {
     setEditing(null)
     setIsNew(false)
     setError('')
+    setDiscoveredModels([])
   }
 
   const handleSave = async () => {
@@ -150,6 +154,32 @@ export function ModelSettings() {
         fetchModels()
       }
     } catch {}
+  }
+
+  const handleDiscover = async () => {
+    if (!form.base_url) {
+      setError('请先填写 Base URL')
+      return
+    }
+    setDiscovering(true)
+    setDiscoveredModels([])
+    setError('')
+    try {
+      const res = await fetch(`${API_BASE}/api/models/discover`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ base_url: form.base_url, api_key: form.api_key }),
+      })
+      const data = await res.json()
+      if (data.success && data.models?.length > 0) {
+        setDiscoveredModels(data.models)
+      } else {
+        setError(data.error || '未发现可用模型')
+      }
+    } catch {
+      setError('请求失败，请检查网络')
+    }
+    setDiscovering(false)
   }
 
   if (loading) {
@@ -234,6 +264,45 @@ export function ModelSettings() {
                     className="w-full mt-0.5 px-2 py-1.5 text-xs bg-background border border-border rounded outline-none focus:ring-1 focus:ring-ring"
                   />
                 </div>
+                {/* 发现模型按钮 */}
+                <button
+                  onClick={handleDiscover}
+                  disabled={discovering || !form.base_url}
+                  className="w-full text-xs bg-muted hover:bg-accent text-muted-foreground hover:text-foreground px-3 py-1.5 rounded border border-border/50 transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
+                >
+                  {discovering ? (
+                    <>
+                      <Loader2 size={12} className="animate-spin" />
+                      发现中...
+                    </>
+                  ) : (
+                    '发现模型'
+                  )}
+                </button>
+                {/* 发现的模型列表 */}
+                {discoveredModels.length > 0 && (
+                  <div className="border border-border/50 rounded-lg max-h-[200px] overflow-y-auto">
+                    <div className="px-2 py-1 text-[11px] text-muted-foreground bg-muted/50 border-b border-border/50">
+                      发现 {discoveredModels.length} 个模型，点击选择
+                    </div>
+                    {discoveredModels.map((m) => (
+                      <button
+                        key={m.id}
+                        onClick={() => {
+                          setForm({ ...form, model: m.id, name: form.name || m.name })
+                          setDiscoveredModels([])
+                        }}
+                        className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-xs text-left hover:bg-accent transition-colors ${
+                          form.model === m.id ? 'bg-primary/10 text-primary' : ''
+                        }`}
+                      >
+                        <Cpu size={11} className="shrink-0 text-muted-foreground" />
+                        <span className="truncate">{m.name || m.id}</span>
+                        <span className="ml-auto text-[10px] text-muted-foreground font-mono">{m.id}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <div>
                   <label className="text-xs text-muted-foreground">Extra Headers (JSON)</label>
                   <input

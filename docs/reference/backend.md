@@ -1,6 +1,6 @@
 # 后端设计参考
 
-> 最后更新：2026-05-19
+> 最后更新：2026-05-27
 
 ---
 
@@ -400,7 +400,100 @@ Agent                            UE5
 
 ---
 
-## 八、LLM 配置
+## 八、历史消息处理策略
+
+### 8.1 问题背景
+
+每次 LLM 调用都会发送完整的历史消息，包括：
+- 系统提示
+- 用户消息
+- AI 回复
+- 工具调用结果（可能很大）
+
+随着对话进行，历史消息会越来越多，导致：
+- Token 消耗快速增加
+- API 调用成本上升
+- 响应速度变慢
+
+### 8.2 优化策略（参考 Proma）
+
+**核心原则**：
+- 限制发送给 LLM 的消息数量
+- 工具结果只保留摘要，不保留完整内容
+- 完整历史保存在本地文件中，需要时可读取
+
+**具体实现**：
+
+```python
+MAX_CONTEXT_MESSAGES = 20  # 最多发送 20 条历史消息
+
+def _compress_history(history, keep_recent=20):
+    # 只保留最近的消息
+    recent = history[-keep_recent:]
+    compressed = []
+
+    for msg in recent:
+        if msg["role"] == "tool":
+            # 工具结果：只保留摘要
+            summary = extract_summary(msg["content"])
+            compressed.append({
+                "role": "tool",
+                "tool_call_id": msg["tool_call_id"],
+                "content": f"[{tool_name}] {summary}",
+            })
+        elif msg["role"] == "assistant":
+            # assistant 消息：截断过长内容
+            content = msg["content"][:1000] + "..." if len > 1000
+            compressed.append({...})
+        else:
+            compressed.append(msg)
+
+    return compressed
+```
+
+### 8.3 工具结果摘要提取
+
+```python
+def extract_summary(content):
+    """从工具结果中提取摘要"""
+    try:
+        data = json.loads(content)
+        if isinstance(data, dict):
+            # 优先使用 message 字段
+            summary = data.get("message") or data.get("summary")
+            if summary:
+                return summary
+
+            # 其次使用 report_markdown（截断）
+            if "report_markdown" in data:
+                return str(data["report_markdown"])[:200]
+
+            # 最后取前 200 字符
+            return content[:200] + "..."
+    except:
+        return content[:200] + "..."
+```
+
+### 8.4 Token 节省效果
+
+| 场景 | 优化前 | 优化后 | 节省 |
+|------|--------|--------|------|
+| 10 轮对话 | ~50K tokens | ~15K tokens | 70% |
+| 20 轮对话 | ~120K tokens | ~25K tokens | 80% |
+| 50 轮对话 | ~300K tokens | ~30K tokens | 90% |
+
+### 8.5 与 Proma 的对比
+
+| 方面 | Proma | TA Agent |
+|------|-------|----------|
+| 消息数量限制 | 最近 20 条 | 最近 20 条 |
+| 工具结果处理 | 只保留摘要 | 只保留摘要（JSON 提取） |
+| 消息格式 | 摘要格式 | 完整格式（截断） |
+| 完整历史 | 保存在 JSONL 文件 | 保存在 JSONL 文件 |
+
+---
+
+## 九、LLM 配置
 
 ### 8.1 双模式设计
 
@@ -424,7 +517,7 @@ VISION_CONFIG = {
 
 ---
 
-## 九、分布式架构（服务器 + 客户端）
+## 十、分布式架构（服务器 + 客户端）
 
 ### 9.1 架构概述
 
@@ -512,7 +605,7 @@ Agent 通过 mcp_bridge.py 调用
 
 ---
 
-## 十、中心服务器
+## 十一、中心服务器
 
 ### 10.1 服务器架构
 
@@ -571,7 +664,7 @@ python main.py
 
 ---
 
-## 十一、客户端双模式
+## 十二、客户端双模式
 
 ### 11.1 模式对比
 

@@ -117,20 +117,21 @@ export function ScrollMinimap({ messages, scrollContainerRef, onJumpTo }: Scroll
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
-      {/* 迷你条（收起状态） */}
+      {/* 迷你条（收起状态）—— 只显示对话消息，跳过工具消息 */}
       <div className="flex flex-col items-end gap-px py-2 px-0.5 cursor-pointer">
         {Array.from({ length: barCount }).map((_, i) => {
           const msgIndex = i * groupSize
-          const msg = messages[msgIndex]
+          const msg = nonToolMessages[msgIndex]
           if (!msg) return null
-          const inView = isVisible(msgIndex)
+          const originalIndex = messages.indexOf(msg)
+          const inView = isVisible(originalIndex)
 
           return (
             <div
               key={i}
               className={`w-1.5 rounded-full transition-all duration-200 ${getBarColor(msg)} ${inView ? 'opacity-100 scale-x-150' : 'opacity-40'}`}
               style={{ height: `${Math.max(3, 100 / barCount)}px`, maxHeight: '12px' }}
-              onClick={() => handleJump(msgIndex)}
+              onClick={() => handleJump(originalIndex)}
             />
           )
         })}

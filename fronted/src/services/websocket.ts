@@ -201,7 +201,14 @@ export class TAgentClient {
   }
 
   /** 发送消息（不等待完整响应，事件通过订阅获取） */
-  async sendMessage(content: string, contextCutoff?: number | null, sessionId?: string | null): Promise<void> {
+  async sendMessage(
+    content: string,
+    contextCutoff?: number | null,
+    sessionId?: string | null,
+    thinking?: boolean,
+    images?: { name: string; data: string }[],
+    attachments?: { name: string; path: string }[],
+  ): Promise<void> {
     const params: Record<string, unknown> = { content }
     if (sessionId) {
       params.sessionId = sessionId
@@ -209,12 +216,26 @@ export class TAgentClient {
     if (contextCutoff != null) {
       params.contextCutoff = contextCutoff
     }
+    if (thinking) {
+      params.thinking = true
+    }
+    if (images && images.length > 0) {
+      params.images = images
+    }
+    if (attachments && attachments.length > 0) {
+      params.attachments = attachments
+    }
     await this.rpc('sendMessage', params)
   }
 
   /** 清除上下文（分割线之前的不发给 LLM） */
   async clearContext(): Promise<{ cutoff: number }> {
     return (await this.rpc('clearContext')) as { cutoff: number }
+  }
+
+  /** 中断当前生成（不断开连接） */
+  async stopGeneration(): Promise<void> {
+    await this.rpc('stopGeneration', {})
   }
 
   /** 设置工作流模式 */

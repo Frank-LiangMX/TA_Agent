@@ -317,6 +317,33 @@ RUN_INFERENCE_DEF = {
 }
 
 
+def _cleanup_preview_images(tags_list):
+    """推理完成后删除预览图文件并清空引用"""
+    import os
+    cleaned = 0
+    for tags in tags_list:
+        if not tags.meta or not tags.meta.preview_images:
+            continue
+        for img_path in tags.meta.preview_images:
+            try:
+                if os.path.exists(img_path):
+                    os.remove(img_path)
+                    cleaned += 1
+            except OSError:
+                pass
+        # 清理 .previews 目录（如果为空）
+        if tags.meta.preview_images:
+            preview_dir = os.path.dirname(tags.meta.preview_images[0])
+            try:
+                if os.path.isdir(preview_dir) and not os.listdir(preview_dir):
+                    os.rmdir(preview_dir)
+            except OSError:
+                pass
+        tags.meta.preview_images = []
+    if cleaned > 0:
+        print(f"  [清理] 已删除 {cleaned} 张预览图")
+
+
 def run_ai_inference(dir_path: str) -> dict:
     """
     对已分析的资产执行 AI 推断。
@@ -383,6 +410,13 @@ def run_ai_inference(dir_path: str) -> dict:
     )
 
     # 更新数据库
+    for tags in inferable:
+        analyzer.store.save(tags)
+
+    # 推理完成后清理预览图
+    _cleanup_preview_images(inferable)
+
+    # 重新保存（清空了 preview_images 引用）
     for tags in inferable:
         analyzer.store.save(tags)
 
@@ -514,7 +548,7 @@ UPDATE_ASSET_DEF = {
 
 def update_asset(asset_id: str, **kwargs) -> dict:
     """更新单个资产的属性"""
-    store = _get_tag_store()
+    store = _get_analyzer().store
     tags = store.load(asset_id)
     if not tags:
         return {"error": f"资产不存在: {asset_id}"}

@@ -21,8 +21,8 @@ import asyncio
 import traceback
 from typing import Optional
 
-# 将 ta_agent 加入 Python 路径
-TA_AGENT_DIR = r"F:\ta_agent"
+# 将 ta_agent 加入 Python 路径（动态计算项目根目录）
+TA_AGENT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, TA_AGENT_DIR)
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Body
@@ -30,8 +30,8 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 # 导入 ta_agent 模块（不修改原文件）
-from config import get_llm_config, MEMORY_DIR
-from tools import TOOLS, execute_tool
+from config import get_llm_config, MEMORY_DIR, PIPELINE_RUNS_FILE
+from tools import TOOLS, TOOL_FUNCTIONS, execute_tool
 from conventions.context import get_conventions_context, set_conventions_context
 import session_manager
 
@@ -179,11 +179,44 @@ async def send_error(ws: WebSocket, request_id: str, error: str):
 
 # ===== Agent 核心逻辑（事件化版本） =====
 
+
+def _convert_history_message(msg: dict) -> dict:
+    """
+    将历史消息格式转换为 LLM API 格式。
+
+    存储格式（驼峰）→ LLM API 格式（下划线）：
+    - toolCalls → tool_calls
+    - toolCallId → tool_call_id
+    """
+    role = msg.get("role")
+    converted = {"role": role}
+
+    if role == "assistant":
+        # assistant 消息：转换 toolCalls → tool_calls
+        converted["content"] = msg.get("content")
+        if msg.get("toolCalls"):
+            converted["tool_calls"] = msg["toolCalls"]
+    elif role == "tool":
+        # 工具结果：转换 toolCallId → tool_call_id
+        converted["tool_call_id"] = msg.get("toolCallId", "")
+        converted["content"] = msg.get("content", "")
+        if msg.get("name"):
+            converted["name"] = msg["name"]
+    else:
+        # user / system：直接复制
+        converted["content"] = msg.get("content", "")
+
+    return converted
+
+
 async def run_agent(
     ws: WebSocket,
     session: Session,
     user_message: str,
     context_cutoff: int | None = None,
+    thinking: bool = False,
+    images: list[dict] | None = None,
+    attachments: list[dict] | None = None,
 ):
     """
     运行 Agent 循环，通过 WebSocket 推送事件。
@@ -199,17 +232,40 @@ async def run_agent(
     agent = get_agent_module()
     client, model = agent.create_client()
 
+    # 重置中断信号
+    session.cancel_event.clear()
+
     system_prompt = agent.build_system_prompt(session.workflow_mode)
     messages = [{"role": "system", "content": system_prompt}]
     # 使用传入的 cutoff 或会话默认值
     cutoff = context_cutoff if context_cutoff is not None else session.context_cutoff
-    messages.extend(session.history[cutoff:])
-    messages.append({"role": "user", "content": user_message})
 
-    # 持久化用户消息
+    # 加载历史消息并转换格式（存储用驼峰，LLM API 用下划线）
+    for msg in session.history[cutoff:]:
+        converted = _convert_history_message(msg)
+        messages.append(converted)
+
+    # 构建用户消息（支持多模态）
+    if images:
+        # 多模态：文本 + 图片
+        user_content: list[dict] = [{"type": "text", "text": user_message}]
+        for img in images:
+            user_content.append({
+                "type": "image_url",
+                "image_url": {"url": img["data"]},
+            })
+        messages.append({"role": "user", "content": user_content})
+    else:
+        messages.append({"role": "user", "content": user_message})
+
+    # 持久化用户消息（附件信息也保存）
+    persist_content = user_message
+    if attachments:
+        att_names = ", ".join(a["name"] for a in attachments)
+        persist_content += f"\n\n[附件: {att_names}]"
     session_manager.append_message(session.session_id, {
         "role": "user",
-        "content": user_message,
+        "content": persist_content,
     })
 
     max_iterations = 15
@@ -217,17 +273,42 @@ async def run_agent(
     last_tool_names: list[str] = []
 
     for iteration in range(max_iterations):
+        # 检查是否被用户中断
+        if session.cancel_event.is_set():
+            await send_event(ws, "done", {
+                "sessionId": session.session_id,
+                "content": "（已中断）",
+                "suggestion": "",
+            })
+            return
+
         try:
+            # 构建 LLM 请求参数
+            llm_kwargs = {
+                "model": model,
+                "messages": messages,
+                "tools": TOOLS,
+                "tool_choice": "auto",
+                "temperature": 0.1,
+                "stream": True,
+            }
+            # 思考模式：添加 reasoning_effort 参数
+            if thinking:
+                llm_kwargs["reasoning_effort"] = "high"
+
             # 流式调用 LLM
-            stream = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                tools=TOOLS,
-                tool_choice="auto",
-                temperature=0.1,
-                stream=True,
-            )
+            try:
+                stream = client.chat.completions.create(**llm_kwargs)
+            except Exception as api_err:
+                # 容错：如果 API 不支持 reasoning_effort，去掉后重试
+                if thinking and ("reasoning_effort" in str(api_err).lower() or "unexpected" in str(api_err).lower()):
+                    print(f"[Server] API 不支持 reasoning_effort，去掉后重试")
+                    llm_kwargs.pop("reasoning_effort", None)
+                    stream = client.chat.completions.create(**llm_kwargs)
+                else:
+                    raise
             _usage_stats["llm_calls"] += 1
+            llm_start_time = time.time()
             # 粗略估算 token（中文约 1.5 token/字）
             _usage_stats["total_tokens_estimate"] += sum(len(str(m.get("content", ""))) for m in messages) * 2
 
@@ -236,6 +317,10 @@ async def run_agent(
             tool_call_chunks: dict[int, dict] = {}
 
             for chunk in stream:
+                # 检查中断
+                if session.cancel_event.is_set():
+                    break
+
                 if not chunk.choices:
                     continue
                 delta = chunk.choices[0].delta
@@ -267,6 +352,22 @@ async def run_agent(
                                 chunk_data["name"] += tc_delta.function.name
                             if tc_delta.function.arguments:
                                 chunk_data["arguments"] += tc_delta.function.arguments
+
+            # 流式结束，检查是否被中断
+            if session.cancel_event.is_set():
+                llm_duration = (time.time() - llm_start_time) * 1000
+                _log_llm_call(session.session_id, model, 0, 0, llm_duration, False, thinking, "中断")
+                await send_event(ws, "done", {
+                    "sessionId": session.session_id,
+                    "content": collected_content or "（已中断）",
+                    "suggestion": "",
+                })
+                return
+
+            # 记录 LLM 调用日志
+            llm_duration = (time.time() - llm_start_time) * 1000
+            output_tokens = len(collected_content) * 2  # 粗略估算
+            _log_llm_call(session.session_id, model, 0, output_tokens, llm_duration, True, thinking)
 
             # 流式结束，判断是否有工具调用
             if not tool_call_chunks:
@@ -309,11 +410,32 @@ async def run_agent(
             messages.append(assistant_msg)
 
             # 持久化助手消息（含工具调用）
-            persist_msg = {"role": "assistant"}
-            if collected_content:
-                persist_msg["content"] = collected_content
-            persist_msg["toolCalls"] = tool_calls_for_msg
-            session_manager.append_message(session.session_id, persist_msg)
+            # 验证工具调用格式，过滤掉格式错误的
+            valid_tool_calls = []
+            for tc in tool_calls_for_msg:
+                func_name = tc.get("function", {}).get("name", "")
+                # 检查工具名称是否包含多个工具名拼接（如 "load_project_configanalyze_assets"）
+                if len(func_name) > 50 or not func_name.isidentifier():
+                    print(f"[Server] 警告：过滤格式错误的工具调用: {func_name}")
+                    continue
+                # 检查工具名是否在已注册列表中
+                if func_name not in TOOL_FUNCTIONS:
+                    print(f"[Server] 警告：过滤未知工具调用: {func_name}")
+                    continue
+                valid_tool_calls.append(tc)
+
+            if valid_tool_calls:
+                persist_msg = {"role": "assistant"}
+                if collected_content:
+                    persist_msg["content"] = collected_content
+                persist_msg["toolCalls"] = valid_tool_calls
+                session_manager.append_message(session.session_id, persist_msg)
+            elif collected_content:
+                # 只有内容，没有有效的工具调用
+                session_manager.append_message(session.session_id, {
+                    "role": "assistant",
+                    "content": collected_content,
+                })
 
             # 推送思考过程
             if collected_content:
@@ -322,8 +444,19 @@ async def run_agent(
                     "text": collected_content,
                 })
 
-            # 逐个执行工具
-            for tc in tool_calls_for_msg:
+            # 如果所有工具调用都被过滤掉，作为最终回答处理
+            if not valid_tool_calls and tool_calls_for_msg:
+                print(f"[Server] 所有工具调用都被过滤，共 {len(tool_calls_for_msg)} 个")
+                final_answer = collected_content or "(工具调用格式错误，已过滤)"
+                await send_event(ws, "done", {
+                    "sessionId": session.session_id,
+                    "content": final_answer,
+                    "suggestion": _generate_suggestion(last_tool_names),
+                })
+                return
+
+            # 逐个执行工具（只执行验证通过的）
+            for tc in valid_tool_calls:
                 func_name = tc["function"]["name"]
                 raw_args = tc["function"]["arguments"]
 
@@ -462,6 +595,8 @@ async def run_agent(
 
         except Exception as e:
             _usage_stats["llm_errors"] += 1
+            llm_duration = (time.time() - llm_start_time) * 1000 if 'llm_start_time' in dir() else 0
+            _log_llm_call(session.session_id, model, 0, 0, llm_duration, False, thinking, str(e)[:200])
             await send_event(ws, "error", {
                 "sessionId": session.session_id,
                 "error": f"LLM API 调用失败: {str(e)}",
@@ -549,8 +684,15 @@ async def websocket_endpoint(ws: WebSocket):
                 if ctx_cutoff is not None:
                     session.context_cutoff = int(ctx_cutoff)
 
+                # 获取思考模式开关
+                thinking = params.get("thinking", False)
+
+                # 获取附件
+                images = params.get("images", [])
+                attachments = params.get("attachments", [])
+
                 # 运行 Agent
-                await run_agent(ws, session, content.strip(), context_cutoff=ctx_cutoff)
+                await run_agent(ws, session, content.strip(), context_cutoff=ctx_cutoff, thinking=thinking, images=images, attachments=attachments)
 
             elif method == "setMode":
                 mode = params.get("mode", "step_by_step")
@@ -624,6 +766,11 @@ async def websocket_endpoint(ws: WebSocket):
                     "sessionId": session_id,
                     "messageCount": len(session.history),
                 })
+
+            elif method == "stopGeneration":
+                # 中断当前 Agent 生成（不断开连接）
+                session.cancel_event.set()
+                await send_response(ws, request_id, {"status": "stopped"})
 
             else:
                 await send_error(ws, request_id, f"未知方法: {method}")
@@ -816,6 +963,46 @@ async def activate_model(model_id: str):
     return set_active_model(model_id)
 
 
+@app.post("/api/models/discover")
+async def discover_models(payload: dict = Body(...)):
+    """从 base_url 自动发现可用模型列表"""
+    base_url = payload.get("base_url", "").rstrip("/")
+    api_key = payload.get("api_key", "")
+    if not base_url:
+        return {"success": False, "error": "请填写 Base URL"}
+
+    import httpx
+    # 尝试多个常见端点
+    endpoints = [f"{base_url}/v1/models", f"{base_url}/models"]
+    headers = {}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    for url in endpoints:
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(url, headers=headers)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    models = []
+                    # OpenAI 格式: { "data": [{"id": "model-name", ...}] }
+                    for m in data.get("data", data if isinstance(data, list) else []):
+                        model_id = m.get("id", "")
+                        if model_id:
+                            models.append({
+                                "id": model_id,
+                                "name": m.get("name", model_id),
+                            })
+                    if models:
+                        # 按名称排序
+                        models.sort(key=lambda x: x["name"])
+                        return {"success": True, "models": models}
+        except Exception:
+            continue
+
+    return {"success": False, "error": "无法获取模型列表，请检查 Base URL 和 API Key 是否正确"}
+
+
 # ===== REST 端点（UE5 插件管理） =====
 
 @app.get("/api/ue5/plugin")
@@ -981,10 +1168,9 @@ async def uninstall_plugin(payload: dict = Body(...)):
 @app.post("/api/memory/clear")
 async def clear_memory():
     """清空记忆系统（保留目录结构）"""
-    memory_dir = os.path.join(TA_AGENT_DIR, ".ta_agent", "memory")
     cleared = []
     for fname in ["corrections.jsonl", "rules.json", "profile.md"]:
-        fpath = os.path.join(memory_dir, fname)
+        fpath = os.path.join(MEMORY_DIR, fname)
         if os.path.exists(fpath):
             os.remove(fpath)
             cleared.append(fname)
@@ -1002,6 +1188,77 @@ async def get_prompt():
 
 
 # ===== REST 端点（用量统计） =====
+
+# 用量日志文件
+_USAGE_LOG_FILE = os.path.join(
+    os.path.dirname(MEMORY_DIR), "usage_log.jsonl"
+)
+
+
+def _log_llm_call(
+    session_id: str,
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    duration_ms: float,
+    success: bool,
+    thinking: bool = False,
+    error: str = "",
+):
+    """追加一条 LLM 调用日志"""
+    entry = {
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "session": session_id,
+        "model": model,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "duration_ms": round(duration_ms),
+        "success": success,
+        "thinking": thinking,
+    }
+    if error:
+        entry["error"] = error
+    try:
+        os.makedirs(os.path.dirname(_USAGE_LOG_FILE), exist_ok=True)
+        with open(_USAGE_LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
+@app.get("/api/usage/logs")
+async def get_usage_logs(limit: int = 100, offset: int = 0):
+    """获取 LLM 调用日志"""
+    if not os.path.exists(_USAGE_LOG_FILE):
+        return {"logs": [], "total": 0}
+    try:
+        with open(_USAGE_LOG_FILE, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        lines.reverse()  # 最新的在前
+        total = len(lines)
+        logs = []
+        for line in lines[offset:offset + limit]:
+            line = line.strip()
+            if line:
+                try:
+                    logs.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+        return {"logs": logs, "total": total}
+    except Exception:
+        return {"logs": [], "total": 0}
+
+
+@app.delete("/api/usage/logs")
+async def clear_usage_logs():
+    """清空用量日志"""
+    try:
+        if os.path.exists(_USAGE_LOG_FILE):
+            os.remove(_USAGE_LOG_FILE)
+    except Exception:
+        pass
+    return {"success": True}
+
 
 # 用量计数器（运行时内存中）
 _usage_stats = {
@@ -1216,7 +1473,7 @@ async def get_activity_log(limit: int = 50):
 @app.get("/api/pipeline")
 async def get_pipeline_config():
     """获取流水线配置"""
-    config_path = os.path.join(TA_AGENT_DIR, ".ta_agent", "pipeline.json")
+    config_path = os.path.join(os.path.dirname(MEMORY_DIR), "pipeline.json")
     if os.path.exists(config_path):
         try:
             with open(config_path, "r", encoding="utf-8") as f:
@@ -1240,7 +1497,7 @@ async def get_pipeline_config():
 @app.post("/api/pipeline")
 async def update_pipeline_config(payload: dict = Body(...)):
     """更新流水线配置（添加/修改自定义阶段）"""
-    config_path = os.path.join(TA_AGENT_DIR, ".ta_agent", "pipeline.json")
+    config_path = os.path.join(os.path.dirname(MEMORY_DIR), "pipeline.json")
     os.makedirs(os.path.dirname(config_path), exist_ok=True)
 
     with open(config_path, "w", encoding="utf-8") as f:
@@ -1250,7 +1507,7 @@ async def update_pipeline_config(payload: dict = Body(...)):
 
 
 # 流水线执行记录
-_pipeline_runs_path = os.path.join(TA_AGENT_DIR, ".ta_agent", "pipeline_runs.jsonl")
+_pipeline_runs_path = PIPELINE_RUNS_FILE
 
 
 def _append_run(run: dict):
