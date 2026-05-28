@@ -1,5 +1,5 @@
 /**
- * 多会话标签栏（对齐 Proma Agent 风格）
+ * 多会话标签栏
  *
  * - 活跃标签底部蓝色 accent
  * - 悬停显示会话消息预览列表（最近 N 条，每条角色图标 + 200 字预览）
@@ -83,7 +83,7 @@ export function SessionTabBar({
     return { x, y, width, maxHeight }
   }
 
-  // 预加载最近消息并构建预览列表（同 Proma: content.slice(0, 200)）
+  // 预加载最近消息并构建预览列表
   const fetchPreview = async (tabId: string): Promise<PreviewItem[]> => {
     const cached = fetchCache.current.get(tabId)
     if (cached) return cached
@@ -208,7 +208,7 @@ export function SessionTabBar({
         })}
       </div>
 
-      {/* 悬停预览浮窗 — Proma Agent 风格：消息列表 */}
+      {/* 悬停预览浮窗 — 消息列表 */}
       {hoverState && (
         <div
           className="fixed z-[100] rounded-lg border bg-popover text-popover-foreground shadow-xl origin-top

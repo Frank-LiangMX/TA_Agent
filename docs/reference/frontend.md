@@ -193,7 +193,7 @@ await tagentClient.getStatus()
 
 ### 5.2 主题系统
 
-对齐 Proma Agent 纯灰中性主题，支持 4 套主题变体（light + dark）：
+纯灰中性主题，支持 4 套主题变体（light + dark）：
 
 | 主题 | 暗色色调 | 说明 |
 |------|---------|------|

@@ -1,5 +1,5 @@
 /**
- * 设置页面主布局（对齐 Proma Agent SettingsPanel）
+ * 设置页面主布局
  *
  * flex flex-col h-full
  *   h-12 header

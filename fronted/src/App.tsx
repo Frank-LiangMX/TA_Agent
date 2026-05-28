@@ -281,7 +281,7 @@ function StatusBar() {
           )}
         </span>
       </div>
-      <span>TAgent v0.26</span>
+      <span>TAgent v0.27</span>
     </div>
   )
 }

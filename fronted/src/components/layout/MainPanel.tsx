@@ -1104,7 +1104,7 @@ function generateMockResponse(input: string): string {
   if (lower.includes('分析') || lower.includes('analyze')) {
     return `开始资产分析...\n\n**阶段 1/6**: 扫描目录 ✓\n**阶段 2/6**: 提取几何信息...\n\n发现以下资产：\n\n| 文件名 | 类型 | 面数 |\n|--------|------|------|\n| SM_Chair.fbx | 静态网格 | 2,450 |\n| SK_Hero.fbx | 骨骼网格 | 28,000 |\n| T_Wood_D.png | 纹理 | - |\n\n需要继续 AI 推断分析吗？`
   }
-  return `收到！你说的是："${input}"\n\n我是一个 Mock 响应。请启动 WebSocket 后端以获得真实功能。\n\n启动方式：\n\`\`\`\ncd F:\\Proma\\apps\\tagent-web\\server\npython server.py\n\`\`\``
+  return `收到！你说的是："${input}"\n\n我是一个 Mock 响应。请启动 WebSocket 后端以获得真实功能。`
 }
 
 /**

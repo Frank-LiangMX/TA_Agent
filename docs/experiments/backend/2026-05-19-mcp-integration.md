@@ -31,7 +31,7 @@ mcp_bridge.py               │
 
 | 文件 | 说明 |
 |------|------|
-| `mcp.json` | MCP 服务器配置（Proma Agent 格式），UI 和 Agent 均可读写 |
+| `mcp.json` | MCP 服务器配置（MCP 标准格式），UI 和 Agent 均可读写 |
 | `tools/mcp_bridge.py` | 核心桥接：连接、发现、Schema 转换、CRUD、热加载、工具注册 |
 | `tools/registry.py` | `_load_mcp_servers()` 启动加载 + `MCP_TOOLS` / `MCP_TOOL_FUNCTIONS` 注册 |
 | `fronted/server/server.py` | 7 个 REST 端点（状态/CRUD/测试/reload）|
@@ -73,7 +73,7 @@ mcp_bridge.py               │
 ## 进度
 
 - [x] 方案确认
-- [x] mcp.json 配置（Proma 格式）
+- [x] mcp.json 配置（MCP 标准格式）
 - [x] `tools/mcp_bridge.py` — 连接/发现/转换/执行/CRUD/热加载/工具注册
 - [x] `tools/registry.py` — 启动加载 + MCP 管理工具注册
 - [x] `McpSettings.tsx` — 添加/删除/启用禁用/测试连接/重新加载

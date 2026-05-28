@@ -585,7 +585,7 @@ def _compress_history(history: list, keep_recent: int = 12) -> list:
     """
     智能压缩对话历史，避免请求体过大同时保留关键上下文。
 
-    策略（参考 Proma）：
+    策略：
     - 只保留最近 keep_recent 条消息
     - 工具结果只保留摘要，不保留完整内容
     - assistant 消息中的 tool_calls 保留，但工具结果截断
@@ -1056,7 +1056,7 @@ def main():
         sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
     print("=" * 60)
-    print("   游戏 TA Agent v0.3")
+    print("   游戏 TA Agent v0.27")
     print("   单 Agent + 多工具架构")
     print("=" * 60)
 

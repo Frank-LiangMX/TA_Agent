@@ -1,5 +1,5 @@
 /**
- * 主题外观设置（对齐 Proma Agent AppearanceSettings）
+ * 主题外观设置
  */
 
 import React, { useState, useEffect } from 'react'
@@ -15,7 +15,7 @@ const THEME_OPTIONS = [
   { value: 'special', label: '特殊风格' },
 ]
 
-// 特殊风格配置（对齐 Proma 的 6 个主题）
+// 特殊风格配置
 interface StyleDef {
   id: string
   name: string

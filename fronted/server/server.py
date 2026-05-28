@@ -5,7 +5,7 @@ TAgent WebSocket 服务
 不修改 ta_agent 原目录任何文件，通过 sys.path 导入。
 
 启动方式：
-  cd F:\\Proma\\apps\\tagent-web\\server
+  cd fronted/server
   pip install -r requirements.txt
   python server.py
 

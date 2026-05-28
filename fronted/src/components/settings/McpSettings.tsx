@@ -1,5 +1,5 @@
 /**
- * MCP 服务器管理（对齐 Proma Agent 体验）
+ * MCP 服务器管理
  * 支持：查看状态、添加/删除/编辑服务器、启用/禁用、重新加载
  */
 import React, { useState, useEffect } from 'react'

@@ -5,7 +5,7 @@ session_manager.py - 多会话管理器
 - sessions/index.json    — 会话索引（元数据列表）
 - sessions/{sessionId}.jsonl — 每会话一个文件，每行一条消息，append-only
 
-设计参考 Proma 的会话管理：
+设计参考 JSONL append-only 会话管理：
 - append-only 写入（崩溃安全）
 - 草稿机制（新会话不显示在列表中，发首条消息后才出现）
 - 自动归档（超期未活跃的会话）

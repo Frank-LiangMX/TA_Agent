@@ -1,11 +1,11 @@
 /**
- * 设置页面原语组件（对齐 Proma Agent）
+ * 设置页面原语组件
  */
 
 import React from 'react'
 import * as RadixSwitch from '@radix-ui/react-switch'
 
-// ===== 样式常量（来自 Proma SettingsUIConstants.ts） =====
+// ===== 样式常量 =====
 
 const LABEL_CLASS = 'text-sm font-medium text-foreground'
 const DESCRIPTION_CLASS = 'text-sm text-muted-foreground'

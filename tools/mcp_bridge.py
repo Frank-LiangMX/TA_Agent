@@ -1,7 +1,7 @@
 """
 MCP 客户端桥接 — 连接外部 MCP 服务器，注入 TA Agent 工具系统。
 
-配置：项目根目录 `mcp.json`，格式参照 Proma Agent mcp.json。
+配置：项目根目录 `mcp.json`，格式参照 MCP 标准。
 支持运行时热加载（通过 REST API 触发）。
 """
 

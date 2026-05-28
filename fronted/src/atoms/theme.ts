@@ -1,5 +1,5 @@
 /**
- * 主题管理（对齐 Proma Agent）
+ * 主题管理
  *
  * 支持模式：light / dark / system / special
  * 支持风格：default / ocean / forest / slate（每种有 light/dark 变体）

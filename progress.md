@@ -76,7 +76,7 @@
 - 分析进度条（多阶段，集成到输入框上方）
 - 会话管理 UI（SessionSelector + Popover + 批量管理）
 - 项目总览仪表盘（统计卡片 + 条形图）
-- 设置面板（11 个模块，对齐 Proma Agent 原语组件）
+- 设置面板（11 个模块，原语组件体系）
 - 资产流水线可视化（节点编辑器 + 分支管理）
 - 3D 预览（前端生成按钮 + 后端 Blender 渲染）
 - 动画系统（15 个动画组件）
@@ -99,7 +99,7 @@
 - 打包产物管理（.gitignore 配置）
 
 ### MCP 集成
-- mcp.json 配置（Proma Agent 格式）
+- mcp.json 配置（MCP 标准格式）
 - mcp_bridge.py（连接/发现/Schema 转换/执行/CRUD/热加载/工具注册）
 - UI 管理（McpSettings.tsx：添加/删除/启用禁用/测试连接/重新加载）
 - Agent 对话管理（6 个 MCP 管理工具）

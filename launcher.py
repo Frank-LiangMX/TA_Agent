@@ -125,9 +125,10 @@ def main():
     print("  按 Ctrl+C 退出")
     print("=" * 50)
 
-    # 在后台线程打开浏览器
-    browser_thread = threading.Thread(target=open_browser, daemon=True)
-    browser_thread.start()
+    # Electron 模式不打开浏览器
+    if "--no-browser" not in sys.argv:
+        browser_thread = threading.Thread(target=open_browser, daemon=True)
+        browser_thread.start()
 
     # 启动服务器（主线程阻塞）
     try:

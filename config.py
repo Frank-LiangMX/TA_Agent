@@ -390,7 +390,7 @@ PROJECT_DIRECTORY_TREE = """
 """
 
 # MCP 服务器配置已迁移到项目根目录 mcp.json
-# 格式参照 Proma Agent mcp.json，通过 tools/mcp_bridge.py 读取
+# 格式参照 MCP 标准 mcp.json，通过 tools/mcp_bridge.py 读取
 
 # ========== 路径常量 ==========
 import os
