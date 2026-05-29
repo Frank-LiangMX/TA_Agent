@@ -1,6 +1,6 @@
 # 文档地图
 
-> 最后更新：2026-05-26
+> 最后更新：2026-05-29
 
 ## 文档结构
 
@@ -9,6 +9,7 @@ docs/
 ├── reference/                # 设计参考——改代码时查的 (稳定，编辑修改)
 │   ├── backend.md            # 后端架构、数据流、工具系统、集成方案
 │   ├── frontend.md           # 前端架构、WebSocket 协议、组件参考、设计规范
+│   ├── electron.md           # Electron 桌面应用架构、IPC、打包、Bridge 扩展
 │   └── pipeline.md           # 资产流水线系统：核心概念 + 前后端 API
 ├── decisions/                # 架构决策记录——为什么这么做 (只追加，不修改)
 │   ├── user-auth-design.md   # 用户认证、权限管理、管理员分配
@@ -31,6 +32,7 @@ docs/
 |-----------|--------|
 | 改后端代码 | `reference/backend.md` |
 | 改前端代码 | `reference/frontend.md` |
+| 改 Electron 桌面应用 | `reference/electron.md` |
 | 了解资产流水线 | `reference/pipeline.md` |
 | 了解为什么这么设计 | `decisions/` |
 | 验证一个新思路 | 在 `experiments/` 对应目录下新建带日期的 `.md` |
@@ -55,3 +57,4 @@ docs/
 
 - 2026-05-19：原先的 6 个文档按此结构重组
 - 2026-05-26：添加联机模式、中心服务器、权限管理相关文档
+- 2026-05-29：新增 Electron 架构文档，开始微信 Bridge 模块

@@ -767,9 +767,8 @@ const loadTabHistory = useCallback(async (tabId: string) => {
 
   return (
     <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-      {/* 头部 */}
       {/* 头部：标签栏 + 操作区 */}
-      <div className="flex items-center justify-between px-4 shrink-0 border-b border-border/50 bg-card">
+      <div className="flex items-center justify-between pr-4 shrink-0" style={{ backgroundColor: '#e6e5e2' }}>
         <div className="flex items-center min-w-0 flex-1 h-9">
           <SessionTabBar
             openTabs={openTabIds}
@@ -921,7 +920,7 @@ const loadTabHistory = useCallback(async (tabId: string) => {
       </div>
 
       {/* 输入框 */}
-      <div className="p-4 border-t border-border/50 overflow-x-hidden">
+      <div className="p-4 overflow-x-hidden">
         {/* 建议卡片 */}
         {promptSuggestion && (
           <div className="flex items-center gap-2 mb-3 animate-msg-pop">
@@ -943,7 +942,7 @@ const loadTabHistory = useCallback(async (tabId: string) => {
             </button>
           </div>
         )}
-        <div className="relative rounded-xl border border-border/50 bg-background/70 backdrop-blur-sm transition-all duration-200 focus-within:border-foreground/20">
+        <div className="relative rounded-xl border border-border/50 bg-card transition-all duration-200">
           {/* 流式动画 */}
           {isActiveTabStreaming && (
             <div
@@ -1147,9 +1146,9 @@ function PipelineProgress({ sessionId }: { sessionId: string | null }) {
     return () => { cancelled = true; clearInterval(interval) }
   }, [sessionId])
 
-  // 没有任何活动时只占位
+  // 没有任何活动时不渲染
   if (done.length === 0 && running.length === 0) {
-    return <div className="px-4 py-1.5 border-b border-border/30 bg-muted/20" />
+    return null
   }
 
   return (

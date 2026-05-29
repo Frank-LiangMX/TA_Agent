@@ -172,7 +172,7 @@ export default function App() {
     <div className="flex flex-col h-screen bg-background overflow-hidden">
       <div className="flex flex-1 min-w-0 overflow-hidden">
         <div className={`flex flex-1 min-w-0 h-full ${activeView === 'settings' ? 'hidden' : ''}`}>
-          <div ref={sidebarRef} className="border-r border-border/40 bg-card flex flex-col shrink-0" style={{ width: 256 }}>
+          <div ref={sidebarRef} className="border-r border-border/40 flex flex-col shrink-0" style={{ width: 256, backgroundColor: '#e2e1df' }}>
             <Sidebar activeView={activeView} onViewChange={handleViewChange} />
           </div>
           <ResizeHandle targetRef={sidebarRef} side="left" />

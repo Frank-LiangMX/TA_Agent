@@ -11,6 +11,7 @@ export type ThemeVariant = 'default' | 'ocean' | 'forest' | 'slate'
 
 const STORAGE_KEY_MODE = 'tagent-theme-mode'
 const STORAGE_KEY_VARIANT = 'tagent-theme-variant'
+const STORAGE_KEY_STYLE = 'tagent-theme-style'
 
 /** 获取系统主题偏好 */
 function getSystemTheme(): 'light' | 'dark' {
@@ -26,9 +27,8 @@ export function applyTheme(mode: ThemeMode, variant: ThemeVariant) {
   if (mode === 'system') {
     resolved = getSystemTheme()
   } else if (mode === 'special') {
-    // special 模式下，从 variant 推断 light/dark
-    // 默认用 dark，除非 variant 是 light 变体
-    resolved = 'dark'
+    const styleId = localStorage.getItem(STORAGE_KEY_STYLE) || ''
+    resolved = styleId.endsWith('-light') ? 'light' : 'dark'
   } else {
     resolved = mode
   }
@@ -45,9 +45,13 @@ export function applyTheme(mode: ThemeMode, variant: ThemeVariant) {
   root.classList.add(resolved)
 
   // 设置变体（default 不加额外 class）
-  if (variant !== 'default') {
-    root.classList.add(`theme-${variant}-${resolved}`)
+  const themeClass = variant !== 'default' ? `theme-${variant}-${resolved}` : ''
+  if (themeClass) {
+    root.classList.add(themeClass)
   }
+
+  // 调试日志
+  console.log('[Theme]', { mode, variant, resolved, themeClass, classes: root.className, styleId: localStorage.getItem(STORAGE_KEY_STYLE) })
 }
 
 /** 从 localStorage 读取主题设置 */
@@ -58,9 +62,12 @@ export function loadTheme(): { mode: ThemeMode; variant: ThemeVariant } {
 }
 
 /** 保存主题设置到 localStorage */
-export function saveTheme(mode: ThemeMode, variant: ThemeVariant) {
+export function saveTheme(mode: ThemeMode, variant: ThemeVariant, styleId?: string) {
   localStorage.setItem(STORAGE_KEY_MODE, mode)
   localStorage.setItem(STORAGE_KEY_VARIANT, variant)
+  if (styleId) {
+    localStorage.setItem(STORAGE_KEY_STYLE, styleId)
+  }
   applyTheme(mode, variant)
 }
 

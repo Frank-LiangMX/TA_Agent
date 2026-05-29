@@ -201,8 +201,8 @@ export function ChatMessage({ message, onAssetClick, onSetDivider }: ChatMessage
         <div className={`
           inline-block text-left rounded-xl px-4 py-2.5 max-w-full animate-msg-pop
           ${isUser
-            ? 'bg-primary text-primary-foreground'
-            : 'bg-card shadow-sm'
+            ? 'bg-primary/10 text-foreground'
+            : ''
           }
         `}>
           {isUser ? (

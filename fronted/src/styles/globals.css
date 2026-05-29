@@ -2,273 +2,278 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  :root {
-    --background: 0 0% 100%;
-    --foreground: 0 0% 3.9%;
-    --muted: 0 0% 96.1%;
-    --muted-foreground: 0 0% 45.1%;
-    --border: 0 0% 89.8%;
-    --input: 0 0% 89.8%;
-    --ring: 0 0% 3.9%;
-    --primary: 0 0% 9%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 0 0% 96.1%;
-    --secondary-foreground: 0 0% 9%;
-    --accent: 0 0% 96.1%;
-    --accent-foreground: 0 0% 9%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --card: 0 0% 100%;
-    --card-foreground: 0 0% 3.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 3.9%;
-    --dialog: 0 0% 100%;
-    --dialog-foreground: 0 0% 3.9%;
-    --content-area: 0 0% 100%;
-    --tooltip: 0 0% 15%;
-    --tooltip-foreground: 0 0% 98%;
-    --tooltip-muted: 0 0% 75%;
-    --success: 142 76% 36%;
-    --success-foreground: 0 0% 98%;
-    --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 98%;
-  }
+/* ===== 主题 CSS 变量（必须在 @layer 外，否则优先级低于 Tailwind 工具类） ===== */
 
-  .dark {
-    --background: 0 0% 7%;
-    --foreground: 0 0% 98%;
-    --muted: 0 0% 14.9%;
-    --muted-foreground: 0 0% 63.9%;
-    --border: 0 0% 14.9%;
-    --input: 0 0% 14.9%;
-    --ring: 0 0% 83.1%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 0 0% 9%;
-    --secondary: 0 0% 14.9%;
-    --secondary-foreground: 0 0% 98%;
-    --accent: 0 0% 40%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 55% 45%;
-    --destructive-foreground: 0 0% 98%;
-    --card: 0 0% 7%;
-    --card-foreground: 0 0% 98%;
-    --popover: 0 0% 7%;
-    --popover-foreground: 0 0% 98%;
-    --dialog: 0 0% 12%;
-    --dialog-foreground: 0 0% 98%;
-    --content-area: 0 0% 7%;
-    --tooltip: 0 0% 20%;
-    --tooltip-foreground: 0 0% 98%;
-    --tooltip-muted: 0 0% 70%;
-    --success: 142 76% 36%;
-    --success-foreground: 0 0% 98%;
-    --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 98%;
-  }
-
-  /* ===== 海洋主题 ===== */
-
-  .theme-ocean-light {
-    --background: 205 35% 94%;
-    --foreground: 210 30% 15%;
-    --content-area: 205 30% 97%;
-    --muted: 205 35% 88%;
-    --muted-foreground: 210 15% 40%;
-    --border: 205 30% 82%;
-    --primary: 205 50% 50%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 205 35% 91%;
-    --secondary-foreground: 210 30% 20%;
-    --accent: 205 35% 82%;
-    --accent-foreground: 205 50% 30%;
-    --ring: 205 50% 50%;
-    --card: 205 30% 97%;
-    --card-foreground: 210 30% 15%;
-    --input: 205 35% 91%;
-    --popover: 205 30% 97%;
-    --popover-foreground: 210 30% 15%;
-    --dialog: 0 0% 100%;
-    --dialog-foreground: 210 30% 15%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --tooltip: 210 45% 18%;
-    --tooltip-foreground: 0 0% 98%;
-    --tooltip-muted: 210 20% 75%;
-    --success: 142 76% 36%;
-    --success-foreground: 0 0% 98%;
-    --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 98%;
-  }
-
-  .theme-ocean-dark {
-    --background: 210 35% 13%;
-    --foreground: 210 20% 92%;
-    --content-area: 210 40% 8%;
-    --muted: 210 30% 14%;
-    --muted-foreground: 210 15% 55%;
-    --border: 210 30% 18%;
-    --primary: 205 87% 24%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 210 30% 16%;
-    --secondary-foreground: 210 20% 90%;
-    --accent: 210 40% 22%;
-    --accent-foreground: 205 60% 70%;
-    --ring: 205 87% 24%;
-    --card: 210 35% 11%;
-    --card-foreground: 210 20% 92%;
-    --input: 210 30% 14%;
-    --popover: 210 35% 13%;
-    --popover-foreground: 210 20% 92%;
-    --dialog: 210 25% 16%;
-    --dialog-foreground: 210 20% 92%;
-    --destructive: 0 55% 45%;
-    --destructive-foreground: 0 0% 98%;
-    --tooltip: 210 40% 22%;
-    --tooltip-foreground: 0 0% 98%;
-    --tooltip-muted: 210 20% 70%;
-    --success: 142 76% 36%;
-    --success-foreground: 0 0% 98%;
-    --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 98%;
-  }
-
-  /* ===== 森系主题 ===== */
-
-  .theme-forest-light {
-    --background: 140 25% 95%;
-    --foreground: 150 25% 15%;
-    --content-area: 140 20% 97%;
-    --muted: 140 15% 90%;
-    --muted-foreground: 145 10% 45%;
-    --border: 140 15% 82%;
-    --primary: 150 35% 38%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 140 15% 92%;
-    --secondary-foreground: 150 20% 20%;
-    --accent: 145 20% 88%;
-    --accent-foreground: 150 30% 30%;
-    --ring: 150 35% 38%;
-    --card: 140 20% 97%;
-    --card-foreground: 150 25% 15%;
-    --input: 140 18% 92%;
-    --popover: 140 18% 98%;
-    --popover-foreground: 150 25% 15%;
-    --dialog: 140 15% 96%;
-    --dialog-foreground: 150 25% 15%;
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 0 0% 100%;
-    --tooltip: 150 20% 18%;
-    --tooltip-foreground: 0 0% 98%;
-    --tooltip-muted: 140 10% 60%;
-    --success: 142 76% 36%;
-    --success-foreground: 0 0% 98%;
-    --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 98%;
-  }
-
-  .theme-forest-dark {
-    --background: 147 14% 15%;
-    --foreground: 140 10% 90%;
-    --content-area: 150 20% 8%;
-    --muted: 150 18% 13%;
-    --muted-foreground: 140 10% 55%;
-    --border: 150 18% 17%;
-    --primary: 151 55% 21%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 150 16% 15%;
-    --secondary-foreground: 140 10% 88%;
-    --accent: 155 25% 18%;
-    --accent-foreground: 150 30% 65%;
-    --ring: 150 35% 42%;
-    --card: 150 18% 11%;
-    --card-foreground: 140 10% 90%;
-    --input: 150 18% 13%;
-    --popover: 150 18% 13%;
-    --popover-foreground: 140 10% 90%;
-    --dialog: 150 15% 15%;
-    --dialog-foreground: 140 10% 90%;
-    --destructive: 0 55% 45%;
-    --destructive-foreground: 0 0% 98%;
-    --tooltip: 150 25% 20%;
-    --tooltip-foreground: 0 0% 98%;
-    --tooltip-muted: 140 10% 65%;
-    --success: 142 76% 36%;
-    --success-foreground: 0 0% 98%;
-    --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 98%;
-  }
-
-  /* ===== 莫兰迪主题 ===== */
-
-  .theme-slate-light {
-    --background: 40 6% 88%;
-    --foreground: 40 8% 18%;
-    --content-area: 40 8% 94%;
-    --muted: 40 6% 85%;
-    --muted-foreground: 40 5% 45%;
-    --border: 40 6% 80%;
-    --primary: 18 20% 67%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 40 6% 90%;
-    --secondary-foreground: 40 8% 22%;
-    --accent: 40 6% 86%;
-    --accent-foreground: 40 10% 30%;
-    --ring: 18 20% 67%;
-    --card: 40 8% 96%;
-    --card-foreground: 40 8% 18%;
-    --input: 40 6% 90%;
-    --popover: 40 8% 96%;
-    --popover-foreground: 40 8% 18%;
-    --dialog: 40 8% 94%;
-    --dialog-foreground: 40 8% 18%;
-    --destructive: 0 65% 50%;
-    --destructive-foreground: 0 0% 100%;
-    --tooltip: 40 8% 20%;
-    --tooltip-foreground: 0 0% 98%;
-    --tooltip-muted: 40 5% 55%;
-    --success: 142 76% 36%;
-    --success-foreground: 0 0% 98%;
-    --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 98%;
-  }
-
-  .theme-slate-dark {
-    --background: 260 6% 12%;
-    --foreground: 30 10% 90%;
-    --content-area: 270 8% 9%;
-    --muted: 260 6% 16%;
-    --muted-foreground: 30 8% 60%;
-    --border: 260 8% 20%;
-    --primary: 15 25% 68%;
-    --primary-foreground: 270 8% 9%;
-    --secondary: 260 5% 18%;
-    --secondary-foreground: 30 10% 88%;
-    --accent: 200 12% 22%;
-    --accent-foreground: 200 25% 75%;
-    --ring: 15 25% 68%;
-    --card: 260 6% 13%;
-    --card-foreground: 30 10% 90%;
-    --input: 260 6% 16%;
-    --popover: 260 6% 15%;
-    --popover-foreground: 30 10% 90%;
-    --dialog: 260 5% 16%;
-    --dialog-foreground: 30 10% 90%;
-    --destructive: 0 45% 50%;
-    --destructive-foreground: 0 0% 98%;
-    --tooltip: 260 8% 22%;
-    --tooltip-foreground: 0 0% 98%;
-    --tooltip-muted: 30 8% 65%;
-    --success: 142 76% 36%;
-    --success-foreground: 0 0% 98%;
-    --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 98%;
-  }
+:root {
+  --background: 0 0% 100%;
+  --foreground: 0 0% 3.9%;
+  --muted: 0 0% 96.1%;
+  --muted-foreground: 0 0% 45.1%;
+  --border: 0 0% 89.8%;
+  --input: 0 0% 89.8%;
+  --ring: 0 0% 3.9%;
+  --primary: 0 0% 9%;
+  --primary-foreground: 0 0% 98%;
+  --secondary: 0 0% 96.1%;
+  --secondary-foreground: 0 0% 9%;
+  --accent: 0 0% 96.1%;
+  --accent-foreground: 0 0% 9%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 0 0% 98%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 3.9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 3.9%;
+  --dialog: 0 0% 100%;
+  --dialog-foreground: 0 0% 3.9%;
+  --content-area: 0 0% 100%;
+  --tooltip: 0 0% 15%;
+  --tooltip-foreground: 0 0% 98%;
+  --tooltip-muted: 0 0% 75%;
+  --success: 142 76% 36%;
+  --success-foreground: 0 0% 98%;
+  --warning: 38 92% 50%;
+  --warning-foreground: 0 0% 98%;
 }
 
+.dark {
+  --background: 0 0% 7%;
+  --foreground: 0 0% 98%;
+  --muted: 0 0% 14.9%;
+  --muted-foreground: 0 0% 63.9%;
+  --border: 0 0% 14.9%;
+  --input: 0 0% 14.9%;
+  --ring: 0 0% 83.1%;
+  --primary: 0 0% 98%;
+  --primary-foreground: 0 0% 9%;
+  --secondary: 0 0% 14.9%;
+  --secondary-foreground: 0 0% 98%;
+  --accent: 0 0% 40%;
+  --accent-foreground: 0 0% 98%;
+  --destructive: 0 55% 45%;
+  --destructive-foreground: 0 0% 98%;
+  --card: 0 0% 7%;
+  --card-foreground: 0 0% 98%;
+  --popover: 0 0% 7%;
+  --popover-foreground: 0 0% 98%;
+  --dialog: 0 0% 12%;
+  --dialog-foreground: 0 0% 98%;
+  --content-area: 0 0% 7%;
+  --tooltip: 0 0% 20%;
+  --tooltip-foreground: 0 0% 98%;
+  --tooltip-muted: 0 0% 70%;
+  --success: 142 76% 36%;
+  --success-foreground: 0 0% 98%;
+  --warning: 38 92% 50%;
+  --warning-foreground: 0 0% 98%;
+}
+
+/* ===== 海洋主题 ===== */
+
+.theme-ocean-light {
+  --background: 205 35% 94%;
+  --foreground: 210 30% 15%;
+  --content-area: 205 30% 97%;
+  --muted: 205 35% 88%;
+  --muted-foreground: 210 15% 40%;
+  --border: 205 30% 82%;
+  --primary: 205 50% 50%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 205 35% 91%;
+  --secondary-foreground: 210 30% 20%;
+  --accent: 205 35% 82%;
+  --accent-foreground: 205 50% 30%;
+  --ring: 205 50% 50%;
+  --card: 205 30% 97%;
+  --card-foreground: 210 30% 15%;
+  --input: 205 35% 91%;
+  --popover: 205 30% 97%;
+  --popover-foreground: 210 30% 15%;
+  --dialog: 0 0% 100%;
+  --dialog-foreground: 210 30% 15%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 0 0% 98%;
+  --tooltip: 210 45% 18%;
+  --tooltip-foreground: 0 0% 98%;
+  --tooltip-muted: 210 20% 75%;
+  --success: 142 76% 36%;
+  --success-foreground: 0 0% 98%;
+  --warning: 38 92% 50%;
+  --warning-foreground: 0 0% 98%;
+}
+
+.theme-ocean-dark {
+  --background: 210 35% 13%;
+  --foreground: 210 20% 92%;
+  --content-area: 210 40% 8%;
+  --muted: 210 30% 14%;
+  --muted-foreground: 210 15% 55%;
+  --border: 210 30% 18%;
+  --primary: 205 87% 24%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 210 30% 16%;
+  --secondary-foreground: 210 20% 90%;
+  --accent: 210 40% 22%;
+  --accent-foreground: 205 60% 70%;
+  --ring: 205 87% 24%;
+  --card: 210 35% 11%;
+  --card-foreground: 210 20% 92%;
+  --input: 210 30% 14%;
+  --popover: 210 35% 13%;
+  --popover-foreground: 210 20% 92%;
+  --dialog: 210 25% 16%;
+  --dialog-foreground: 210 20% 92%;
+  --destructive: 0 55% 45%;
+  --destructive-foreground: 0 0% 98%;
+  --tooltip: 210 40% 22%;
+  --tooltip-foreground: 0 0% 98%;
+  --tooltip-muted: 210 20% 70%;
+  --success: 142 76% 36%;
+  --success-foreground: 0 0% 98%;
+  --warning: 38 92% 50%;
+  --warning-foreground: 0 0% 98%;
+}
+
+/* ===== 森系主题 ===== */
+
+.theme-forest-light {
+  --background: 140 25% 95%;
+  --foreground: 150 25% 15%;
+  --content-area: 140 20% 97%;
+  --muted: 140 15% 90%;
+  --muted-foreground: 145 10% 45%;
+  --border: 140 15% 82%;
+  --primary: 150 35% 38%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 140 15% 92%;
+  --secondary-foreground: 150 20% 20%;
+  --accent: 145 20% 88%;
+  --accent-foreground: 150 30% 30%;
+  --ring: 150 35% 38%;
+  --card: 140 20% 97%;
+  --card-foreground: 150 25% 15%;
+  --input: 140 18% 92%;
+  --popover: 140 18% 98%;
+  --popover-foreground: 150 25% 15%;
+  --dialog: 140 15% 96%;
+  --dialog-foreground: 150 25% 15%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --tooltip: 150 20% 18%;
+  --tooltip-foreground: 0 0% 98%;
+  --tooltip-muted: 140 10% 60%;
+  --success: 142 76% 36%;
+  --success-foreground: 0 0% 98%;
+  --warning: 38 92% 50%;
+  --warning-foreground: 0 0% 98%;
+}
+
+.theme-forest-dark {
+  --background: 147 14% 15%;
+  --foreground: 140 10% 90%;
+  --content-area: 150 20% 8%;
+  --muted: 150 18% 13%;
+  --muted-foreground: 140 10% 55%;
+  --border: 150 18% 17%;
+  --primary: 151 55% 21%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 150 16% 15%;
+  --secondary-foreground: 140 10% 88%;
+  --accent: 155 25% 18%;
+  --accent-foreground: 150 30% 65%;
+  --ring: 150 35% 42%;
+  --card: 150 18% 11%;
+  --card-foreground: 140 10% 90%;
+  --input: 150 18% 13%;
+  --popover: 150 18% 13%;
+  --popover-foreground: 140 10% 90%;
+  --dialog: 150 15% 15%;
+  --dialog-foreground: 140 10% 90%;
+  --destructive: 0 55% 45%;
+  --destructive-foreground: 0 0% 98%;
+  --tooltip: 150 25% 20%;
+  --tooltip-foreground: 0 0% 98%;
+  --tooltip-muted: 140 10% 65%;
+  --success: 142 76% 36%;
+  --success-foreground: 0 0% 98%;
+  --warning: 38 92% 50%;
+  --warning-foreground: 0 0% 98%;
+}
+
+/* ===== 莫兰迪主题 ===== */
+
+.theme-slate-light {
+  --background: 40 10% 94%;          /* #f1f0ee 主区域背景 */
+  --foreground: 40 8% 18%;
+  --content-area: 40 10% 94%;
+  --muted: 60 6% 90%;                /* #e6e6e3 输入框/标签栏 */
+  --muted-foreground: 40 5% 45%;
+  --border: 48 6% 85%;               /* #dbdad6 卡片边框 */
+  --primary: 18 20% 67%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 40 6% 90%;
+  --secondary-foreground: 40 8% 22%;
+  --accent: 36 8% 87%;               /* #e1dfdc hover 态 */
+  --accent-foreground: 40 10% 30%;
+  --ring: 18 20% 67%;
+  --card: 30 10% 96%;                /* #f6f5f4 卡片背景 */
+  --card-foreground: 40 8% 18%;
+  --input: 60 6% 90%;                /* #e6e6e3 输入框 */
+  --popover: 30 10% 96%;
+  --popover-foreground: 40 8% 18%;
+  --dialog: 40 10% 94%;
+  --dialog-foreground: 40 8% 18%;
+  --destructive: 0 65% 50%;
+  --destructive-foreground: 0 0% 100%;
+  --tooltip: 40 8% 20%;
+  --tooltip-foreground: 0 0% 98%;
+  --tooltip-muted: 40 5% 55%;
+  --success: 142 76% 36%;
+  --success-foreground: 0 0% 98%;
+  --warning: 38 92% 50%;
+  --warning-foreground: 0 0% 98%;
+}
+
+.theme-slate-dark {
+  --background: 260 6% 12%;
+  --foreground: 30 10% 90%;
+  --content-area: 270 8% 9%;
+  --muted: 260 6% 16%;
+  --muted-foreground: 30 8% 60%;
+  --border: 260 8% 20%;
+  --primary: 15 25% 68%;
+  --primary-foreground: 270 8% 9%;
+  --secondary: 260 5% 18%;
+  --secondary-foreground: 30 10% 88%;
+  --accent: 200 12% 22%;
+  --accent-foreground: 200 25% 75%;
+  --ring: 15 25% 68%;
+  --card: 260 6% 13%;
+  --card-foreground: 30 10% 90%;
+  --input: 260 6% 16%;
+  --popover: 260 6% 15%;
+  --popover-foreground: 30 10% 90%;
+  --dialog: 260 5% 16%;
+  --dialog-foreground: 30 10% 90%;
+  --destructive: 0 45% 50%;
+  --destructive-foreground: 0 0% 98%;
+  --tooltip: 260 8% 22%;
+  --tooltip-foreground: 0 0% 98%;
+  --tooltip-muted: 30 8% 65%;
+  --success: 142 76% 36%;
+  --success-foreground: 0 0% 98%;
+  --warning: 38 92% 50%;
+  --warning-foreground: 0 0% 98%;
+}
+
+/* ===== 基础样式 ===== */
+
 @layer base {
-  * { @apply border-border; }
-  body { @apply bg-background text-foreground; }
+  * { border-color: hsl(var(--border)); }
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+  }
 }
 
 /* 代码块样式（确保亮暗主题都可见） */
@@ -532,12 +537,4 @@ select:disabled,
 textarea:disabled {
   color: hsl(var(--muted-foreground));
   background-color: hsl(var(--muted));
-}
-
-/* 隐藏滚动条但保留滚动功能 */
-.scrollbar-none {
-  scrollbar-width: none; /* Firefox */
-}
-.scrollbar-none::-webkit-scrollbar {
-  display: none; /* Chrome/Safari */
 }

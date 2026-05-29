@@ -165,7 +165,7 @@ export function SessionTabBar({
 
   return (
     <>
-      <div className="flex items-center gap-0 min-w-0 max-w-full overflow-x-auto scrollbar-none border-b border-border/40 h-9 select-none">
+      <div className="flex items-center gap-1 min-w-0 max-w-full overflow-x-auto scrollbar-none h-9 select-none">
         {/* 会话列表按钮 */}
         <button
           onClick={() => setShowPopover(!showPopover)}
@@ -182,9 +182,9 @@ export function SessionTabBar({
           return (
             <div
               key={tabId}
-              className={`group relative flex items-center gap-1.5 px-3 h-full cursor-pointer shrink-0 max-w-[160px]
-                transition-colors border-r border-border/30 last:border-r-0
-                ${isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04]'}`}
+              className={`group relative flex items-center gap-1.5 px-3 h-7 cursor-pointer shrink-0 max-w-[160px]
+                transition-colors
+                ${isActive ? 'text-foreground bg-background rounded-t-md' : 'text-muted-foreground bg-muted/30 rounded-md hover:text-foreground hover:bg-muted/50'}`}
               onClick={() => onTabSelect(tabId)}
               onMouseEnter={(e) => handleTabMouseEnter(e, tabId)}
               onMouseLeave={handleMouseLeave}

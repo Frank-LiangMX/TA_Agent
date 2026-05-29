@@ -42,8 +42,10 @@ export function AppearanceSettings() {
     const { mode: m, variant: v } = loadTheme()
     setMode(m)
     setVariant(v)
-    // 从 variant 推断当前 style id
-    if (v !== 'default') {
+    // 从 localStorage 读取完整的 style ID
+    const savedStyle = localStorage.getItem('tagent-theme-style') || ''
+    if (savedStyle) setActiveStyle(savedStyle)
+    else if (v !== 'default') {
       const style = SPECIAL_STYLES.find((s) => s.id.includes(v))
       if (style) setActiveStyle(style.id)
     }
@@ -58,7 +60,7 @@ export function AppearanceSettings() {
       const variant = style.id.split('-')[0] as ThemeVariant
       setMode(m)
       setVariant(variant)
-      saveTheme(m, variant)
+      saveTheme(m, variant, style.id)
     } else {
       setMode(m)
       setVariant('default')
@@ -72,7 +74,7 @@ export function AppearanceSettings() {
     const variant = style.id.split('-')[0] as ThemeVariant
     setVariant(variant)
     setMode('special')
-    saveTheme('special', variant)
+    saveTheme('special', variant, style.id)
   }
 
   return (
