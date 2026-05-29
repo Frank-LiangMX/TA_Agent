@@ -193,16 +193,30 @@ await tagentClient.getStatus()
 
 ### 5.2 主题系统
 
-纯灰中性主题，支持 4 套主题变体（light + dark）：
+7 套主题（light + dark 各 3 套 + 默认 2 套），CSS 变量定义在 `globals.css`（@layer 外部确保优先级）：
 
-| 主题 | 暗色色调 | 说明 |
-|------|---------|------|
-| Default | `0 0% 7%` 纯灰 | 中性灰，无色相 |
-| Ocean | `210 35% 13%` 蓝调 | 深海蓝灰 |
-| Forest | `147 14% 15%` 绿调 | 森系绿灰 |
-| Slate | `260 6% 12%` 紫灰 | 柔和紫灰 |
+| 主题 | 浅色背景 | 深色背景 | 说明 |
+|------|---------|---------|------|
+| Default | `0 0% 100%` | `0 0% 7%` | 纯灰中性 |
+| Ocean | `205 35% 94%` 晴空碧海 | `210 35% 13%` 苍穹暮色 | 蓝调 |
+| Forest | `140 25% 95%` 森息晨光 | `147 14% 15%` 森息夜语 | 绿调 |
+| Slate | `40 10% 94%` 云朵舞者 | `260 6% 12%` 莫兰迪夜 | 暖灰 |
 
-### 5.3 颜色语义
+切换机制：`theme.ts` 管理 `ThemeMode`（light/dark/system/special）+ `ThemeVariant`（default/ocean/forest/slate），通过 `<html>` class 切换。
+
+### 5.3 布局结构
+
+```
+背景渐变色
+├── 侧边栏（悬浮卡片 rounded-2xl shadow-xl，#e2e1df）
+├── 主内容区（悬浮卡片 rounded-2xl shadow-xl）
+│   ├── 标签栏（#e6e5e2，选中标签 bg-background 圆角矩形）
+│   ├── 聊天区域（bg-background）
+│   └── 输入框区域（bg-muted 圆角卡片）
+└── 状态栏
+```
+
+### 5.4 颜色语义
 
 | 含义 | 颜色 | Tailwind |
 |------|------|----------|
@@ -211,7 +225,7 @@ await tagentClient.getStatus()
 | 失败/拒绝 | 红色 | `text-destructive` / `bg-destructive/20` |
 | 信息/主色 | 蓝色 | `text-primary` / `bg-primary/20` |
 
-### 5.4 资产类型标签颜色
+### 5.5 资产类型标签颜色
 
 | 类型 | 颜色 |
 |------|------|
@@ -221,7 +235,7 @@ await tagentClient.getStatus()
 | 骨骼模型 | `bg-emerald-500/20` |
 | 材质 | `bg-orange-500/20` |
 
-### 5.5 边框与阴影
+### 5.6 边框与阴影
 
 遵循"阴影优于边框"原则：
 
@@ -233,7 +247,7 @@ await tagentClient.getStatus()
 | 侧边栏选中态 | `bg-foreground/[0.08]` + 微阴影 |
 | 浮动面板 | `shadow-lg` |
 
-### 5.6 性能优化
+### 5.7 性能优化
 
 - 拖拽分隔线：直接操作 DOM width，不触发 React 重渲染
 - 资产列表：分页加载，避免一次渲染 300+ 项
