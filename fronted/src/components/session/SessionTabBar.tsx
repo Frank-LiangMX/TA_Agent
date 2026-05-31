@@ -184,7 +184,7 @@ export function SessionTabBar({
               key={tabId}
               className={`group relative flex items-center gap-1.5 px-3 h-7 cursor-pointer shrink-0 max-w-[160px]
                 transition-colors
-                ${isActive ? 'text-foreground bg-background rounded-t-md' : 'text-muted-foreground bg-muted/30 rounded-md hover:text-foreground hover:bg-muted/50'}`}
+                ${isActive ? 'text-foreground bg-content-area rounded-t-md' : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04]'}`}
               onClick={() => onTabSelect(tabId)}
               onMouseEnter={(e) => handleTabMouseEnter(e, tabId)}
               onMouseLeave={handleMouseLeave}

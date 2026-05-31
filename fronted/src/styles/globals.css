@@ -34,6 +34,8 @@
   --success-foreground: 0 0% 98%;
   --warning: 38 92% 50%;
   --warning-foreground: 0 0% 98%;
+  --shell-start: 0 0% 98%;
+  --shell-end: 0 0% 96%;
 }
 
 .dark {
@@ -66,6 +68,8 @@
   --success-foreground: 0 0% 98%;
   --warning: 38 92% 50%;
   --warning-foreground: 0 0% 98%;
+  --shell-start: 0 0% 3%;
+  --shell-end: 0 0% 7%;
 }
 
 /* ===== 海洋主题 ===== */
@@ -100,6 +104,8 @@
   --success-foreground: 0 0% 98%;
   --warning: 38 92% 50%;
   --warning-foreground: 0 0% 98%;
+  --shell-start: 205 35% 88%;
+  --shell-end: 205 30% 91%;
 }
 
 .theme-ocean-dark {
@@ -132,6 +138,8 @@
   --success-foreground: 0 0% 98%;
   --warning: 38 92% 50%;
   --warning-foreground: 0 0% 98%;
+  --shell-start: 210 45% 5%;
+  --shell-end: 210 35% 7%;
 }
 
 /* ===== 森系主题 ===== */
@@ -166,6 +174,8 @@
   --success-foreground: 0 0% 98%;
   --warning: 38 92% 50%;
   --warning-foreground: 0 0% 98%;
+  --shell-start: 140 15% 90%;
+  --shell-end: 140 15% 92%;
 }
 
 .theme-forest-dark {
@@ -198,14 +208,16 @@
   --success-foreground: 0 0% 98%;
   --warning: 38 92% 50%;
   --warning-foreground: 0 0% 98%;
+  --shell-start: 150 20% 5%;
+  --shell-end: 150 18% 7%;
 }
 
 /* ===== 莫兰迪主题 ===== */
 
 .theme-slate-light {
-  --background: 40 10% 94%;          /* #f1f0ee 主区域背景 */
+  --background: 40 6% 88%;              /* #e3e1dc 侧边栏/基础背景 */
   --foreground: 40 8% 18%;
-  --content-area: 40 10% 94%;
+  --content-area: 40 8% 94%;              /* #f0efec 主内容区域 */
   --muted: 60 6% 90%;                /* #e6e6e3 输入框/标签栏 */
   --muted-foreground: 40 5% 45%;
   --border: 48 6% 85%;               /* #dbdad6 卡片边框 */
@@ -216,7 +228,7 @@
   --accent: 36 8% 87%;               /* #e1dfdc hover 态 */
   --accent-foreground: 40 10% 30%;
   --ring: 18 20% 67%;
-  --card: 30 10% 96%;                /* #f6f5f4 卡片背景 */
+  --card: 40 8% 96%;                     /* #f6f5f2 卡片背景 */
   --card-foreground: 40 8% 18%;
   --input: 60 6% 90%;                /* #e6e6e3 输入框 */
   --popover: 30 10% 96%;
@@ -232,6 +244,8 @@
   --success-foreground: 0 0% 98%;
   --warning: 38 92% 50%;
   --warning-foreground: 0 0% 98%;
+  --shell-start: 40 6% 84%;
+  --shell-end: 40 6% 86%;
 }
 
 .theme-slate-dark {
@@ -264,6 +278,8 @@
   --success-foreground: 0 0% 98%;
   --warning: 38 92% 50%;
   --warning-foreground: 0 0% 98%;
+  --shell-start: 270 10% 7%;
+  --shell-end: 260 8% 9%;
 }
 
 /* ===== 基础样式 ===== */
@@ -537,4 +553,14 @@ select:disabled,
 textarea:disabled {
   color: hsl(var(--muted-foreground));
   background-color: hsl(var(--muted));
+}
+
+/* Electron 窗口拖拽区域 */
+.titlebar-drag-region {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+.titlebar-no-drag {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }

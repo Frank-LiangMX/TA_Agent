@@ -169,49 +169,100 @@ export default function App() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-background overflow-hidden">
-      <div className="flex flex-1 min-w-0 overflow-hidden">
-        <div className={`flex flex-1 min-w-0 h-full ${activeView === 'settings' ? 'hidden' : ''}`}>
-          <div ref={sidebarRef} className="border-r border-border/40 flex flex-col shrink-0" style={{ width: 256, backgroundColor: '#e2e1df' }}>
+    <div className="h-screen w-screen overflow-hidden relative" style={{ background: 'linear-gradient(135deg, hsl(var(--shell-start)) 0%, hsl(var(--shell-end)) 100%)' }}>
+
+      {/* 内容区域 */}
+      <div className="h-full flex overflow-hidden p-2 gap-2">
+        {/* 侧边栏卡片（设置页面隐藏） */}
+        {activeView !== 'settings' && (
+        <div className="shrink-0">
+          <div ref={sidebarRef} className="relative flex flex-col h-full rounded-2xl shadow-xl border border-black/5 overflow-hidden bg-background" style={{ width: 256 }}>
+            {/* 透明拖拽区域 */}
+            <div className="absolute top-0 left-0 right-0 h-9 z-10 titlebar-drag-region" />
             <Sidebar activeView={activeView} onViewChange={handleViewChange} />
           </div>
-          <ResizeHandle targetRef={sidebarRef} side="left" />
-
-          <div className={`flex-1 flex flex-col min-w-0 h-full ${activeView === 'chat' ? '' : 'hidden'}`}>
-            <MainPanel onAssetSelect={handleAssetSelect} />
-          </div>
-          <div className={`flex-1 flex flex-col min-w-0 h-full ${activeView === 'assets' ? '' : 'hidden'}`}>
-            <AssetLibrary key={`assets-${activeView}`} onAssetSelect={handleAssetSelect} />
-          </div>
-          <div className={`flex-1 flex flex-col min-w-0 h-full ${activeView === 'analysis' ? '' : 'hidden'}`}>
-            <DashboardView />
-          </div>
-          <div className={`flex-1 flex flex-col min-w-0 h-full ${activeView === 'review' ? '' : 'hidden'}`}>
-            <ReviewQueue key={`review-${activeView}`} />
-          </div>
-          <div className={`flex-1 flex flex-col min-w-0 h-full ${activeView === 'search' ? '' : 'hidden'}`}>
-            <SearchView onAssetSelect={handleAssetSelect} />
-          </div>
-          <div className={`flex-1 flex flex-col min-w-0 h-full ${activeView === 'workflow' ? '' : 'hidden'}`}>
-            <WorkflowView onNavigate={(view) => handleViewChange(view as ViewType)} />
-          </div>
-
-          {detailOpen && (
-            <>
-              <ResizeHandle targetRef={detailRef} side="right" minWidth={250} maxWidth={500} />
-              <div ref={detailRef} className="border-l border-border/40 bg-card flex flex-col shrink-0 overflow-hidden" style={{ width: detailWidth }}>
-                <DetailPanel asset={selectedAsset} onClose={() => setDetailOpen(false)} />
-              </div>
-            </>
-          )}
         </div>
+        )}
 
-        {activeView === 'settings' && (
-          <SettingsView onBack={() => handleViewChange('settings')} onModeChange={handleModeChange} />
+        {/* 主内容卡片 */}
+        {activeView !== 'settings' ? (
+          <div className="flex-1 min-w-0">
+            <div className="flex flex-col h-full rounded-2xl shadow-xl border border-black/5 overflow-hidden bg-content-area">
+            {/* 非聊天页面：窗口栏（拖拽 + 控制按钮） */}
+            {activeView !== 'chat' && (
+            <div className="flex items-center h-9 shrink-0 bg-background">
+              <div className="flex-1 h-full titlebar-drag-region" />
+              {typeof window !== 'undefined' && (window as any).electronAPI?.isElectron && (
+                <div className="flex items-center shrink-0 h-9 titlebar-no-drag pr-2">
+                  <button onClick={() => (window as any).electronAPI.minimizeWindow()} className="h-8 w-9 flex items-center justify-center hover:bg-black/10 rounded transition-colors">
+                    <svg width="10" height="1" viewBox="0 0 10 1" fill="none"><rect width="10" height="1" fill="#888"/></svg>
+                  </button>
+                  <button onClick={() => (window as any).electronAPI.maximizeWindow()} className="h-8 w-9 flex items-center justify-center hover:bg-black/10 rounded transition-colors">
+                    <svg width="8" height="8" viewBox="0 0 8 8" fill="none"><rect x="0.5" y="0.5" width="7" height="7" stroke="#888"/></svg>
+                  </button>
+                  <button onClick={() => (window as any).electronAPI.closeWindow()} className="h-8 w-9 flex items-center justify-center hover:bg-red-500 hover:text-white rounded transition-colors">
+                    <svg width="8" height="8" viewBox="0 0 8 8" fill="none"><path d="M1 1l6 6M7 1l-6 6" stroke="#888" strokeWidth="1.2"/></svg>
+                  </button>
+                </div>
+              )}
+            </div>
+            )}
+            <div className="flex-1 flex min-w-0 overflow-hidden">
+              <div className={`flex-1 flex flex-col min-w-0 h-full ${activeView === 'chat' ? '' : 'hidden'}`}>
+                <MainPanel onAssetSelect={handleAssetSelect} />
+              </div>
+              <div className={`flex-1 flex flex-col min-w-0 h-full ${activeView === 'assets' ? '' : 'hidden'}`}>
+                <AssetLibrary key={`assets-${activeView}`} onAssetSelect={handleAssetSelect} />
+              </div>
+              <div className={`flex-1 flex flex-col min-w-0 h-full ${activeView === 'analysis' ? '' : 'hidden'}`}>
+                <DashboardView />
+              </div>
+              <div className={`flex-1 flex flex-col min-w-0 h-full ${activeView === 'review' ? '' : 'hidden'}`}>
+                <ReviewQueue key={`review-${activeView}`} />
+              </div>
+              <div className={`flex-1 flex flex-col min-w-0 h-full ${activeView === 'search' ? '' : 'hidden'}`}>
+                <SearchView onAssetSelect={handleAssetSelect} />
+              </div>
+              <div className={`flex-1 flex flex-col min-w-0 h-full ${activeView === 'workflow' ? '' : 'hidden'}`}>
+                <WorkflowView onNavigate={(view) => handleViewChange(view as ViewType)} />
+              </div>
+
+              {detailOpen && (
+                <>
+                  <ResizeHandle targetRef={detailRef} side="right" minWidth={250} maxWidth={500} />
+                  <div ref={detailRef} className="border-l border-border/40 bg-card flex flex-col shrink-0 overflow-hidden" style={{ width: detailWidth }}>
+                    <DetailPanel asset={selectedAsset} onClose={() => setDetailOpen(false)} />
+                  </div>
+                </>
+              )}
+            </div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 min-w-0">
+            <div className="relative flex flex-col h-full overflow-hidden">
+              {/* 设置页窗口栏（透明覆盖层） */}
+              <div className="absolute top-0 left-0 right-0 h-9 z-10 flex items-center titlebar-drag-region">
+                <div className="flex-1 h-full" />
+                {typeof window !== 'undefined' && (window as any).electronAPI?.isElectron && (
+                  <div className="flex items-center shrink-0 h-9 titlebar-no-drag pr-2">
+                    <button onClick={() => (window as any).electronAPI.minimizeWindow()} className="h-8 w-9 flex items-center justify-center hover:bg-black/10 rounded transition-colors">
+                      <svg width="10" height="1" viewBox="0 0 10 1" fill="none"><rect width="10" height="1" fill="#888"/></svg>
+                    </button>
+                    <button onClick={() => (window as any).electronAPI.maximizeWindow()} className="h-8 w-9 flex items-center justify-center hover:bg-black/10 rounded transition-colors">
+                      <svg width="8" height="8" viewBox="0 0 8 8" fill="none"><rect x="0.5" y="0.5" width="7" height="7" stroke="#888"/></svg>
+                    </button>
+                    <button onClick={() => (window as any).electronAPI.closeWindow()} className="h-8 w-9 flex items-center justify-center hover:bg-red-500 hover:text-white rounded transition-colors">
+                      <svg width="8" height="8" viewBox="0 0 8 8" fill="none"><path d="M1 1l6 6M7 1l-6 6" stroke="#888" strokeWidth="1.2"/></svg>
+                    </button>
+                  </div>
+                )}
+              </div>
+              <SettingsView onBack={() => handleViewChange('chat')} onModeChange={handleModeChange} />
+            </div>
+          </div>
         )}
       </div>
-
-      <StatusBar />
 
       <Toaster position="top-right" theme="dark" />
       <TourGuide />

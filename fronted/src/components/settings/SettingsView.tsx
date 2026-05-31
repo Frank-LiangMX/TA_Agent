@@ -11,7 +11,7 @@
 import React, { useState } from 'react'
 import {
   Package, Cpu, Bot, Wrench, FileText, BookOpen,
-  Brain, Palette, Keyboard, Shield, BarChart3, ArrowLeft, HelpCircle, Server, Wifi, User,
+  Brain, Palette, Keyboard, Shield, BarChart3, HelpCircle, Server, Wifi, User, MessageSquare, Settings,
 } from 'lucide-react'
 import { ProjectSettings } from './ProjectSettings'
 import { ModelSettings } from './ModelSettings'
@@ -27,6 +27,7 @@ import { UsageSettings } from './UsageSettings'
 import { HelpGuide } from './HelpGuide'
 import { McpSettings } from './McpSettings'
 import { ModeSettings } from './ModeSettings'
+import { WeChatSettings } from './WeChatSettings'
 
 type TabId = string
 
@@ -70,6 +71,7 @@ const NAV_GROUPS: NavGroup[] = [
     tabs: [
       { id: 'tools', label: '工具管理', icon: <Wrench size={16} />, component: ToolSettings },
       { id: 'mcp', label: 'MCP 服务器', icon: <Server size={16} />, component: McpSettings },
+      { id: 'wechat', label: '微信 Bridge', icon: <MessageSquare size={16} />, component: WeChatSettings },
     ],
   },
   {
@@ -99,29 +101,16 @@ export function SettingsView({ onBack, onModeChange }: SettingsViewProps) {
   const ActiveComponent = TAB_COMPONENTS[activeTab]
 
   return (
-    <div className="flex flex-col h-full w-full flex-1 min-w-0">
-      {/* Header */}
-      <div className="h-12 flex items-center px-5 border-b border-border/50 flex-shrink-0">
-        <button
-          onClick={onBack}
-          className="rounded-md p-1.5 text-muted-foreground/60 hover:text-foreground hover:bg-muted transition-colors mr-3"
-        >
-          <ArrowLeft size={16} />
-        </button>
-        <span className="text-sm font-medium text-foreground">设置</span>
-      </div>
-
-      {/* Body: nav + content */}
-      <div className="flex flex-1 min-h-0">
-        {/* Left nav — 分组菜单 */}
-        <div className="w-[256px] border-r border-border/40 pt-3 px-3 flex-shrink-0 bg-card overflow-y-auto scrollbar-thin">
+    <div className="flex h-full w-full gap-2">
+      {/* 左侧卡片：导航 + 返回 */}
+      <div className="w-[256px] flex-shrink-0 rounded-2xl shadow-xl border border-black/5 bg-background flex flex-col overflow-hidden">
+        {/* 导航列表 */}
+        <div className="flex-1 overflow-y-auto scrollbar-thin pt-3 px-3">
           {NAV_GROUPS.map((group, groupIndex) => (
             <div key={group.label} className={groupIndex > 0 ? 'mt-3' : ''}>
-              {/* 分组标题 */}
               <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground/70 uppercase tracking-wider">
                 {group.label}
               </div>
-              {/* 分组内的 tab */}
               <div className="flex flex-col gap-0.5 mt-1">
                 {group.tabs.map((tab) => (
                   <button
@@ -141,17 +130,25 @@ export function SettingsView({ onBack, onModeChange }: SettingsViewProps) {
             </div>
           ))}
         </div>
-
-        {/* Right content — 自适应宽度 */}
-        <div className="flex-1 min-w-0 overflow-y-auto scrollbar-thin">
-          <div className="w-full max-w-5xl px-8 py-6">
-            {activeTab === 'mode' ? (
-              <ModeSettings onModeChange={onModeChange} />
-            ) : (
-              <ActiveComponent />
-            )}
-          </div>
+        {/* 返回按钮 */}
+        <div className="p-2 border-t border-border/50">
+          <button
+            onClick={onBack}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+          >
+            <Settings size={18} className="rotate-90 transition-transform duration-300" />
+            <span>返回</span>
+          </button>
         </div>
+      </div>
+
+      {/* 右侧卡片：内容 */}
+      <div className="flex-1 min-w-0 rounded-2xl shadow-xl border border-black/5 bg-content-area overflow-y-auto scrollbar-thin px-8 py-6">
+        {activeTab === 'mode' ? (
+          <ModeSettings onModeChange={onModeChange} />
+        ) : (
+          <ActiveComponent />
+        )}
       </div>
     </div>
   )

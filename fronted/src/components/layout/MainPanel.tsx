@@ -767,9 +767,9 @@ const loadTabHistory = useCallback(async (tabId: string) => {
 
   return (
     <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-      {/* 头部：标签栏 + 操作区 */}
-      <div className="flex items-center justify-between pr-4 shrink-0" style={{ backgroundColor: '#e6e5e2' }}>
-        <div className="flex items-center min-w-0 flex-1 h-9">
+      {/* 头部：标签栏 + 拖拽 + 连接状态 */}
+      <div className="flex items-center shrink-0 h-9" style={{ backgroundColor: 'hsl(var(--muted) / 0.5)' }}>
+        <div className="flex items-center min-w-0 h-9">
           <SessionTabBar
             openTabs={openTabIds}
             activeTabId={activeTabId}
@@ -781,9 +781,26 @@ const loadTabHistory = useCallback(async (tabId: string) => {
             onNewTab={handleNewTab}
           />
         </div>
+        {/* 拖拽区域 */}
+        <div className="flex-1 h-full titlebar-drag-region" />
+        {/* 连接状态 */}
         <div className="flex items-center gap-2 shrink-0 h-9">
           <ConnectionBadge status={connectionStatus} />
         </div>
+        {/* 窗口控制按钮（仅 Electron） */}
+        {typeof window !== 'undefined' && (window as any).electronAPI?.isElectron && (
+          <div className="flex items-center shrink-0 h-9 titlebar-no-drag pr-2">
+            <button onClick={() => (window as any).electronAPI.minimizeWindow()} className="h-8 w-9 flex items-center justify-center hover:bg-black/10 rounded transition-colors">
+              <svg width="10" height="1" viewBox="0 0 10 1" fill="none"><rect width="10" height="1" fill="#888"/></svg>
+            </button>
+            <button onClick={() => (window as any).electronAPI.maximizeWindow()} className="h-8 w-9 flex items-center justify-center hover:bg-black/10 rounded transition-colors">
+              <svg width="8" height="8" viewBox="0 0 8 8" fill="none"><rect x="0.5" y="0.5" width="7" height="7" stroke="#888"/></svg>
+            </button>
+            <button onClick={() => (window as any).electronAPI.closeWindow()} className="h-8 w-9 flex items-center justify-center hover:bg-red-500 hover:text-white rounded transition-colors">
+              <svg width="8" height="8" viewBox="0 0 8 8" fill="none"><path d="M1 1l6 6M7 1l-6 6" stroke="#888" strokeWidth="1.2"/></svg>
+            </button>
+          </div>
+        )}
       </div>
 
       <PipelineProgress sessionId={sessionId} />

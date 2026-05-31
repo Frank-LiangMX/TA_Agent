@@ -31,7 +31,9 @@
       {
         "from": "../dist/TAgent",
         "to": "backend",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "win": {
@@ -47,9 +49,14 @@
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico",
       "installerHeaderIcon": "assets/icon.ico",
-      "installerLanguages": [2052],
+      "installerLanguages": [
+        2052
+      ],
       "language": "2052",
       "unicode": true
     }
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4"
   }
 }

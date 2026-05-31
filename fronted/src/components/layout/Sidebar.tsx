@@ -70,7 +70,7 @@ export function Sidebar({ activeView, onViewChange }: SidebarProps) {
   return (
     <div className="w-full h-full flex flex-col">
       {/* Logo */}
-      <div className="h-14 flex items-center px-4 border-b border-border/50">
+      <div className="h-14 flex items-center px-4 border-b border-border/50 titlebar-drag-region">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-background border border-border/60 flex items-center justify-center overflow-hidden">
             <img src={agentIcon} alt="TAgent" className="w-full h-full object-cover" />

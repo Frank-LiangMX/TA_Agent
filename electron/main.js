@@ -12,6 +12,9 @@ const path = require('path')
 const fs = require('fs')
 const http = require('http')
 
+// 微信 Bridge（延迟加载）
+let wechatBridge = null
+
 const SERVER_HOST = '127.0.0.1'
 const SERVER_PORT = 8080
 const SERVER_URL = `http://${SERVER_HOST}:${SERVER_PORT}`
@@ -101,6 +104,16 @@ function getBackendLogPath() {
 function registerIpcHandlers() {
   ipcMain.handle('get-app-version', () => app.getVersion())
   ipcMain.handle('backend-log-path', () => getBackendLogPath())
+
+  // 窗口控制
+  ipcMain.on('window-minimize', () => mainWindow?.minimize())
+  ipcMain.on('window-maximize', () => {
+    if (mainWindow?.isMaximized()) mainWindow.unmaximize()
+    else mainWindow?.maximize()
+  })
+  ipcMain.on('window-close', () => mainWindow?.close())
+  ipcMain.handle('window-is-maximized', () => mainWindow?.isMaximized() ?? false)
+
   ipcMain.handle('open-backend-log', async () => {
     const logPath = getBackendLogPath()
     if (!fs.existsSync(logPath)) {
@@ -130,6 +143,85 @@ function registerIpcHandlers() {
     saveConfig(config)
     return config
   })
+
+  // === 微信 Bridge IPC ===
+  const { WeChatBridge } = require('./wechat/bridge')
+
+  ipcMain.handle('wechat:get-config', () => {
+    const { loadConfig } = require('./wechat/config')
+    const config = loadConfig(app)
+    return { enabled: config.enabled, hasCredentials: !!config.credentials }
+  })
+
+  ipcMain.handle('wechat:start-login', async () => {
+    if (!wechatBridge) wechatBridge = new WeChatBridge(app)
+    // 设置状态推送监听
+    wechatBridge.removeAllListeners('status-changed')
+    wechatBridge.on('status-changed', (state) => {
+      mainWindow?.webContents.send('wechat:status-changed', state)
+    })
+    const result = await wechatBridge.startLogin()
+    console.log('[WeChat] IPC start-login 返回:', JSON.stringify(result).slice(0, 200))
+    return result
+  })
+
+  ipcMain.handle('wechat:logout', async () => {
+    if (wechatBridge) await wechatBridge.logout()
+    return { success: true }
+  })
+
+  ipcMain.handle('wechat:start-bridge', async () => {
+    if (!wechatBridge) wechatBridge = new WeChatBridge(app)
+    // 设置状态推送监听
+    wechatBridge.removeAllListeners('status-changed')
+    wechatBridge.on('status-changed', (state) => {
+      mainWindow?.webContents.send('wechat:status-changed', state)
+    })
+    wechatBridge.onMessage = async (msg) => {
+      // 通过 HTTP 调用本地 Python 后端的 Agent
+      try {
+        const res = await fetch(`http://127.0.0.1:8080/api/wechat/message`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(msg),
+        })
+        const data = await res.json()
+        return data.reply || ''
+      } catch (err) {
+        console.error('[WeChat] Agent 调用失败:', err.message)
+        return '抱歉，处理消息时出错，请稍后重试。'
+      }
+    }
+    await wechatBridge.startBridge()
+    return { success: true }
+  })
+
+  ipcMain.handle('wechat:stop-bridge', async () => {
+    if (wechatBridge) wechatBridge.stopBridge()
+    return { success: true }
+  })
+
+  ipcMain.handle('wechat:get-status', () => {
+    if (!wechatBridge) return { state: 'idle' }
+    return wechatBridge.getState()
+  })
+
+  // 微信状态变化推送到渲染进程
+  if (wechatBridge) {
+    wechatBridge.on('status-changed', (state) => {
+      mainWindow?.webContents.send('wechat:status-changed', state)
+    })
+  } else {
+    // 延迟初始化监听
+    ipcMain.handle('wechat:setup-listener', () => {
+      if (wechatBridge) {
+        wechatBridge.removeAllListeners('status-changed')
+        wechatBridge.on('status-changed', (state) => {
+          mainWindow?.webContents.send('wechat:status-changed', state)
+        })
+      }
+    })
+  }
 }
 
 function getPythonExePath() {
@@ -184,7 +276,7 @@ function startPythonBackend() {
   // 设置数据目录环境变量，让 Python 后端使用统一的路径
   console.log(`[Electron] 数据目录: ${agentDataDir}`)
   
-  pythonProcess = spawn(exePath, [], {
+  pythonProcess = spawn(exePath, ['--no-browser'], {
     cwd: path.dirname(exePath),
     stdio: ['ignore', 'pipe', 'pipe'],  // 分离输出
     windowsHide: true,
@@ -239,7 +331,7 @@ function createWindow() {
     height: 900,
     minWidth: 1000,
     minHeight: 700,
-    title: 'TAgent - 游戏技术美术 AI Agent',
+    frame: false,
     ...(iconPath ? { icon: iconPath } : {}),
     webPreferences: {
       nodeIntegration: false,

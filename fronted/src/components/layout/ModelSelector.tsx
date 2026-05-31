@@ -5,6 +5,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronDown, Check, Cpu } from 'lucide-react'
 import { API_BASE } from '@/lib/api'
 
@@ -24,6 +25,7 @@ export function ModelSelector({ className = '' }: ModelSelectorProps) {
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
 
   const activeModel = models.find((m) => m.id === activeId)
   const displayName = activeModel?.name || activeModel?.model || '选择模型'
@@ -47,7 +49,8 @@ export function ModelSelector({ className = '' }: ModelSelectorProps) {
   useEffect(() => {
     if (!open) return
     const handler = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)
+          && dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setOpen(false)
       }
     }
@@ -71,10 +74,22 @@ export function ModelSelector({ className = '' }: ModelSelectorProps) {
     setOpen(false)
   }
 
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0 })
+
+  const handleOpen = () => {
+    if (buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect()
+      setDropdownPos({ top: rect.bottom + 4, left: rect.left })
+    }
+    setOpen(!open)
+  }
+
   return (
     <div className={`relative ${className}`} ref={panelRef}>
       <button
-        onClick={() => setOpen(!open)}
+        ref={buttonRef}
+        onClick={handleOpen}
         className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors max-w-[200px]"
       >
         <Cpu size={14} className="shrink-0" />
@@ -82,8 +97,8 @@ export function ModelSelector({ className = '' }: ModelSelectorProps) {
         <ChevronDown size={12} className="shrink-0" />
       </button>
 
-      {open && (
-        <div className="absolute bottom-full left-0 mb-1 w-64 bg-card border border-border/50 rounded-lg shadow-lg z-50 py-1 max-h-[300px] overflow-y-auto animate-in fade-in slide-in-from-bottom-1">
+      {open && createPortal(
+        <div ref={dropdownRef} className="fixed w-64 bg-card border border-border/50 rounded-lg shadow-lg z-50 py-1 max-h-[300px] overflow-y-auto animate-in fade-in" style={{ bottom: window.innerHeight - dropdownPos.top + 4, left: dropdownPos.left }}>
           {models.length === 0 ? (
             <div className="px-3 py-2 text-xs text-muted-foreground">暂无模型，请在设置中添加</div>
           ) : (
@@ -109,7 +124,8 @@ export function ModelSelector({ className = '' }: ModelSelectorProps) {
               切换中...
             </div>
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )
