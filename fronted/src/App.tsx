@@ -240,7 +240,7 @@ export default function App() {
           </div>
         ) : (
           <div className="flex-1 min-w-0">
-            <div className="relative flex flex-col h-full overflow-hidden">
+            <div className="relative flex flex-col h-full">
               {/* 设置页窗口栏（透明覆盖层） */}
               <div className="absolute top-0 left-0 right-0 h-9 z-10 flex items-center titlebar-drag-region">
                 <div className="flex-1 h-full" />
