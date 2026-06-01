@@ -422,7 +422,7 @@ import os
 import sys
 
 # 项目根目录（代码所在目录）
-PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # 运行时数据根目录
 # 开发模式：使用项目内的 .ta_agent 目录

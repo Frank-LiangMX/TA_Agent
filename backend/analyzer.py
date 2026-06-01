@@ -48,7 +48,7 @@ class AssetIdentityAnalyzer:
         memory: Optional[MemoryProvider] = None,
     ):
         self.extractor = TagExtractor()
-        self.store_dir = store_dir or os.path.join(os.path.dirname(os.path.abspath(__file__)), "tag_store")
+        self.store_dir = store_dir or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tag_store")
         self.store = TagStore(self.store_dir)
         self.blender_path = blender_path
         self.memory = memory or NullMemoryProvider()
