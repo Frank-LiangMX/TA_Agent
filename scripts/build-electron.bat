@@ -3,7 +3,7 @@ chcp 65001 >nul 2>&1
 setlocal
 
 set "ROOT=%~dp0..\"
-set "FRONTEND_DIR=%ROOT%fronted"
+set "FRONTEND_DIR=%ROOT%apps\web"
 set "ELECTRON_DIR=%ROOT%apps\desktop"
 set "RELEASE_DIR=%ROOT%release"
 

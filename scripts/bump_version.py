@@ -17,7 +17,7 @@ VERSION_FILES = [
     ("apps/desktop/package.json", r'"version":\s*"[^"]*"', '"version": "{version}"'),
     ("apps/desktop/package-lock.json", None, None),  # 特殊处理
     ("backend/agent_main.py", r"v\d+\.\d+", "v{major_minor}"),
-    ("fronted/src/App.tsx", r"v\d+\.\d+", "v{major_minor}"),
+    ("apps/web/src/App.tsx", r"v\d+\.\d+", "v{major_minor}"),
 ]
 
 
