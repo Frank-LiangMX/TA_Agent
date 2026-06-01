@@ -27,6 +27,8 @@ node_modules/
 
 # 构建产物
 release/
+dist/
+build/
 *.spec
 
 # IDE
