@@ -4,7 +4,7 @@
 
 ### 模块解耦原则
 - 单文件上限 **300-400 行**，超过则拆分
-- 每个工具独立文件，统一注册到 `tools/registry.py`
+- 每个工具独立文件，统一注册到 `packages/tools/registry.py`
 - 接口定义与实现分离（如 `provider.py` + `file_provider.py`）
 
 ### 开发产出清理
@@ -13,10 +13,33 @@
 - **实验分支的产物**：实验成功后，把结论写进 `docs/experiments/`，实验代码分支删除；实验失败同样保留文档记录，代码分支删除
 - **pycache 等缓存目录**：提交前检查 `.pytest_cache`、`__pycache__` 等缓存目录是否在 `.gitignore` 中，不在则清理
 
+### 项目目录结构（Monorepo）
+```
+ta_agent/
+├── apps/                    # 应用层
+│   ├── desktop/             # Electron 桌面端
+│   ├── web/                 # Web 前端 + 本地服务器
+│   └── server/              # 中心服务器
+├── packages/                # 共享 Python 包
+│   ├── tools/               # 工具模块
+│   ├── tags/                # 标签系统
+│   ├── conventions/         # 规范系统
+│   └── core/                # 核心模块
+├── backend/                 # Python 核心实现
+├── scripts/                 # 开发/构建脚本
+├── docs/                    # 文档
+├── Plugins/                 # UE 插件
+├── release/                 # 构建产物（.gitignore）
+├── agent.py                 # 薄壳入口
+├── launcher.py              # 薄壳入口
+├── TAgent.spec              # PyInstaller 配置
+└── README.md, CLAUDE.md, progress.md
+```
+
 ### 根目录文件规范
-- **根目录只允许存放**：入口文件（`agent.py`、`launcher.py`）、配置文件（`.gitignore`、`mcp.json`、`TAgent.spec`）、文档（`README.md`、`CLAUDE.md`、`progress.md`）、构建脚本（`*.bat`）
-- **禁止在根目录创建新的 .py 代码文件**：新增模块必须放入对应的子目录（`tools/`、`tags/`、`core/` 等）
-- **历史遗留**：根目录现有的 `analyzer.py`、`config.py`、`session_manager.py`、`batch_render.py`、`run_render.py`、`quickstart.py` 是历史债务，后续重构时逐步迁入 `core/` 或 `scripts/`
+- **根目录只允许存放**：薄壳入口（`agent.py`、`launcher.py`）、配置文件（`.gitignore`、`mcp.json`、`TAgent.spec`）、文档（`README.md`、`CLAUDE.md`、`progress.md`）
+- **禁止在根目录创建新的 .py 代码文件**：新增模块必须放入对应的子目录（`packages/tools/`、`packages/tags/` 等）
+- **Python 实现代码在 `backend/`**：根目录的 `agent.py` / `launcher.py` 是薄壳（3 行），实际逻辑在 `backend/`
 
 ### 运行数据目录规范
 - **本地 Agent 运行数据统一存放在 AppData 子目录**：`%APPDATA%\tagent-desktop\agent-running-data`
@@ -25,13 +48,13 @@
 - **禁止自己拼运行根目录**：如需新增运行数据目录，先在 `config.py` 增加路径常量，再由业务代码导入使用
 - **环境变量覆盖**：仅允许 `TAGENT_RUNTIME_DIR` 作为显式调试覆盖；Electron 兼容 `ELECTRON_USER_DATA`，但仍应指向 `agent-running-data`
 - **Electron userData 分层**：Electron/Chromium 自身缓存留在 `%APPDATA%\tagent-desktop`，Agent 会话、记忆、资产库、流水线记录、日志必须放入 `agent-running-data`
-- **中心服务器例外**：根目录 `server/` 是中心服务器，使用 `TAGENT_DATA_DIR` / `server/config.py` 管理共享服务数据，不与本地 Agent 的 `RUNTIME_DIR` 混用
+- **中心服务器例外**：`apps/server/` 是中心服务器，使用 `TAGENT_DATA_DIR` / `apps/server/config.py` 管理共享服务数据，不与本地 Agent 的 `RUNTIME_DIR` 混用
 
 ## 工具开发规范
 
 ### 新增工具标准模板
 ```python
-# tools/xxx.py
+# packages/tools/xxx.py
 
 # 1. Schema 定义（传给 LLM）
 SCHEMA = {
