@@ -13,7 +13,7 @@
   "author": "TA Agent Team",
   "license": "MIT",
   "devDependencies": {
-    "electron": "^33.0.0",
+    "electron": "^39.5.1",
     "electron-builder": "^25.0.0"
   },
   "build": {

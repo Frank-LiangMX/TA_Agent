@@ -16,12 +16,14 @@ export interface OnlineConfig {
 
 export interface AppConfig {
   mode: 'local' | 'online'
+  agent_mode?: 'ta' | 'general'
   local: LocalConfig
   online: OnlineConfig
 }
 
 const DEFAULT_CONFIG: AppConfig = {
   mode: 'local',
+  agent_mode: 'ta',
   local: {
     llm_provider: 'custom',
     llm_api_key: '',
@@ -113,6 +115,17 @@ export async function getMode(): Promise<'local' | 'online'> {
 export async function setMode(mode: 'local' | 'online'): Promise<void> {
   const config = await getConfig()
   config.mode = mode
+  await saveConfig(config)
+}
+
+export async function getAgentMode(): Promise<'ta' | 'general'> {
+  const config = await getConfig()
+  return config.agent_mode === 'general' ? 'general' : 'ta'
+}
+
+export async function setAgentMode(agentMode: 'ta' | 'general'): Promise<void> {
+  const config = await getConfig()
+  config.agent_mode = agentMode
   await saveConfig(config)
 }
 

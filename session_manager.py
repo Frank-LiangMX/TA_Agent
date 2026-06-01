@@ -21,6 +21,12 @@ from typing import Optional
 
 
 from config import SESSIONS_DIR
+from config import (
+    WORKSPACES_DIR,
+    DEFAULT_WORKSPACE_NAME,
+    get_agent_runtime_mode,
+    get_default_workspace_path,
+)
 
 # 存储根目录
 _sessions_dir: str = ""
@@ -49,7 +55,45 @@ def _ensure_init():
 
 # ===== 会话 CRUD =====
 
-def create_session(title: str = "新会话", workflow_mode: str = "step_by_step", user: str = "") -> dict:
+def _build_workspace_for_session(session_id: str, workspace_path: str = "") -> tuple[str, str]:
+    """为会话生成/标准化工作区路径与显示名。未指定时使用共享默认工作区。"""
+    raw = (workspace_path or "").strip()
+    if raw:
+        abs_path = os.path.abspath(raw)
+        workspace_name = os.path.basename(abs_path.rstrip("\\/")) or session_id
+    else:
+        abs_path = get_default_workspace_path()
+        workspace_name = DEFAULT_WORKSPACE_NAME
+    os.makedirs(abs_path, exist_ok=True)
+    return abs_path, workspace_name
+
+
+def _ensure_general_workspace(meta: dict, agent_mode: str) -> dict:
+    """通用模式会话保证有工作区路径（空则写入默认工作区）。"""
+    mode = (agent_mode or get_agent_runtime_mode()).strip().lower()
+    if _session_agent_mode(meta, mode) != "general":
+        return meta
+    if (meta.get("workspacePath") or "").strip():
+        return meta
+    ws_path, ws_name = _build_workspace_for_session(meta["sessionId"], "")
+    updated = update_session(
+        meta["sessionId"],
+        agent_mode=mode,
+        workspacePath=ws_path,
+    )
+    if updated:
+        return updated
+    meta["workspacePath"] = ws_path
+    meta["workspaceName"] = ws_name
+    return meta
+
+
+def create_session(
+    title: str = "新会话",
+    workflow_mode: str = "step_by_step",
+    user: str = "",
+    workspace_path: str = "",
+) -> dict:
     """
     创建新会话（草稿状态）。
 
@@ -58,9 +102,15 @@ def create_session(title: str = "新会话", workflow_mode: str = "step_by_step"
     _ensure_init()
     session_id = uuid.uuid4().hex[:12]
     now = datetime.now().isoformat(timespec="seconds")
+    mode = get_agent_runtime_mode()
+    ws_path = ""
+    ws_name = ""
+    if mode == "general":
+        ws_path, ws_name = _build_workspace_for_session(session_id, workspace_path)
 
     meta = {
         "sessionId": session_id,
+        "agentMode": mode,
         "title": title,
         "createdAt": now,
         "lastActive": now,
@@ -72,6 +122,8 @@ def create_session(title: str = "新会话", workflow_mode: str = "step_by_step"
         "user": user,
         "tags": [],
         "summary": "",
+        "workspacePath": ws_path,
+        "workspaceName": ws_name,
     }
 
     # 创建空 JSONL 文件
@@ -86,7 +138,12 @@ def create_session(title: str = "新会话", workflow_mode: str = "step_by_step"
     return meta
 
 
-def list_sessions(include_archived: bool = False, user: str = None) -> list:
+def _session_agent_mode(meta: dict, default_mode: str) -> str:
+    """会话记录上的 agentMode；缺省时视为当前运行模式（兼容旧索引）。"""
+    return (meta.get("agentMode") or default_mode).strip().lower()
+
+
+def list_sessions(include_archived: bool = False, user: str = None, agent_mode: str = "") -> list:
     """
     获取会话列表（按 lastActive 降序，置顶优先）。
 
@@ -97,6 +154,9 @@ def list_sessions(include_archived: bool = False, user: str = None) -> list:
     _ensure_init()
     with _index_lock:
         index = _read_index()
+
+    mode = (agent_mode or get_agent_runtime_mode()).strip().lower()
+    index = [s for s in index if _session_agent_mode(s, mode) == mode]
 
     if not include_archived:
         index = [s for s in index if not s.get("isArchived")]
@@ -119,17 +179,18 @@ def list_sessions(include_archived: bool = False, user: str = None) -> list:
     return pinned + unpinned
 
 
-def get_session(session_id: str) -> Optional[dict]:
+def get_session(session_id: str, agent_mode: str = "") -> Optional[dict]:
     """获取单个会话元数据"""
     _ensure_init()
+    mode = (agent_mode or get_agent_runtime_mode()).strip().lower()
     with _index_lock:
         for meta in _read_index():
-            if meta["sessionId"] == session_id:
-                return meta
+            if meta["sessionId"] == session_id and _session_agent_mode(meta, mode) == mode:
+                return _ensure_general_workspace(meta, mode)
     return None
 
 
-def update_session(session_id: str, **kwargs) -> Optional[dict]:
+def update_session(session_id: str, agent_mode: str = "", **kwargs) -> Optional[dict]:
     """
     更新会话元数据。
 
@@ -137,30 +198,39 @@ def update_session(session_id: str, **kwargs) -> Optional[dict]:
     返回更新后的元数据，未找到返回 None。
     """
     _ensure_init()
-    allowed = {"title", "workflowMode", "isPinned", "isArchived", "tags", "summary"}
+    mode = (agent_mode or get_agent_runtime_mode()).strip().lower()
+    allowed = {"title", "workflowMode", "isPinned", "isArchived", "tags", "summary", "workspacePath", "workspaceName"}
 
     with _index_lock:
         index = _read_index()
         for meta in index:
-            if meta["sessionId"] == session_id:
+            if meta["sessionId"] == session_id and _session_agent_mode(meta, mode) == mode:
                 for key, val in kwargs.items():
                     if key in allowed:
                         meta[key] = val
+                if "workspacePath" in kwargs:
+                    ws_path, ws_name = _build_workspace_for_session(
+                        session_id,
+                        str(kwargs.get("workspacePath") or ""),
+                    )
+                    meta["workspacePath"] = ws_path
+                    meta["workspaceName"] = ws_name
                 _write_index(index)
                 return meta
     return None
 
 
-def delete_session(session_id: str) -> bool:
+def delete_session(session_id: str, agent_mode: str = "") -> bool:
     """
     删除会话（同时删除 JSONL 文件和索引记录）。
 
     返回是否成功。
     """
     _ensure_init()
+    mode = (agent_mode or get_agent_runtime_mode()).strip().lower()
     with _index_lock:
         index = _read_index()
-        new_index = [s for s in index if s["sessionId"] != session_id]
+        new_index = [s for s in index if not (s["sessionId"] == session_id and _session_agent_mode(s, mode) == mode)]
         if len(new_index) == len(index):
             return False
         _write_index(new_index)
@@ -271,7 +341,8 @@ def get_messages(session_id: str, limit: int = 0) -> list:
         return _read_tail(path, limit)
 
 
-def search_messages(query: str, max_results: int = 30) -> list:
+def search_messages(query: str, max_results: int = 30, agent_mode: str = "") -> list:
+    mode = (agent_mode or get_agent_runtime_mode()).strip().lower()
     """
     跨会话搜索消息内容。
 
@@ -285,6 +356,8 @@ def search_messages(query: str, max_results: int = 30) -> list:
         index = _read_index()
 
     for meta in index:
+        if meta.get("agentMode") != mode:
+            continue
         if meta.get("isArchived"):
             continue
         path = _msg_path(meta["sessionId"])
@@ -391,6 +464,7 @@ def rebuild_index() -> int:
 
         meta = {
             "sessionId": session_id,
+            "agentMode": get_agent_runtime_mode(),
             "title": title,
             "createdAt": created,
             "lastActive": last_active,
@@ -401,6 +475,8 @@ def rebuild_index() -> int:
             "isArchived": False,
             "tags": [],
             "summary": "",
+            "workspacePath": "",
+            "workspaceName": "",
         }
         new_index.append(meta)
 
@@ -413,11 +489,14 @@ def rebuild_index() -> int:
     return len(new_index)
 
 
-def get_stats() -> dict:
+def get_stats(agent_mode: str = "") -> dict:
     """获取会话统计"""
     _ensure_init()
     with _index_lock:
         index = _read_index()
+
+    mode = (agent_mode or get_agent_runtime_mode()).strip().lower()
+    index = [s for s in index if _session_agent_mode(s, mode) == mode]
 
     total = len(index)
     active = sum(1 for s in index if not s.get("isArchived"))

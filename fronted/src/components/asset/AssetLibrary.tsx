@@ -10,6 +10,8 @@ import { Search, Package, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-re
 import { tagentClient } from '@/services/websocket'
 import { useAssets, getDataSource } from '@/lib/cache'
 import { API_BASE } from '@/lib/api'
+import { Tooltip } from '@/components/ui/Tooltip'
+import { PageHeader } from '@/components/layout/PageHeader'
 
 interface AssetItem {
   asset_id: string
@@ -23,8 +25,14 @@ interface AssetItem {
   analyzed_at: string
 }
 
+export interface AssetLibraryFilterHints {
+  status?: string
+  sortBy?: 'name' | 'type' | 'tri_count'
+}
+
 interface AssetLibraryProps {
   onAssetSelect: (asset: Record<string, unknown>) => void
+  filterHints?: AssetLibraryFilterHints
 }
 
 const PAGE_SIZE = 20
@@ -58,13 +66,13 @@ const typeColors: Record<string, string> = {
   effect: 'bg-yellow-500/20 text-yellow-400',
 }
 
-export function AssetLibrary({ onAssetSelect }: AssetLibraryProps) {
+export function AssetLibrary({ onAssetSelect, filterHints }: AssetLibraryProps) {
   const { assets, loading, error, refresh } = useAssets()
   const [searchQuery, setSearchQuery] = useState('')
   const [filterCategory, setFilterCategory] = useState<string>('all')
   const [filterType, setFilterType] = useState<string>('all')
-  const [filterStatus, setFilterStatus] = useState<string>('all')
-  const [sortBy, setSortBy] = useState<'name' | 'type' | 'tri_count'>('name')
+  const [filterStatus, setFilterStatus] = useState<string>(filterHints?.status ?? 'all')
+  const [sortBy, setSortBy] = useState<'name' | 'type' | 'tri_count'>(filterHints?.sortBy ?? 'name')
   const [currentPage, setCurrentPage] = useState(1)
   const [dataSource, setDataSource] = useState(API_BASE)
 
@@ -72,6 +80,12 @@ export function AssetLibrary({ onAssetSelect }: AssetLibraryProps) {
   useEffect(() => {
     getDataSource().then(setDataSource)
   }, [])
+
+  useEffect(() => {
+    if (!filterHints) return
+    if (filterHints.status) setFilterStatus(filterHints.status)
+    if (filterHints.sortBy) setSortBy(filterHints.sortBy)
+  }, [filterHints])
 
   // 获取资产详情
   const handleAssetClick = async (assetId: string) => {
@@ -133,22 +147,23 @@ export function AssetLibrary({ onAssetSelect }: AssetLibraryProps) {
 
   return (
     <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-      {/* 头部 */}
-      <header className="h-14 flex items-center justify-between px-4 border-b border-border/50 shrink-0">
-        <div className="flex items-center gap-2">
-          <Package size={18} className="text-primary" />
-          <h2 className="text-sm font-medium">资产库</h2>
-          <span className="text-xs text-muted-foreground">{filteredAssets.length} 个资产</span>
-        </div>
-        <button
-          onClick={refresh}
-          disabled={loading}
-          className="text-muted-foreground hover:text-foreground transition-colors p-1.5 rounded hover:bg-muted"
-          title="刷新"
-        >
-          <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-        </button>
-      </header>
+      <PageHeader
+        actions={
+          <Tooltip content="刷新">
+            <button
+              onClick={refresh}
+              disabled={loading}
+              className="text-muted-foreground hover:text-foreground transition-colors p-1.5 rounded hover:bg-muted"
+            >
+              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+            </button>
+          </Tooltip>
+        }
+      >
+        <Package size={18} className="text-primary shrink-0" />
+        <h2 className="text-sm font-medium">资产库</h2>
+        <span className="text-xs text-muted-foreground">{filteredAssets.length} 个资产</span>
+      </PageHeader>
 
       {/* 搜索和筛选 */}
       <div className="flex items-center gap-2 px-4 py-2 border-b border-border/50 shrink-0">

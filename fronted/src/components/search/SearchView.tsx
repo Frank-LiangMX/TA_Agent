@@ -8,6 +8,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Search, Package, RefreshCw, X } from 'lucide-react'
 import { tagentClient } from '@/services/websocket'
 import { getDataSource } from '@/lib/cache'
+import { PageHeader } from '@/components/layout/PageHeader'
 
 interface SearchResult {
   asset_id: string
@@ -102,11 +103,10 @@ export function SearchView({ onAssetSelect }: SearchViewProps) {
 
   return (
     <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-      {/* 头部 */}
-      <header className="h-14 flex items-center px-4 border-b border-border/50 shrink-0">
-        <Search size={18} className="text-primary mr-2" />
+      <PageHeader>
+        <Search size={18} className="text-primary shrink-0" />
         <h2 className="text-sm font-medium">语义搜索</h2>
-      </header>
+      </PageHeader>
 
       {/* 搜索框 */}
       <div className="p-4 border-b border-border/50">

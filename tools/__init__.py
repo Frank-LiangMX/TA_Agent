@@ -11,4 +11,10 @@ tools 包 - TA Agent 所有工具的模块化组织
   report.py      - 报告生成
   registry.py    - 工具注册中心（Schema + 分发器）
 """
-from tools.registry import TOOLS, TOOL_FUNCTIONS, execute_tool
+from tools.registry import (
+    TOOLS,
+    TOOL_FUNCTIONS,
+    execute_tool,
+    get_tools_for_mode,
+    is_tool_allowed,
+)

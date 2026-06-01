@@ -10,6 +10,7 @@ import { API_BASE } from '@/lib/api'
 interface PermissionData {
   global_mode: string
   tools: Record<string, string>
+  agentMode?: string
 }
 
 const MODE_LABELS: Record<string, string> = {
@@ -18,18 +19,29 @@ const MODE_LABELS: Record<string, string> = {
   'allow-all': '自动（全部自动执行）',
 }
 
-export function PermissionSettings() {
+interface PermissionSettingsProps {
+  refreshKey?: number
+}
+
+export function PermissionSettings({ refreshKey = 0 }: PermissionSettingsProps) {
   const [data, setData] = useState<PermissionData | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
+    setLoading(true)
     fetch(`${API_BASE}/api/permissions`)
       .then((res) => res.json())
-      .then((json) => setData(json))
-      .catch(() => {})
+      .then((json) => {
+        setData({
+          global_mode: json.global_mode || json.mode || 'ask',
+          tools: json.tools || json.tool_permissions || {},
+          agentMode: json.agentMode,
+        })
+      })
+      .catch(() => setData(null))
       .finally(() => setLoading(false))
-  }, [])
+  }, [refreshKey])
 
   const handleGlobalModeChange = async (mode: string) => {
     if (!data) return
@@ -42,7 +54,15 @@ export function PermissionSettings() {
       })
       const json = await res.json()
       if (json.success) {
-        setData((prev) => prev ? { ...prev, global_mode: mode } : prev)
+        setData((prev) =>
+          prev
+            ? {
+                ...prev,
+                global_mode: json.global_mode || mode,
+                tools: json.tools || prev.tools,
+              }
+            : prev
+        )
       }
     } catch {} finally { setSaving(false) }
   }
@@ -59,7 +79,7 @@ export function PermissionSettings() {
       })
       const json = await res.json()
       if (json.success) {
-        setData((prev) => prev ? { ...prev, tools: newTools } : prev)
+        setData((prev) => (prev ? { ...prev, tools: json.tools || newTools } : prev))
       }
     } catch {} finally { setSaving(false) }
   }
@@ -77,10 +97,15 @@ export function PermissionSettings() {
   const safeTools = toolEntries.filter(([, m]) => m === 'safe')
   const askTools = toolEntries.filter(([, m]) => m === 'ask')
   const allowTools = toolEntries.filter(([, m]) => m === 'allow-all')
+  const isGeneral = data?.agentMode === 'general'
 
   return (
     <div className="space-y-6">
-      {/* 全局权限模式 */}
+      <p className="text-xs text-muted-foreground">
+        当前工作台：<span className="font-medium text-foreground">{isGeneral ? '通用模式' : 'TA 模式'}</span>
+        ，仅显示该模式下可用的 {toolEntries.length} 个工具
+      </p>
+
       <SettingsSection title="全局权限模式" description="控制 Agent 使用工具时的默认权限策略">
         <SettingsCard>
           <SettingsSegmentedControl
@@ -98,8 +123,7 @@ export function PermissionSettings() {
         </SettingsCard>
       </SettingsSection>
 
-      {/* 工具级权限 */}
-      {toolEntries.length > 0 && (
+      {toolEntries.length > 0 ? (
         <SettingsSection title="工具级权限" description="为每个工具单独设置权限（覆盖全局设置）">
           {safeTools.length > 0 && (
             <div className="mb-4">
@@ -164,6 +188,8 @@ export function PermissionSettings() {
             </div>
           )}
         </SettingsSection>
+      ) : (
+        <p className="text-sm text-muted-foreground">当前模式下暂无已配置的工具权限项。</p>
       )}
     </div>
   )

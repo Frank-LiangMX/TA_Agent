@@ -17,17 +17,18 @@ import { ProjectSettings } from './ProjectSettings'
 import { ModelSettings } from './ModelSettings'
 import { AgentSettings } from './AgentSettings'
 import { ToolSettings } from './ToolSettings'
+import { MemorySettings } from './MemorySettings'
+import { PermissionSettings } from './PermissionSettings'
 import { PromptSettings } from './PromptSettings'
 import { ConventionSettings } from './ConventionSettings'
-import { MemorySettings } from './MemorySettings'
 import { AppearanceSettings } from './AppearanceSettings'
 import { ShortcutSettings } from './ShortcutSettings'
-import { PermissionSettings } from './PermissionSettings'
 import { UsageSettings } from './UsageSettings'
 import { HelpGuide } from './HelpGuide'
 import { McpSettings } from './McpSettings'
 import { ModeSettings } from './ModeSettings'
 import { WeChatSettings } from './WeChatSettings'
+import { PageHeader } from '@/components/layout/PageHeader'
 
 type TabId = string
 
@@ -98,57 +99,73 @@ interface SettingsViewProps {
 
 export function SettingsView({ onBack, onModeChange }: SettingsViewProps) {
   const [activeTab, setActiveTab] = useState<string>('mode')
+  const [settingsRevision, setSettingsRevision] = useState(0)
   const ActiveComponent = TAB_COMPONENTS[activeTab]
 
+  const handleAgentModeChange = () => {
+    onModeChange?.()
+    setSettingsRevision((k) => k + 1)
+  }
+
   return (
-    <div className="flex h-full w-full gap-2">
+    <div className="flex h-full min-h-0 w-full gap-2">
       {/* 左侧卡片：导航 + 返回 */}
-      <div className="w-[256px] flex-shrink-0 rounded-2xl shadow-xl border border-black/5 bg-background flex flex-col overflow-hidden">
-        {/* 导航列表 */}
-        <div className="flex-1 overflow-y-auto scrollbar-thin pt-3 px-3">
-          {NAV_GROUPS.map((group, groupIndex) => (
-            <div key={group.label} className={groupIndex > 0 ? 'mt-3' : ''}>
-              <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground/70 uppercase tracking-wider">
-                {group.label}
+      <div className="flex w-[256px] shrink-0 flex-col overflow-hidden rounded-2xl border border-black/5 bg-background shadow-xl">
+          <div className="flex-1 overflow-y-auto scrollbar-thin px-3 pt-3">
+            {NAV_GROUPS.map((group, groupIndex) => (
+              <div key={group.label} className={groupIndex > 0 ? 'mt-3' : ''}>
+                <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground/70 uppercase tracking-wider">
+                  {group.label}
+                </div>
+                <div className="mt-1 flex flex-col gap-0.5">
+                  {group.tabs.map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveTab(tab.id)}
+                      className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${
+                        activeTab === tab.id
+                          ? 'bg-foreground/[0.08] font-medium text-foreground shadow-[0_1px_2px_0_rgba(0,0,0,0.05)]'
+                          : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                      }`}
+                    >
+                      {tab.icon}
+                      <span className="truncate">{tab.label}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div className="flex flex-col gap-0.5 mt-1">
-                {group.tabs.map((tab) => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
-                    className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors ${
-                      activeTab === tab.id
-                        ? 'bg-foreground/[0.08] text-foreground font-medium shadow-[0_1px_2px_0_rgba(0,0,0,0.05)]'
-                        : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-                    }`}
-                  >
-                    {tab.icon}
-                    <span className="truncate">{tab.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-        {/* 返回按钮 */}
-        <div className="p-2 border-t border-border/50">
-          <button
-            onClick={onBack}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-          >
-            <Settings size={18} className="rotate-90 transition-transform duration-300" />
-            <span>返回</span>
-          </button>
-        </div>
+            ))}
+          </div>
+          <div className="border-t border-border/50 p-2">
+            <button
+              onClick={onBack}
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              <Settings size={18} className="rotate-90 transition-transform duration-300" />
+              <span>返回</span>
+            </button>
+          </div>
       </div>
 
-      {/* 右侧卡片：内容 */}
-      <div className="flex-1 min-w-0 rounded-2xl shadow-xl border border-black/5 bg-content-area overflow-y-auto scrollbar-thin px-8 py-6">
-        {activeTab === 'mode' ? (
-          <ModeSettings onModeChange={onModeChange} />
-        ) : (
-          <ActiveComponent />
-        )}
+      {/* 右侧卡片：顶栏 + 内容 */}
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-black/5 bg-content-area shadow-xl">
+        <PageHeader>
+          <Settings size={16} className="text-primary shrink-0" />
+          <h2 className="text-sm font-medium">设置</h2>
+        </PageHeader>
+        <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin px-8 py-6">
+          {activeTab === 'mode' ? (
+            <ModeSettings onModeChange={handleAgentModeChange} />
+          ) : activeTab === 'tools' ? (
+            <ToolSettings key={settingsRevision} refreshKey={settingsRevision} />
+          ) : activeTab === 'memory' ? (
+            <MemorySettings key={settingsRevision} refreshKey={settingsRevision} />
+          ) : activeTab === 'permissions' ? (
+            <PermissionSettings key={settingsRevision} refreshKey={settingsRevision} />
+          ) : (
+            <ActiveComponent />
+          )}
+        </div>
       </div>
     </div>
   )

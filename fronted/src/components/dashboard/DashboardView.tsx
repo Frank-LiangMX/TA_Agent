@@ -1,18 +1,31 @@
 /**
- * 项目总览仪表盘
- *
- * 多维度汇总：统计卡片 + 审核/分类/类型/风格分布 + 面数统计 + 系统状态 + 最近分析
+ * 分析页 — 可行动总览 + 分段 Tab + 合并分布区
  */
 
-import React, { useMemo, useState } from 'react'
+import React, { useMemo, useState, useEffect } from 'react'
+import { PageHeader } from '@/components/layout/PageHeader'
+import type { ViewType } from '@/components/layout/Sidebar'
 import {
   BarChart3, RefreshCw, Package, CheckCircle2, Clock, XCircle,
-  Layers, MessageSquare, Brain, HardDrive, Triangle, Activity,
-  Palette, Shapes, Download,
+  Layers, FileCheck, Triangle, Activity,
+  Palette, Shapes, Download, ChevronRight, GitBranch, AlertTriangle,
+  LayoutDashboard, ChartPie,
 } from 'lucide-react'
-import { useStats, useReviews, useSessionStats, useMemoryStats } from '@/lib/cache'
+import { useStats, useReviews, useSessionStats, useMemoryStats, useAssets, getDataSource } from '@/lib/cache'
 
-// 状态中文映射
+export interface DashboardNavigateOptions {
+  reviewTab?: 'high' | 'low'
+  assetStatus?: string
+  assetSortBy?: 'name' | 'type' | 'tri_count'
+}
+
+interface DashboardViewProps {
+  onNavigate?: (view: ViewType, options?: DashboardNavigateOptions) => void
+  onAssetSelect?: (asset: Record<string, unknown>) => void
+}
+
+type AnalysisTab = 'overview' | 'distribution' | 'quality'
+
 const statusLabels: Record<string, string> = {
   pending: '待审核',
   approved: '已通过',
@@ -29,7 +42,6 @@ const statusColors: Record<string, string> = {
   imported: 'bg-primary',
 }
 
-// 类型中文映射
 const typeLabels: Record<string, string> = {
   static_mesh: '静态网格',
   skeletal_mesh: '骨骼网格',
@@ -46,45 +58,116 @@ const typeColors: Record<string, string> = {
   material: 'bg-orange-500',
 }
 
-// 分类颜色
 const categoryColors = [
   'bg-blue-500', 'bg-purple-500', 'bg-green-500', 'bg-orange-500',
   'bg-cyan-500', 'bg-pink-500', 'bg-amber-500', 'bg-indigo-500',
 ]
 
-// 风格颜色（循环使用）
 const styleColorList = [
   'bg-indigo-500', 'bg-violet-500', 'bg-teal-500', 'bg-rose-500',
   'bg-amber-500', 'bg-cyan-500', 'bg-lime-500', 'bg-fuchsia-500',
 ]
 
-/** 格式化大数字 */
+const STAGE_ORDER = ['scan', 'analyze', 'review', 'intake']
+const STAGE_LABELS: Record<string, string> = {
+  scan: '扫描', analyze: '分析', review: '审核', intake: '入库',
+}
+
+const HIGH_POLY_THRESHOLD = 50_000
+const RECENT_PREVIEW = 5
+
+const ANALYSIS_TABS: { id: AnalysisTab; label: string; icon: React.ReactNode }[] = [
+  { id: 'overview', label: '概览', icon: <LayoutDashboard size={15} /> },
+  { id: 'distribution', label: '分布', icon: <ChartPie size={15} /> },
+  { id: 'quality', label: '质量', icon: <Activity size={15} /> },
+]
+
 function fmtNum(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
   return String(n)
 }
 
-export function DashboardView() {
+function usePrefersReducedMotion() {
+  const [reduced, setReduced] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
+    setReduced(mq.matches)
+    const handler = () => setReduced(mq.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
+  return reduced
+}
+
+export function DashboardView({ onNavigate, onAssetSelect }: DashboardViewProps) {
   const { stats, loading, refresh } = useStats()
   const { data: reviewData } = useReviews()
   const { stats: sessionStats } = useSessionStats()
   const { stats: memoryStats } = useMemoryStats()
+  const { assets } = useAssets()
   const [exporting, setExporting] = useState(false)
+  const [activeTab, setActiveTab] = useState<AnalysisTab>('overview')
+  const [pipelineHint, setPipelineHint] = useState<string | null>(null)
+  const reducedMotion = usePrefersReducedMotion()
 
-  // 导出分析报告
+  const animDelay = (ms: number) => (reducedMotion ? undefined : { animationDelay: `${ms}ms` })
+
+  useEffect(() => {
+    let cancelled = false
+    const loadPipeline = async () => {
+      try {
+        const dataSource = await getDataSource()
+        const res = await fetch(`${dataSource}/api/pipeline/runs?limit=100`)
+        const data = await res.json()
+        const runs: { sessionId: string; stageId: string; startedAt: string }[] = data.runs || []
+        if (cancelled || runs.length === 0) {
+          setPipelineHint(null)
+          return
+        }
+        const groups = new Map<string, typeof runs>()
+        for (const run of runs) {
+          const list = groups.get(run.sessionId) || []
+          list.push(run)
+          groups.set(run.sessionId, list)
+        }
+        let latest: { sessionId: string; runs: typeof runs; lastActive: number } | null = null
+        for (const [sessionId, sessionRuns] of groups) {
+          const lastActive = Math.max(...sessionRuns.map((r) => new Date(r.startedAt).getTime()))
+          if (!latest || lastActive > latest.lastActive) {
+            latest = { sessionId, runs: sessionRuns, lastActive }
+          }
+        }
+        if (!latest) return
+        const done = STAGE_ORDER.filter((id) => latest!.runs.some((r) => r.stageId === id)).length
+        const next = STAGE_ORDER.find((id) => !latest!.runs.some((r) => r.stageId === id))
+        setPipelineHint(
+          next
+            ? `当前会话 · ${done}/${STAGE_ORDER.length} 阶段 · 下一步 ${STAGE_LABELS[next] || next}`
+            : `当前会话 · 四阶段已完成`,
+        )
+      } catch {
+        if (!cancelled) setPipelineHint(null)
+      }
+    }
+    loadPipeline()
+    return () => { cancelled = true }
+  }, [stats])
+
+  const highPolyCount = useMemo(
+    () => assets.filter((a) => (a.tri_count as number) > HIGH_POLY_THRESHOLD).length,
+    [assets],
+  )
+
   const handleExport = async () => {
     if (!stats) return
     setExporting(true)
     try {
       const now = new Date().toLocaleString('zh-CN')
       const lines: string[] = []
-
       lines.push(`# TAgent 资产分析报告`)
       lines.push(`> 生成时间：${now}`)
       lines.push('')
-
-      // 概览
       lines.push(`## 概览`)
       lines.push(`| 指标 | 数值 |`)
       lines.push(`|------|------|`)
@@ -95,8 +178,6 @@ export function DashboardView() {
         })
       }
       lines.push('')
-
-      // 类型分布
       if (stats.by_type && Object.keys(stats.by_type).length > 0) {
         lines.push(`## 资产类型分布`)
         lines.push(`| 类型 | 数量 |`)
@@ -106,19 +187,6 @@ export function DashboardView() {
         })
         lines.push('')
       }
-
-      // 分类分布
-      if (stats.by_category && Object.keys(stats.by_category).length > 0) {
-        lines.push(`## 分类分布`)
-        lines.push(`| 分类 | 数量 |`)
-        lines.push(`|------|------|`)
-        Object.entries(stats.by_category).sort((a, b) => (b[1] as number) - (a[1] as number)).forEach(([cat, c]) => {
-          lines.push(`| ${cat} | ${c} |`)
-        })
-        lines.push('')
-      }
-
-      // 面数统计
       if (stats.mesh && stats.mesh.count > 0) {
         lines.push(`## 面数统计`)
         lines.push(`| 指标 | 数值 |`)
@@ -127,43 +195,10 @@ export function DashboardView() {
         lines.push(`| 总面数 | ${fmtNum(stats.mesh.total_tris)} |`)
         lines.push(`| 平均面数 | ${fmtNum(stats.mesh.avg_tris)} |`)
         lines.push(`| 最大面数 | ${fmtNum(stats.mesh.max_tris)} |`)
-        lines.push(`| 最小面数 | ${fmtNum(stats.mesh.min_tris)} |`)
         lines.push('')
       }
-
-      // 待审核
-      if (reviewData && reviewData.total_pending > 0) {
-        lines.push(`## 待审核资产`)
-        lines.push(`- 高置信度：${reviewData.high_confidence_count} 个`)
-        lines.push(`- 低置信度：${reviewData.low_confidence_count} 个`)
-        lines.push('')
-
-        if (reviewData.low_confidence?.length > 0) {
-          lines.push(`### 低置信度资产详情`)
-          lines.push(`| 资产名 | 类型 | 置信度 |`)
-          lines.push(`|--------|------|--------|`)
-          reviewData.low_confidence.forEach((a: any) => {
-            lines.push(`| ${a.asset_name} | ${a.review_type || a.asset_type} | ${(a.avg_confidence * 100).toFixed(0)}% |`)
-          })
-          lines.push('')
-        }
-      }
-
-      // 记忆系统
-      if (memoryStats && !memoryStats.error) {
-        lines.push(`## 记忆系统`)
-        lines.push(`| 指标 | 数值 |`)
-        lines.push(`|------|------|`)
-        lines.push(`| 项目画像 | ${memoryStats.profile_chars || 0} 字符 |`)
-        lines.push(`| 推断规则 | ${memoryStats.rule_count || 0} 条 |`)
-        lines.push(`| 修正记录 | ${memoryStats.correction_count || 0} 条 |`)
-        lines.push('')
-      }
-
       lines.push('---')
       lines.push('*由 TAgent 自动生成*')
-
-      // 下载
       const blob = new Blob([lines.join('\n')], { type: 'text/markdown;charset=utf-8' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -176,7 +211,16 @@ export function DashboardView() {
     }
   }
 
-  // 统计卡片
+  const openAsset = async (assetId: string) => {
+    if (!onAssetSelect) return
+    try {
+      const dataSource = await getDataSource()
+      const res = await fetch(`${dataSource}/api/assets/${assetId}`)
+      const data = await res.json()
+      if (!data.error) onAssetSelect(data)
+    } catch { /* ignore */ }
+  }
+
   const cards = useMemo(() => {
     if (!stats) return []
     const total = stats.total || 0
@@ -184,14 +228,25 @@ export function DashboardView() {
     const approved = stats.by_status?.approved || 0
     const rejected = stats.by_status?.rejected || 0
     return [
-      { label: '资产总数', value: total, icon: <Package size={20} />, color: 'text-primary', bg: 'bg-primary/10' },
-      { label: '待审核', value: pending, icon: <Clock size={20} />, color: 'text-warning', bg: 'bg-warning/10' },
-      { label: '已通过', value: approved, icon: <CheckCircle2 size={20} />, color: 'text-success', bg: 'bg-success/10' },
-      { label: '已拒绝', value: rejected, icon: <XCircle size={20} />, color: 'text-destructive', bg: 'bg-destructive/10' },
+      {
+        label: '资产总数', value: total, icon: Package, color: 'text-primary', bg: 'bg-primary/10',
+        onClick: () => onNavigate?.('assets'),
+      },
+      {
+        label: '待审核', value: pending, icon: Clock, color: 'text-warning', bg: 'bg-warning/10',
+        onClick: () => onNavigate?.('assets', { assetStatus: 'pending' }),
+      },
+      {
+        label: '已通过', value: approved, icon: CheckCircle2, color: 'text-success', bg: 'bg-success/10',
+        onClick: () => onNavigate?.('assets', { assetStatus: 'approved' }),
+      },
+      {
+        label: '已拒绝', value: rejected, icon: XCircle, color: 'text-destructive', bg: 'bg-destructive/10',
+        onClick: () => onNavigate?.('assets', { assetStatus: 'rejected' }),
+      },
     ]
-  }, [stats])
+  }, [stats, onNavigate])
 
-  // 条形图数据
   const statusEntries = useMemo(() => {
     if (!stats?.by_status) return []
     return Object.entries(stats.by_status).filter(([, c]) => (c as number) > 0).sort((a, b) => (b[1] as number) - (a[1] as number))
@@ -212,179 +267,386 @@ export function DashboardView() {
     return Object.entries(stats.by_style).filter(([, c]) => (c as number) > 0).sort((a, b) => (b[1] as number) - (a[1] as number))
   }, [stats])
 
-  const maxOf = (entries: [string, unknown][]) => entries.length > 0 ? Math.max(...entries.map(([, v]) => v as number)) : 1
+  const maxOf = (entries: [string, unknown][]) =>
+    entries.length > 0 ? Math.max(...entries.map(([, v]) => v as number)) : 1
+
+  const lowReviewCount = reviewData?.low_confidence?.length ?? 0
+  const highReviewCount = reviewData?.high_confidence?.length ?? 0
+  const pendingReviewTotal = reviewData?.total_pending ?? lowReviewCount + highReviewCount
+
+  const recentItems = (stats?.recent || []).slice(0, RECENT_PREVIEW)
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-      {/* 头部 */}
-      <header className="h-14 flex items-center justify-between px-4 border-b border-border/50 shrink-0">
-        <div className="flex items-center gap-2">
-          <BarChart3 size={18} className="text-primary" />
-          <h2 className="text-sm font-medium">项目总览</h2>
-          {stats && <span className="text-xs text-muted-foreground">{stats.total} 个资产</span>}
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleExport}
-            disabled={!stats || exporting}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1.5 rounded hover:bg-muted disabled:opacity-50"
-          >
-            <Download size={14} />
-            {exporting ? '导出中...' : '导出报告'}
-          </button>
-          <button
-            onClick={() => refresh()}
-            disabled={loading}
-            className="text-muted-foreground hover:text-foreground transition-colors p-1.5 rounded hover:bg-muted"
-          >
-            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-          </button>
-        </div>
-      </header>
+    <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
+      <PageHeader>
+        <BarChart3 size={18} className="text-primary shrink-0" />
+        <h2 className="truncate text-sm font-medium">分析</h2>
+      </PageHeader>
 
-      {/* 内容 */}
-      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin p-4 space-y-4">
+      <nav
+        className="shrink-0 bg-muted/30"
+        aria-label="分析视图"
+      >
+        <div className="flex items-stretch justify-between gap-3 pl-1 pr-3 sm:pr-4">
+          <div className="flex min-w-0 flex-1 items-stretch gap-0.5 overflow-x-auto scrollbar-thin">
+            {ANALYSIS_TABS.map((tab) => (
+              <AnalysisTabButton
+                key={tab.id}
+                active={activeTab === tab.id}
+                icon={tab.icon}
+                label={tab.label}
+                onClick={() => setActiveTab(tab.id)}
+              />
+            ))}
+          </div>
+          <div className="flex shrink-0 items-center gap-0.5 self-center py-1">
+            {stats && (
+              <span className="mr-1.5 hidden whitespace-nowrap text-[11px] text-muted-foreground md:inline">
+                {stats.total} 资产
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={handleExport}
+              disabled={!stats || exporting}
+              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-background/80 hover:text-foreground disabled:opacity-50"
+              title={exporting ? '导出中…' : '导出报告'}
+            >
+              <Download size={15} />
+            </button>
+            <button
+              type="button"
+              onClick={() => refresh()}
+              disabled={loading}
+              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-background/80 hover:text-foreground disabled:opacity-50"
+              title="刷新"
+            >
+              <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+            </button>
+          </div>
+        </div>
+      </nav>
+
+      <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin p-4">
         {loading && !stats && (
-          <div className="flex items-center justify-center h-full text-muted-foreground">
-            <RefreshCw size={24} className="animate-spin mr-2" />
+          <div className="flex h-full items-center justify-center text-muted-foreground">
+            <RefreshCw size={24} className="mr-2 animate-spin" />
             <span className="text-sm">加载中...</span>
           </div>
         )}
 
-        {stats && (
-          <>
-            {/* 统计卡片 */}
-            <div className="grid grid-cols-4 gap-3">
-              {cards.map((card, i) => (
-                <div key={card.label} className="rounded-lg shadow-sm p-4 animate-fade-in-up" style={{ animationDelay: `${i * 80}ms` }}>
-                  <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-lg ${card.bg}`}>
-                      <span className={card.color}>{card.icon}</span>
+        {stats && activeTab === 'overview' && (
+          <div key="overview" className="space-y-5 animate-tab-fade">
+            <p className="text-xs text-muted-foreground/70">资产与审核概况</p>
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              {cards.map((card, i) => {
+                const Icon = card.icon
+                return (
+                  <button
+                    key={card.label}
+                    type="button"
+                    onClick={card.onClick}
+                    disabled={!onNavigate}
+                    className={`rounded-lg p-4 text-left shadow-sm transition-colors hover:bg-foreground/[0.03] disabled:cursor-default ${!reducedMotion ? 'animate-fade-in-up' : ''}`}
+                    style={animDelay(i * 60)}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`rounded-lg p-2 ${card.bg}`}>
+                        <Icon size={20} className={card.color} />
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">{card.label}</p>
+                        <p className="text-xl font-semibold">{card.value}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">{card.label}</p>
-                      <p className="text-xl font-semibold">{card.value}</p>
-                    </div>
+                  </button>
+                )
+              })}
+            </div>
+
+            <ActionStrip
+              reducedMotion={reducedMotion}
+              pendingReviewTotal={pendingReviewTotal}
+              lowReviewCount={lowReviewCount}
+              highReviewCount={highReviewCount}
+              highPolyCount={highPolyCount}
+              pipelineHint={pipelineHint}
+              onNavigate={onNavigate}
+            />
+
+            {recentItems.length > 0 && (
+              <section>
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Clock size={14} className="text-muted-foreground" />
+                    <h3 className="text-xs font-medium">最近分析</h3>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => onNavigate?.('assets')}
+                    className="inline-flex items-center gap-0.5 text-[11px] text-primary hover:text-primary/80"
+                  >
+                    资产库 <ChevronRight size={12} />
+                  </button>
                 </div>
-              ))}
-            </div>
-
-            {/* 第一行条形图：审核状态 + 资产类型 */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="animate-fade-in-up" style={{ animationDelay: '200ms' }}>
-                <ChartCard title="审核状态分布" icon={<Layers size={14} />}>
-                  {statusEntries.length > 0 ? statusEntries.map(([s, c], i) => (
-                    <BarRow key={s} label={statusLabels[s] || s} count={c as number} max={maxOf(statusEntries)} color={statusColors[s] || 'bg-muted'} delay={i * 50} />
-                  )) : <EmptyText />}
-                </ChartCard>
-              </div>
-              <div className="animate-fade-in-up" style={{ animationDelay: '280ms' }}>
-                <ChartCard title="资产类型分布" icon={<Shapes size={14} />}>
-                  {typeEntries.length > 0 ? typeEntries.map(([t, c], i) => (
-                    <BarRow key={t} label={typeLabels[t] || t} count={c as number} max={maxOf(typeEntries)} color={typeColors[t] || 'bg-muted'} delay={i * 50} />
-                  )) : <EmptyText />}
-                </ChartCard>
-              </div>
-            </div>
-
-            {/* 第二行条形图：分类 + 风格 */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="animate-fade-in-up" style={{ animationDelay: '360ms' }}>
-                <ChartCard title="资产分类分布" icon={<Package size={14} />}>
-                  {categoryEntries.length > 0 ? categoryEntries.map(([cat, c], i) => (
-                    <BarRow key={cat} label={cat} count={c as number} max={maxOf(categoryEntries)} color={categoryColors[i % categoryColors.length]} delay={i * 50} />
-                  )) : <EmptyText />}
-                </ChartCard>
-              </div>
-              <div className="animate-fade-in-up" style={{ animationDelay: '440ms' }}>
-                <ChartCard title="风格分布" icon={<Palette size={14} />}>
-                  {styleEntries.length > 0 ? styleEntries.map(([s, c], i) => (
-                    <BarRow key={s} label={s} count={c as number} max={maxOf(styleEntries)} color={styleColorList[i % styleColorList.length]} delay={i * 50} />
-                  )) : <EmptyText />}
-                </ChartCard>
-              </div>
-            </div>
-
-            {/* 第三行：面数统计 + 系统状态 */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="animate-fade-in-up" style={{ animationDelay: '520ms' }}>
-                <ChartCard title="面数统计" icon={<Triangle size={14} />}>
-                {stats.mesh && stats.mesh.count > 0 ? (
-                  <div className="space-y-2">
-                    <InfoRow label="含网格资产" value={`${stats.mesh.count} 个`} />
-                    <InfoRow label="总面数" value={fmtNum(stats.mesh.total_tris)} />
-                    <InfoRow label="平均面数" value={fmtNum(stats.mesh.avg_tris)} />
-                    <InfoRow label="最大面数" value={fmtNum(stats.mesh.max_tris)} highlight={stats.mesh.max_tris > 50000} />
-                    <InfoRow label="最小面数" value={fmtNum(stats.mesh.min_tris)} />
-                  </div>
-                ) : (
-                  <EmptyText />
-                )}
-              </ChartCard>
-              </div>
-
-              {/* 系统状态 */}
-              <div className="animate-fade-in-up" style={{ animationDelay: '600ms' }}>
-                <ChartCard title="系统状态" icon={<Activity size={14} />}>
-                <div className="space-y-2">
-                  {sessionStats ? (
-                    <>
-                      <InfoRow label="活跃会话" value={`${sessionStats.active_sessions} 个`} />
-                      <InfoRow label="已归档" value={`${sessionStats.archived_sessions} 个`} />
-                      <InfoRow label="总消息数" value={`${sessionStats.total_messages} 条`} />
-                    </>
-                  ) : (
-                    <InfoRow label="会话" value="加载中..." />
-                  )}
-                  {memoryStats && !memoryStats.error ? (
-                    <>
-                      <InfoRow label="推断规则" value={`${memoryStats.rule_count || 0} 条`} />
-                      <InfoRow label="修正记录" value={`${memoryStats.correction_count || 0} 条`} />
-                    </>
-                  ) : (
-                    <InfoRow label="记忆系统" value={memoryStats?.error || '未初始化'} />
-                  )}
-                </div>
-              </ChartCard>
-              </div>
-            </div>
-
-            {/* 最近分析 */}
-            {stats.recent && stats.recent.length > 0 && (
-              <div className="rounded-lg shadow-sm p-4 animate-fade-in-up" style={{ animationDelay: '680ms' }}>
-                <div className="flex items-center gap-1.5 mb-3">
-                  <Clock size={14} className="text-muted-foreground" />
-                  <h3 className="text-xs font-medium">最近分析</h3>
-                </div>
-                <div className="space-y-1.5">
-                  {stats.recent.map((item: Record<string, string>, i: number) => (
-                    <div key={i} className="flex items-center gap-2 text-xs">
-                      <span className="text-muted-foreground w-4 text-right">{i + 1}</span>
-                      <span className="font-medium truncate flex-1">{item.asset_name}</span>
-                      <span className="text-muted-foreground shrink-0">{typeLabels[item.asset_type] || item.asset_type || '-'}</span>
-                      <span className="text-muted-foreground shrink-0">{item.category || '-'}</span>
-                      <span className="text-muted-foreground/60 shrink-0 text-[11px]">
-                        {item.analyzed_at ? new Date(item.analyzed_at).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}
-                      </span>
-                    </div>
+                <ul className="space-y-0.5">
+                  {recentItems.map((item: Record<string, string>, i) => (
+                    <li key={item.asset_id || `${item.asset_name}-${i}`}>
+                      <button
+                        type="button"
+                        onClick={() => item.asset_id && openAsset(item.asset_id)}
+                        disabled={!item.asset_id || !onAssetSelect}
+                        className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-xs transition-colors hover:bg-foreground/[0.04] disabled:cursor-default disabled:opacity-80"
+                      >
+                        <span className="w-4 shrink-0 text-right text-muted-foreground">{i + 1}</span>
+                        <span className="min-w-0 flex-1 truncate font-medium">{item.asset_name}</span>
+                        <span className="shrink-0 text-muted-foreground">
+                          {typeLabels[item.asset_type] || item.asset_type || '-'}
+                        </span>
+                        <span className="hidden shrink-0 text-muted-foreground sm:inline">{item.category || '-'}</span>
+                        <span className="shrink-0 text-[11px] text-muted-foreground/60">
+                          {item.analyzed_at
+                            ? new Date(item.analyzed_at).toLocaleString('zh-CN', {
+                                month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+                              })
+                            : '-'}
+                        </span>
+                        {item.asset_id && onAssetSelect && (
+                          <ChevronRight size={14} className="shrink-0 text-muted-foreground/40" />
+                        )}
+                      </button>
+                    </li>
                   ))}
-                </div>
-              </div>
+                </ul>
+              </section>
             )}
-          </>
+          </div>
+        )}
+
+        {stats && activeTab === 'distribution' && (
+          <div key="distribution" className="grid grid-cols-1 gap-4 animate-tab-fade lg:grid-cols-2">
+            <ChartSection title="审核状态分布" icon={<Layers size={14} />}>
+              {statusEntries.length > 0 ? statusEntries.map(([s, c], i) => (
+                <BarRow
+                  key={s}
+                  label={statusLabels[s] || s}
+                  count={c as number}
+                  max={maxOf(statusEntries)}
+                  color={statusColors[s] || 'bg-muted'}
+                  delay={reducedMotion ? 0 : i * 40}
+                  onClick={() => onNavigate?.('assets', { assetStatus: s })}
+                />
+              )) : <EmptyText />}
+            </ChartSection>
+            <ChartSection title="资产类型分布" icon={<Shapes size={14} />}>
+              {typeEntries.length > 0 ? typeEntries.map(([t, c], i) => (
+                <BarRow
+                  key={t}
+                  label={typeLabels[t] || t}
+                  count={c as number}
+                  max={maxOf(typeEntries)}
+                  color={typeColors[t] || 'bg-muted'}
+                  delay={reducedMotion ? 0 : i * 40}
+                />
+              )) : <EmptyText />}
+            </ChartSection>
+            <ChartSection title="资产分类分布" icon={<Package size={14} />}>
+              {categoryEntries.length > 0 ? categoryEntries.map(([cat, c], i) => (
+                <BarRow
+                  key={cat}
+                  label={cat}
+                  count={c as number}
+                  max={maxOf(categoryEntries)}
+                  color={categoryColors[i % categoryColors.length]}
+                  delay={reducedMotion ? 0 : i * 40}
+                />
+              )) : <EmptyText />}
+            </ChartSection>
+            <ChartSection title="风格分布" icon={<Palette size={14} />}>
+              {styleEntries.length > 0 ? styleEntries.map(([s, c], i) => (
+                <BarRow
+                  key={s}
+                  label={s}
+                  count={c as number}
+                  max={maxOf(styleEntries)}
+                  color={styleColorList[i % styleColorList.length]}
+                  delay={reducedMotion ? 0 : i * 40}
+                />
+              )) : <EmptyText />}
+            </ChartSection>
+          </div>
+        )}
+
+        {stats && activeTab === 'quality' && (
+          <div key="quality" className="grid grid-cols-1 gap-4 animate-tab-fade lg:grid-cols-2">
+            <ChartSection title="面数统计" icon={<Triangle size={14} />}>
+              {stats.mesh && stats.mesh.count > 0 ? (
+                <div className="space-y-2">
+                  <InfoRow label="含网格资产" value={`${stats.mesh.count} 个`} />
+                  <InfoRow label="总面数" value={fmtNum(stats.mesh.total_tris)} />
+                  <InfoRow label="平均面数" value={fmtNum(stats.mesh.avg_tris)} />
+                  <InfoRow
+                    label="最大面数"
+                    value={fmtNum(stats.mesh.max_tris)}
+                    highlight={stats.mesh.max_tris > HIGH_POLY_THRESHOLD}
+                  />
+                  <InfoRow label="最小面数" value={fmtNum(stats.mesh.min_tris)} />
+                  {highPolyCount > 0 && onNavigate && (
+                    <button
+                      type="button"
+                      onClick={() => onNavigate('assets', { assetSortBy: 'tri_count' })}
+                      className="mt-2 inline-flex items-center gap-1 text-xs text-primary hover:text-primary/80"
+                    >
+                      查看 {highPolyCount} 个高面数资产
+                      <ChevronRight size={12} />
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <EmptyText />
+              )}
+            </ChartSection>
+            <ChartSection title="系统状态" icon={<Activity size={14} />}>
+              <div className="space-y-2">
+                {sessionStats ? (
+                  <>
+                    <InfoRow label="活跃会话" value={`${sessionStats.active_sessions} 个`} />
+                    <InfoRow label="已归档" value={`${sessionStats.archived_sessions} 个`} />
+                    <InfoRow label="总消息数" value={`${sessionStats.total_messages} 条`} />
+                  </>
+                ) : (
+                  <InfoRow label="会话" value="加载中..." />
+                )}
+                {memoryStats && !memoryStats.error ? (
+                  <>
+                    <InfoRow label="推断规则" value={`${memoryStats.rule_count || 0} 条`} />
+                    <InfoRow label="修正记录" value={`${memoryStats.correction_count || 0} 条`} />
+                  </>
+                ) : (
+                  <InfoRow label="记忆系统" value={memoryStats?.error || '未初始化'} />
+                )}
+              </div>
+            </ChartSection>
+          </div>
         )}
       </div>
     </div>
   )
 }
 
-// ===== 子组件 =====
-
-function ChartCard({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
+function AnalysisTabButton({
+  active, icon, label, onClick,
+}: {
+  active: boolean
+  icon: React.ReactNode
+  label: string
+  onClick: () => void
+}) {
   return (
-    <div className="rounded-lg shadow-sm p-4">
-      <div className="flex items-center gap-1.5 mb-3">
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={`relative flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2.5 text-xs transition-colors sm:px-4 ${
+        active
+          ? 'border-primary font-semibold text-foreground'
+          : 'border-transparent font-medium text-muted-foreground hover:border-border/70 hover:text-foreground'
+      }`}
+    >
+      <span className={active ? 'text-primary' : 'text-muted-foreground/70'}>{icon}</span>
+      {label}
+    </button>
+  )
+}
+
+function ActionStrip({
+  pendingReviewTotal,
+  lowReviewCount,
+  highReviewCount,
+  highPolyCount,
+  pipelineHint,
+  reducedMotion,
+  onNavigate,
+}: {
+  pendingReviewTotal: number
+  lowReviewCount: number
+  highReviewCount: number
+  highPolyCount: number
+  pipelineHint: string | null
+  reducedMotion: boolean
+  onNavigate?: (view: ViewType, options?: DashboardNavigateOptions) => void
+}) {
+  if (!onNavigate) return null
+
+  const items = [
+    {
+      key: 'review',
+      icon: <FileCheck size={16} className="text-amber-400" />,
+      title: '审核队列',
+      desc:
+        pendingReviewTotal > 0
+          ? `共 ${pendingReviewTotal} 项 · 低 ${lowReviewCount} / 高 ${highReviewCount}`
+          : '暂无待审核',
+      muted: pendingReviewTotal === 0,
+      onClick: () =>
+        onNavigate('review', { reviewTab: lowReviewCount > 0 ? 'low' : 'high' }),
+    },
+    {
+      key: 'poly',
+      icon: <AlertTriangle size={16} className="text-amber-400" />,
+      title: '高面数资产',
+      desc: highPolyCount > 0 ? `${highPolyCount} 个超过 ${fmtNum(HIGH_POLY_THRESHOLD)} 面` : '暂无告警',
+      muted: highPolyCount === 0,
+      onClick: () => onNavigate('assets', { assetSortBy: 'tri_count' }),
+    },
+    {
+      key: 'pipeline',
+      icon: <GitBranch size={16} className="text-primary" />,
+      title: '资产流水线',
+      desc: pipelineHint || '查看各阶段进度',
+      muted: false,
+      onClick: () => onNavigate('workflow'),
+    },
+  ]
+
+  return (
+    <div
+      className={`grid grid-cols-1 gap-2 sm:grid-cols-3 ${!reducedMotion ? 'animate-fade-in-up' : ''}`}
+      style={reducedMotion ? undefined : { animationDelay: '120ms' }}
+    >
+      {items.map((item) => (
+        <button
+          key={item.key}
+          type="button"
+          onClick={item.onClick}
+          className={`flex items-start gap-3 rounded-xl bg-foreground/[0.03] px-3 py-3 text-left transition-colors hover:bg-foreground/[0.06] ${
+            item.muted ? 'opacity-70' : ''
+          }`}
+        >
+          <div className="mt-0.5 shrink-0">{item.icon}</div>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-medium text-foreground">{item.title}</p>
+            <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{item.desc}</p>
+          </div>
+          <ChevronRight size={14} className="mt-1 shrink-0 text-muted-foreground/50" />
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function ChartSection({
+  title, icon, children, className = '',
+}: {
+  title: string
+  icon: React.ReactNode
+  children: React.ReactNode
+  className?: string
+}) {
+  return (
+    <div className={`rounded-lg p-4 shadow-sm ${className}`.trim()}>
+      <div className="mb-3 flex items-center gap-1.5">
         <span className="text-muted-foreground">{icon}</span>
         <h3 className="text-xs font-medium">{title}</h3>
       </div>
@@ -393,15 +655,43 @@ function ChartCard({ title, icon, children }: { title: string; icon: React.React
   )
 }
 
-function BarRow({ label, count, max, color, delay = 0 }: { label: string; count: number; max: number; color: string; delay?: number }) {
+function BarRow({
+  label, count, max, color, delay = 0, onClick,
+}: {
+  label: string
+  count: number
+  max: number
+  color: string
+  delay?: number
+  onClick?: () => void
+}) {
   const percent = max > 0 ? Math.round((count / max) * 100) : 0
-  return (
-    <div className="flex items-center gap-2 animate-fade-in-up" style={{ animationDelay: `${delay}ms` }}>
-      <span className="text-xs text-muted-foreground w-16 shrink-0 truncate">{label}</span>
-      <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+  const inner = (
+    <>
+      <span className="w-16 shrink-0 truncate text-xs text-muted-foreground">{label}</span>
+      <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
         <div className={`h-full rounded-full transition-all duration-500 ${color}`} style={{ width: `${percent}%` }} />
       </div>
-      <span className="text-xs font-mono w-10 text-right">{count}</span>
+      <span className="w-10 text-right font-mono text-xs">{count}</span>
+    </>
+  )
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex w-full items-center gap-2 rounded-md py-0.5 transition-colors hover:bg-foreground/[0.04]"
+        style={{ animationDelay: `${delay}ms` }}
+      >
+        {inner}
+      </button>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-2 animate-fade-in-up" style={{ animationDelay: `${delay}ms` }}>
+      {inner}
     </div>
   )
 }
@@ -416,5 +706,5 @@ function InfoRow({ label, value, highlight }: { label: string; value: string; hi
 }
 
 function EmptyText() {
-  return <p className="text-xs text-muted-foreground py-2">暂无数据</p>
+  return <p className="py-2 text-xs text-muted-foreground">暂无数据</p>
 }

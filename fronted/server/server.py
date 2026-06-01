@@ -30,8 +30,9 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 # 导入 ta_agent 模块（不修改原文件）
-from config import get_llm_config, MEMORY_DIR, PIPELINE_RUNS_FILE
-from tools import TOOLS, TOOL_FUNCTIONS, execute_tool
+from config import get_llm_config, MEMORY_DIR, PIPELINE_RUNS_FILE, get_memory_namespace
+from tools import TOOLS, TOOL_FUNCTIONS, execute_tool, get_tools_for_mode
+from tools.workspace_context import set_workspace_path
 from conventions.context import get_conventions_context, set_conventions_context
 import session_manager
 
@@ -169,6 +170,26 @@ async def send_response(ws: WebSocket, request_id: str, result: dict):
     })
 
 
+def _extract_reasoning_delta(delta) -> str:
+    """从流式 delta 提取推理/思考文本（兼容 OpenAI、DeepSeek 等字段）。"""
+    if delta is None:
+        return ""
+    parts: list[str] = []
+    for attr in ("reasoning_content",):
+        val = getattr(delta, attr, None)
+        if isinstance(val, str) and val:
+            parts.append(val)
+    if not parts and hasattr(delta, "model_dump"):
+        try:
+            data = delta.model_dump(exclude_none=True)
+            val = data.get("reasoning_content")
+            if isinstance(val, str) and val:
+                parts.append(val)
+        except Exception:
+            pass
+    return "".join(parts)
+
+
 async def send_error(ws: WebSocket, request_id: str, error: str):
     """发送错误响应"""
     await ws.send_json({
@@ -225,17 +246,39 @@ async def run_agent(
     - stream_text: 流式文本增量
     - tool_start: 工具调用开始
     - tool_result: 工具调用结果
-    - agent_thinking: Agent 思考过程
+    - agent_thinking: Agent 思考过程（delta=true 为增量）
     - done: 完成
     - error: 错误
     """
     agent = get_agent_module()
     client, model = agent.create_client()
 
+    from config import get_agent_runtime_mode
+    current_agent_mode = get_agent_runtime_mode()
+
+    # 绑定会话工作区（通用模式文件工具依赖此路径）
+    session_meta = session_manager.get_session(
+        session.session_id, agent_mode=current_agent_mode
+    ) or {}
+    workspace_path = (session_meta.get("workspacePath") or "").strip()
+    workspace_name = (session_meta.get("workspaceName") or "").strip()
+    if not workspace_path and current_agent_mode == "general":
+        from config import DEFAULT_WORKSPACE_NAME, get_default_workspace_path
+
+        workspace_path = get_default_workspace_path()
+        workspace_name = workspace_name or DEFAULT_WORKSPACE_NAME
+    set_workspace_path(workspace_path or None)
+
     # 重置中断信号
     session.cancel_event.clear()
 
-    system_prompt = agent.build_system_prompt(session.workflow_mode)
+    system_prompt = agent.build_system_prompt(
+        session.workflow_mode,
+        agent_mode=current_agent_mode,
+        workspace_path=workspace_path or None,
+        workspace_name=workspace_name or None,
+    )
+    active_tools = get_tools_for_mode(current_agent_mode)
     messages = [{"role": "system", "content": system_prompt}]
     # 使用传入的 cutoff 或会话默认值
     cutoff = context_cutoff if context_cutoff is not None else session.context_cutoff
@@ -282,12 +325,13 @@ async def run_agent(
             })
             return
 
+        llm_start_time = None
         try:
             # 构建 LLM 请求参数
             llm_kwargs = {
                 "model": model,
                 "messages": messages,
-                "tools": TOOLS,
+                "tools": active_tools,
                 "tool_choice": "auto",
                 "temperature": 0.1,
                 "stream": True,
@@ -313,8 +357,19 @@ async def run_agent(
             _usage_stats["total_tokens_estimate"] += sum(len(str(m.get("content", ""))) for m in messages) * 2
 
             collected_content = ""
+            collected_reasoning = ""
             # 按 index 收集工具调用块
             tool_call_chunks: dict[int, dict] = {}
+
+            async def emit_thinking_delta(text: str):
+                if not text:
+                    return
+                await send_event(ws, "agent_thinking", {
+                    "sessionId": session.session_id,
+                    "text": text,
+                    "delta": True,
+                })
+                await asyncio.sleep(0)
 
             for chunk in stream:
                 # 检查中断
@@ -327,16 +382,19 @@ async def run_agent(
                 if not delta:
                     continue
 
-                # 文本内容 → 流式推送
+                reasoning_piece = _extract_reasoning_delta(delta)
+                if reasoning_piece:
+                    collected_reasoning += reasoning_piece
+                    await emit_thinking_delta(reasoning_piece)
+
                 if delta.content:
                     collected_content += delta.content
                     await send_event(ws, "stream_text", {
                         "sessionId": session.session_id,
                         "text": delta.content,
                     })
-                    await asyncio.sleep(0)  # 强制 flush，避免缓冲
+                    await asyncio.sleep(0)
 
-                # 工具调用 → 收集分块
                 if delta.tool_calls:
                     for tc_delta in delta.tool_calls:
                         idx = tc_delta.index
@@ -372,15 +430,21 @@ async def run_agent(
             # 流式结束，判断是否有工具调用
             if not tool_call_chunks:
                 # 没有工具调用 → 最终回答
-                final_answer = collected_content or "(LLM 返回了空回复)"
+                final_answer = (collected_content or "").strip()
+                thinking_for_done = collected_reasoning.strip() or None
+                if not final_answer and thinking_for_done:
+                    final_answer = thinking_for_done
+                    thinking_for_done = None
+                if not final_answer:
+                    final_answer = "(LLM 返回了空回复)"
                 session.history.append({"role": "user", "content": user_message})
                 session.history.append({"role": "assistant", "content": final_answer})
 
-                # 持久化助手回复
-                session_manager.append_message(session.session_id, {
-                    "role": "assistant",
-                    "content": final_answer,
-                })
+                # 持久化助手回复（思考单独字段，不写入正文）
+                persist_final: dict = {"role": "assistant", "content": final_answer}
+                if thinking_for_done:
+                    persist_final["thinking"] = thinking_for_done
+                session_manager.append_message(session.session_id, persist_final)
 
                 # 生成建议（根据最后调用的工具判断阶段）
                 suggestion = _generate_suggestion(last_tool_names)
@@ -388,6 +452,7 @@ async def run_agent(
                 await send_event(ws, "done", {
                     "sessionId": session.session_id,
                     "content": final_answer,
+                    "thinking": thinking_for_done,
                     "suggestion": suggestion,
                 })
                 return
@@ -424,24 +489,24 @@ async def run_agent(
                     continue
                 valid_tool_calls.append(tc)
 
+            thinking_for_persist = collected_reasoning.strip()
+            if collected_content:
+                thinking_for_persist = (
+                    f"{thinking_for_persist}\n\n{collected_content}".strip()
+                    if thinking_for_persist
+                    else collected_content.strip()
+                )
+
             if valid_tool_calls:
-                persist_msg = {"role": "assistant"}
-                if collected_content:
-                    persist_msg["content"] = collected_content
-                persist_msg["toolCalls"] = valid_tool_calls
+                persist_msg: dict = {"role": "assistant", "toolCalls": valid_tool_calls}
+                if thinking_for_persist:
+                    persist_msg["thinking"] = thinking_for_persist
                 session_manager.append_message(session.session_id, persist_msg)
             elif collected_content:
-                # 只有内容，没有有效的工具调用
                 session_manager.append_message(session.session_id, {
                     "role": "assistant",
                     "content": collected_content,
-                })
-
-            # 推送思考过程
-            if collected_content:
-                await send_event(ws, "agent_thinking", {
-                    "sessionId": session.session_id,
-                    "text": collected_content,
+                    **({"thinking": thinking_for_persist} if thinking_for_persist else {}),
                 })
 
             # 如果所有工具调用都被过滤掉，作为最终回答处理
@@ -451,6 +516,7 @@ async def run_agent(
                 await send_event(ws, "done", {
                     "sessionId": session.session_id,
                     "content": final_answer,
+                    "thinking": thinking_for_persist or None,
                     "suggestion": _generate_suggestion(last_tool_names),
                 })
                 return
@@ -499,8 +565,13 @@ async def run_agent(
                 # 执行工具（在线程池中运行，期间定期推送进度事件）
                 from progress_hook import get_progress_events, is_cancelled
 
+                from functools import partial
+
                 loop = asyncio.get_event_loop()
-                tool_task = loop.run_in_executor(None, execute_tool, func_name, func_args)
+                tool_task = loop.run_in_executor(
+                    None,
+                    partial(execute_tool, func_name, func_args, current_agent_mode),
+                )
 
                 # 轮询进度事件，直到工具执行完成或取消
                 while not tool_task.done():
@@ -572,6 +643,15 @@ async def run_agent(
                         conv_result = json.loads(result)
                         if conv_result.get("combined_context"):
                             set_conventions_context(conv_result["combined_context"])
+                            messages[0] = {
+                                "role": "system",
+                                "content": agent.build_system_prompt(
+                                    session.workflow_mode,
+                                    agent_mode=current_agent_mode,
+                                    workspace_path=workspace_path or None,
+                                    workspace_name=workspace_name or None,
+                                ),
+                            }
                     except (json.JSONDecodeError, KeyError):
                         pass
 
@@ -595,7 +675,7 @@ async def run_agent(
 
         except Exception as e:
             _usage_stats["llm_errors"] += 1
-            llm_duration = (time.time() - llm_start_time) * 1000 if 'llm_start_time' in dir() else 0
+            llm_duration = (time.time() - llm_start_time) * 1000 if llm_start_time else 0
             _log_llm_call(session.session_id, model, 0, 0, llm_duration, False, thinking, str(e)[:200])
             await send_event(ws, "error", {
                 "sessionId": session.session_id,
@@ -618,6 +698,9 @@ async def websocket_endpoint(ws: WebSocket):
     # 客户端可通过 query 参数传递会话 ID 和用户信息
     params = ws.query_params
     requested_session_id = params.get("sessionId")
+    from config import get_agent_runtime_mode
+    current_agent_mode = get_agent_runtime_mode()
+
     user_name = params.get("user", "")
     user_token = params.get("token", "")
 
@@ -631,18 +714,23 @@ async def websocket_endpoint(ws: WebSocket):
 
     if requested_session_id:
         # 恢复已有会话
-        meta = session_manager.get_session(requested_session_id)
+        meta = session_manager.get_session(requested_session_id, agent_mode=current_agent_mode)
         if meta:
             session_id = requested_session_id
-            # 加载历史消息作为上下文
             history = session_manager.get_messages(session_id, limit=50)
         else:
-            # 请求的会话不存在，创建新的
-            meta = session_manager.create_session(user=user_name)
-            session_id = meta["sessionId"]
-            history = []
+            # 指定 ID 无效时复用最近会话，避免刷新/重连时误建新会话
+            recent = session_manager.list_sessions(user=user_name or None, agent_mode=current_agent_mode)
+            if recent:
+                meta = recent[0]
+                session_id = meta["sessionId"]
+                history = session_manager.get_messages(session_id, limit=50)
+            else:
+                meta = session_manager.create_session(user=user_name)
+                session_id = meta["sessionId"]
+                history = []
     else:
-        # 创建新会话
+        # 无 sessionId：显式新建（例如用户点击「新会话」）
         meta = session_manager.create_session(user=user_name)
         session_id = meta["sessionId"]
         history = []
@@ -660,6 +748,9 @@ async def websocket_endpoint(ws: WebSocket):
     await send_event(ws, "connected", {
         "sessionId": session_id,
         "user": user_name,
+        "agentMode": current_agent_mode,
+        "workspacePath": meta.get("workspacePath", ""),
+        "workspaceName": meta.get("workspaceName", ""),
         "message": "TAgent WebSocket 已连接",
     })
 
@@ -732,10 +823,12 @@ async def websocket_endpoint(ws: WebSocket):
                 })
 
             elif method == "listTools":
-                tool_names = [t["function"]["name"] for t in TOOLS]
+                mode_tools = get_tools_for_mode(current_agent_mode)
+                tool_names = [t["function"]["name"] for t in mode_tools]
                 await send_response(ws, request_id, {
                     "tools": tool_names,
                     "count": len(tool_names),
+                    "agentMode": current_agent_mode,
                 })
 
             elif method == "switchSession":
@@ -745,7 +838,7 @@ async def websocket_endpoint(ws: WebSocket):
                     continue
 
                 # 查找或创建目标会话
-                meta = session_manager.get_session(target_id)
+                meta = session_manager.get_session(target_id, agent_mode=current_agent_mode)
                 if not meta:
                     await send_error(ws, request_id, f"会话不存在: {target_id}")
                     continue
@@ -761,10 +854,14 @@ async def websocket_endpoint(ws: WebSocket):
 
                 # 更新活跃会话
                 set_active_session(session_id)
+                ws_path = meta.get("workspacePath") or ""
+                set_workspace_path(ws_path if ws_path else None)
 
                 await send_response(ws, request_id, {
                     "sessionId": session_id,
                     "messageCount": len(session.history),
+                    "workspacePath": meta.get("workspacePath", ""),
+                    "workspaceName": meta.get("workspaceName", ""),
                 })
 
             elif method == "stopGeneration":
@@ -782,7 +879,7 @@ async def websocket_endpoint(ws: WebSocket):
         # 空会话自动清理（断开时 0 条消息）
         session_obj = sessions.get(session_id)
         if session_obj and len(session_obj.history) == 0:
-            session_manager.delete_session(session_id)
+            session_manager.delete_session(session_id, agent_mode=current_agent_mode)
             print(f"[WS] 空会话 {session_id} 已自动清理")
         else:
             print(f"[WS] 会话 {session_id} 断开")
@@ -794,7 +891,7 @@ async def websocket_endpoint(ws: WebSocket):
         if session_id in sessions:
             session_obj = sessions[session_id]
             if len(session_obj.history) == 0:
-                session_manager.delete_session(session_id)
+                session_manager.delete_session(session_id, agent_mode=current_agent_mode)
             del sessions[session_id]
 
 
@@ -808,16 +905,26 @@ async def health():
 # ===== REST 端点（会话管理） =====
 
 @app.post("/api/sessions")
-async def create_new_session():
+async def create_new_session(payload: dict = Body(default={})):
     """创建新会话"""
-    meta = session_manager.create_session()
+    meta = session_manager.create_session(
+        title=payload.get("title", "新会话"),
+        workflow_mode=payload.get("workflowMode", "step_by_step"),
+        user=payload.get("user", ""),
+        workspace_path=payload.get("workspacePath", ""),
+    )
     return meta
 
 
 @app.get("/api/sessions")
 async def list_all_sessions(include_archived: bool = False, user: str = None):
     """获取会话列表（过滤空草稿，可按用户过滤）"""
-    result = session_manager.list_sessions(include_archived, user=user)
+    from config import get_agent_runtime_mode
+    result = session_manager.list_sessions(
+        include_archived,
+        user=user,
+        agent_mode=get_agent_runtime_mode(),
+    )
     # 过滤掉 0 消息的草稿会话
     result = [s for s in result if not (s.get("isDraft") and s.get("messageCount", 0) == 0)]
     return {"sessions": result, "count": len(result)}
@@ -826,13 +933,15 @@ async def list_all_sessions(include_archived: bool = False, user: str = None):
 @app.get("/api/sessions/stats")
 async def get_session_stats():
     """获取会话统计"""
-    return session_manager.get_stats()
+    from config import get_agent_runtime_mode
+    return session_manager.get_stats(agent_mode=get_agent_runtime_mode())
 
 
 @app.get("/api/sessions/{session_id}")
 async def get_session_detail(session_id: str):
     """获取单个会话详情"""
-    meta = session_manager.get_session(session_id)
+    from config import get_agent_runtime_mode
+    meta = session_manager.get_session(session_id, agent_mode=get_agent_runtime_mode())
     if not meta:
         return {"error": f"会话不存在: {session_id}"}
     return meta
@@ -841,6 +950,9 @@ async def get_session_detail(session_id: str):
 @app.get("/api/sessions/{session_id}/messages")
 async def get_session_messages(session_id: str, limit: int = 0):
     """获取会话消息列表"""
+    from config import get_agent_runtime_mode
+    if not session_manager.get_session(session_id, agent_mode=get_agent_runtime_mode()):
+        return {"error": f"会话不存在: {session_id}", "messages": [], "count": 0}
     messages = session_manager.get_messages(session_id, limit)
     return {"messages": messages, "count": len(messages)}
 
@@ -848,7 +960,8 @@ async def get_session_messages(session_id: str, limit: int = 0):
 @app.patch("/api/sessions/{session_id}")
 async def update_session_meta(session_id: str, payload: dict = Body(...)):
     """更新会话（标题、置顶、归档等）"""
-    meta = session_manager.update_session(session_id, **payload)
+    from config import get_agent_runtime_mode
+    meta = session_manager.update_session(session_id, agent_mode=get_agent_runtime_mode(), **payload)
     if not meta:
         return {"error": f"会话不存在: {session_id}"}
     return meta
@@ -857,7 +970,8 @@ async def update_session_meta(session_id: str, payload: dict = Body(...)):
 @app.delete("/api/sessions/{session_id}")
 async def delete_session(session_id: str):
     """删除会话"""
-    ok = session_manager.delete_session(session_id)
+    from config import get_agent_runtime_mode
+    ok = session_manager.delete_session(session_id, agent_mode=get_agent_runtime_mode())
     return {"success": ok}
 
 
@@ -867,8 +981,129 @@ async def search_sessions(payload: dict = Body(...)):
     query = payload.get("query", "")
     if not query:
         return {"error": "query 不能为空"}
-    results = session_manager.search_messages(query, max_results=payload.get("maxResults", 30))
+    from config import get_agent_runtime_mode
+    results = session_manager.search_messages(
+        query,
+        max_results=payload.get("maxResults", 30),
+        agent_mode=get_agent_runtime_mode(),
+    )
     return {"results": results, "count": len(results)}
+
+
+@app.get("/api/workspace/tree")
+async def get_workspace_tree(session_id: str, max_depth: int = 2, max_items: int = 200):
+    """获取会话工作区目录树（只读）"""
+    from config import get_agent_runtime_mode
+    meta = session_manager.get_session(session_id, agent_mode=get_agent_runtime_mode())
+    if not meta:
+        return {"error": f"会话不存在: {session_id}", "tree": []}
+
+    workspace_path = meta.get("workspacePath") or ""
+    if not workspace_path:
+        return {"error": "当前会话未绑定工作区目录", "tree": []}
+    if not os.path.isdir(workspace_path):
+        return {"error": f"工作区目录不存在: {workspace_path}", "tree": []}
+
+    max_depth = max(0, min(max_depth, 4))
+    max_items = max(10, min(max_items, 1000))
+    item_count = 0
+
+    def build_node(path: str, depth: int) -> dict | None:
+        nonlocal item_count
+        if item_count >= max_items:
+            return None
+
+        name = os.path.basename(path.rstrip("\\/")) or path
+        is_dir = os.path.isdir(path)
+        node = {
+            "name": name,
+            "path": path,
+            "type": "directory" if is_dir else "file",
+            "children": [],
+        }
+        item_count += 1
+
+        if is_dir and depth < max_depth:
+            try:
+                entries = sorted(os.scandir(path), key=lambda e: (not e.is_dir(), e.name.lower()))
+            except OSError:
+                return node
+            for entry in entries:
+                if item_count >= max_items:
+                    break
+                child = build_node(entry.path, depth + 1)
+                if child:
+                    node["children"].append(child)
+        return node
+
+    root = build_node(workspace_path, 0)
+    return {
+        "sessionId": session_id,
+        "workspacePath": workspace_path,
+        "maxDepth": max_depth,
+        "maxItems": max_items,
+        "tree": [root] if root else [],
+    }
+
+
+@app.get("/api/workspace/file")
+async def get_workspace_file_preview(session_id: str, file_path: str, max_chars: int = 12000):
+    """读取工作区内文件预览（只读文本）"""
+    from config import get_agent_runtime_mode
+    meta = session_manager.get_session(session_id, agent_mode=get_agent_runtime_mode())
+    if not meta:
+        return {"error": f"会话不存在: {session_id}"}
+
+    workspace_path = meta.get("workspacePath") or ""
+    if not workspace_path or not os.path.isdir(workspace_path):
+        return {"error": "当前会话未绑定有效工作区目录"}
+
+    try:
+        workspace_abs = os.path.abspath(workspace_path)
+        file_abs = os.path.abspath(file_path)
+        if os.path.commonpath([workspace_abs, file_abs]) != workspace_abs:
+            return {"error": "禁止读取工作区外文件"}
+    except ValueError:
+        return {"error": "无效文件路径"}
+
+    if not os.path.isfile(file_abs):
+        return {"error": "文件不存在"}
+
+    ext = os.path.splitext(file_abs)[1].lower()
+    text_exts = {
+        ".txt", ".md", ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".env",
+        ".py", ".ts", ".tsx", ".js", ".jsx", ".css", ".scss", ".html", ".xml",
+        ".sql", ".sh", ".bat", ".ps1", ".csv", ".log",
+    }
+    if ext and ext not in text_exts:
+        return {"error": f"暂不支持该文件类型预览: {ext}"}
+
+    try:
+        size = os.path.getsize(file_abs)
+    except OSError:
+        return {"error": "无法读取文件信息"}
+    if size > 1_000_000:
+        return {"error": "文件过大（>1MB），请使用本地编辑器查看"}
+
+    max_chars = max(1000, min(max_chars, 50000))
+    try:
+        with open(file_abs, "r", encoding="utf-8", errors="replace") as f:
+            content = f.read(max_chars + 1)
+    except OSError as e:
+        return {"error": f"读取文件失败: {e}"}
+
+    truncated = len(content) > max_chars
+    if truncated:
+        content = content[:max_chars]
+
+    return {
+        "sessionId": session_id,
+        "path": file_abs,
+        "name": os.path.basename(file_abs),
+        "size": size,
+        "truncated": truncated,
+        "content": content,
+    }
 
 
 # ===== REST 端点（用户配置） =====
@@ -1003,6 +1238,57 @@ async def discover_models(payload: dict = Body(...)):
     return {"success": False, "error": "无法获取模型列表，请检查 Base URL 和 API Key 是否正确"}
 
 
+@app.post("/api/wechat/message")
+async def wechat_message(payload: dict = Body(...)):
+    """接收微信 Bridge 转发的消息，调用 Agent 处理并返回回复"""
+    text = payload.get("text", "")
+    from_user = payload.get("from", "")
+
+    if not text.strip():
+        return {"reply": ""}
+
+    print(f"[WeChat] 收到消息: {text[:100]} (from: {from_user})")
+
+    try:
+        from agent import agent_loop, build_system_prompt
+        from config import get_llm_config
+        from openai import OpenAI
+
+        config = get_llm_config()
+        client = OpenAI(
+            base_url=config["base_url"],
+            api_key=config["api_key"],
+            timeout=120.0,
+        )
+
+        # 使用简化的 system prompt
+        system_prompt = """你是 TAgent，一个游戏技术美术 AI 助手。
+你可以帮助用户：分析资产、检查规范、搜索资产、审核资产等。
+用简洁的中文回复。"""
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": text},
+        ]
+
+        # 同步调用（微信 Bridge 是同步的）
+        response = client.chat.completions.create(
+            model=config["model"],
+            messages=messages,
+            temperature=0.7,
+            max_tokens=2000,
+        )
+
+        reply = response.choices[0].message.content or "(无回复)"
+        print(f"[WeChat] 回复: {reply[:100]}")
+
+        return {"reply": reply}
+
+    except Exception as e:
+        print(f"[WeChat] 处理失败: {e}")
+        return {"reply": f"处理出错: {str(e)[:100]}"}
+
+
 # ===== REST 端点（UE5 插件管理） =====
 
 @app.get("/api/ue5/plugin")
@@ -1043,11 +1329,13 @@ async def ue5_ping():
 @app.get("/api/tools")
 async def list_all_tools():
     """列出所有工具（按层级分组：core/extension/mcp/plugin）"""
-    from tools.registry import TOOLS, TOOL_TIER, get_tools_by_tier
+    from config import get_agent_runtime_mode
+    from tools.registry import TOOL_TIER, get_tools_for_mode, get_tier_summary_for_mode
 
-    tier_info = get_tools_by_tier()
+    mode = get_agent_runtime_mode()
+    mode_tools = get_tools_for_mode(mode)
     tools_info = []
-    for schema in TOOLS:
+    for schema in mode_tools:
         func_def = schema.get("function", {})
         name = func_def.get("name", "")
         tools_info.append({
@@ -1059,12 +1347,17 @@ async def list_all_tools():
     return {
         "tools": tools_info,
         "count": len(tools_info),
-        "tier_summary": {tier: len(names) for tier, names in tier_info.items()},
+        "agentMode": mode,
+        "tier_summary": get_tier_summary_for_mode(mode),
     }
 
 
 def _categorize_tool(name: str) -> str:
     """根据工具名推断分类"""
+    if name.startswith("workspace_"):
+        return "工作区"
+    if name.startswith("mcp__") or name.startswith("mcp_"):
+        return "MCP"
     if "naming" in name or "rename" in name:
         return "命名"
     if "mesh" in name or "fbx" in name:
@@ -1168,13 +1461,21 @@ async def uninstall_plugin(payload: dict = Body(...)):
 @app.post("/api/memory/clear")
 async def clear_memory():
     """清空记忆系统（保留目录结构）"""
+    namespace = get_memory_namespace()
+    memory_dir = os.path.join(MEMORY_DIR, namespace)
+    os.makedirs(memory_dir, exist_ok=True)
     cleared = []
     for fname in ["corrections.jsonl", "rules.json", "profile.md"]:
-        fpath = os.path.join(MEMORY_DIR, fname)
+        fpath = os.path.join(memory_dir, fname)
         if os.path.exists(fpath):
             os.remove(fpath)
             cleared.append(fname)
-    return {"success": True, "cleared": cleared, "message": f"已清空: {', '.join(cleared)}"}
+    return {
+        "success": True,
+        "namespace": namespace,
+        "cleared": cleared,
+        "message": f"[{namespace}] 已清空: {', '.join(cleared)}",
+    }
 
 
 # ===== REST 端点（提示词管理） =====
@@ -1338,20 +1639,49 @@ _permission_config = {
 }
 
 
+def _permissions_response() -> dict:
+    from config import get_agent_runtime_mode
+    from tools.registry import get_tools_for_mode
+
+    mode = get_agent_runtime_mode()
+    allowed_names = [s["function"]["name"] for s in get_tools_for_mode(mode)]
+    default_perm = _permission_config["mode"]
+    tools = {}
+    for name in allowed_names:
+        tools[name] = _permission_config["tool_permissions"].get(name, default_perm)
+    return {
+        "global_mode": _permission_config["mode"],
+        "mode": _permission_config["mode"],
+        "tools": tools,
+        "tool_permissions": tools,
+        "agentMode": mode,
+    }
+
+
 @app.get("/api/permissions")
 async def get_permissions():
-    """获取权限配置"""
-    return _permission_config
+    """获取权限配置（工具列表仅含当前工作台模式可用工具）"""
+    return _permissions_response()
 
 
 @app.post("/api/permissions")
 async def update_permissions(payload: dict = Body(...)):
     """更新权限配置"""
-    if "mode" in payload:
-        _permission_config["mode"] = payload["mode"]
-    if "tool_permissions" in payload:
-        _permission_config["tool_permissions"].update(payload["tool_permissions"])
-    return {"success": True, "permissions": _permission_config}
+    global_mode = payload.get("global_mode") or payload.get("mode")
+    if global_mode:
+        _permission_config["mode"] = global_mode
+    tools = payload.get("tools")
+    if tools is None:
+        tools = payload.get("tool_permissions")
+    if tools is not None:
+        from tools.registry import get_tools_for_mode
+        from config import get_agent_runtime_mode
+
+        allowed = {s["function"]["name"] for s in get_tools_for_mode(get_agent_runtime_mode())}
+        for name, perm in tools.items():
+            if name in allowed:
+                _permission_config["tool_permissions"][name] = perm
+    return {"success": True, **_permissions_response()}
 
 
 # ===== REST 端点（MCP 服务器管理） =====
@@ -1435,7 +1765,8 @@ async def get_activity_log(limit: int = 50):
     """获取最近的工具调用活动日志"""
     try:
         # 获取最近的会话
-        sessions = session_manager.list_sessions()
+        from config import get_agent_runtime_mode
+        sessions = session_manager.list_sessions(agent_mode=get_agent_runtime_mode())
         if not sessions:
             return {"activities": [], "count": 0}
 
@@ -1579,7 +1910,8 @@ async def run_pipeline_stage(payload: dict = Body(...)):
     target_session_id = session_id
     if not target_session_id:
         # 使用最近的会话
-        recent_sessions = session_manager.list_sessions()
+        from config import get_agent_runtime_mode
+        recent_sessions = session_manager.list_sessions(agent_mode=get_agent_runtime_mode())
         if recent_sessions:
             target_session_id = recent_sessions[0]["sessionId"]
 
@@ -1761,7 +2093,7 @@ async def get_stats():
 
         # 最近分析的资产
         recent_rows = conn.execute(
-            "SELECT asset_name, asset_type, category, analyzed_at FROM assets WHERE analyzed_at != '' ORDER BY analyzed_at DESC LIMIT 10"
+            "SELECT asset_id, asset_name, asset_type, category, analyzed_at FROM assets WHERE analyzed_at != '' ORDER BY analyzed_at DESC LIMIT 10"
         ).fetchall()
         recent = [dict(row) for row in recent_rows]
 
@@ -1788,11 +2120,35 @@ async def get_stats():
 async def get_memory_stats():
     """获取记忆系统状态"""
     try:
+        from config import get_agent_runtime_mode
         from tools.core.memory_llm_tools import get_memory_stats as _get_stats
+
         result = _get_stats()
+        if isinstance(result, dict) and "error" not in result:
+            result["agentMode"] = get_agent_runtime_mode()
         return result
     except Exception as e:
         return {"error": str(e)}
+
+
+@app.get("/api/memory/profile")
+async def get_memory_profile():
+    """获取当前模式 L0 画像全文（设置页预览）"""
+    try:
+        from config import get_agent_runtime_mode, get_memory_namespace
+        from tools.core.memory_llm_tools import get_memory_provider
+
+        memory = get_memory_provider()
+        if not memory:
+            return {"error": "记忆系统未初始化", "content": "", "namespace": get_memory_namespace()}
+        content = memory.get_project_profile() or ""
+        return {
+            "content": content,
+            "namespace": get_memory_namespace(),
+            "agentMode": get_agent_runtime_mode(),
+        }
+    except Exception as e:
+        return {"error": str(e), "content": ""}
 
 
 # ===== 资产预览图 =====
@@ -1941,15 +2297,17 @@ if __name__ == "__main__":
     # 初始化记忆系统（使用统一路径配置）
     if HAS_MEMORY:
         try:
-            provider = FileMemoryProvider()
+            namespace = get_memory_namespace()
+            provider = FileMemoryProvider(namespace=namespace)
             set_memory_provider(provider)
-            print(f"  记忆系统: {MEMORY_DIR}")
+            print(f"  记忆系统: {MEMORY_DIR}/{namespace}")
         except Exception as e:
             print(f"  记忆系统: 初始化失败 ({e})")
 
     # 初始化会话管理器（使用统一路径配置）
     session_manager.init()
-    stats = session_manager.get_stats()
+    from config import get_agent_runtime_mode
+    stats = session_manager.get_stats(agent_mode=get_agent_runtime_mode())
     print(f"  会话管理: {stats['active_sessions']} 个活跃会话, {stats['total_messages']} 条消息")
 
     # 注入分析进度回调

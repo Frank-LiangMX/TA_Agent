@@ -6,6 +6,7 @@ import React, { useState, useEffect } from 'react'
 import { BookOpen, FileCheck, Loader2, Trash2, Eye, EyeOff } from 'lucide-react'
 import { SettingsSection, SettingsCard, SettingsRow } from './primitives'
 import { API_BASE } from '@/lib/api'
+import { useConfirm } from '@/hooks/useConfirm'
 
 interface ConventionData {
   loaded: boolean
@@ -18,6 +19,7 @@ interface ConventionData {
 }
 
 export function ConventionSettings() {
+  const { confirm, ConfirmUI } = useConfirm()
   const [data, setData] = useState<ConventionData | null>(null)
   const [loading, setLoading] = useState(true)
   const [showContent, setShowContent] = useState(false)
@@ -36,7 +38,7 @@ export function ConventionSettings() {
   }
 
   const handleClear = async () => {
-    if (!confirm('确定卸载已加载的规范文档？')) return
+    if (!await confirm('确定卸载已加载的规范文档？', { danger: true })) return
     setClearing(true)
     try {
       await fetch(`${API_BASE}/api/conventions/clear`, { method: 'POST' })
@@ -58,6 +60,7 @@ export function ConventionSettings() {
   const texBudgets = data?.default_rules?.texture_budgets || {}
 
   return (
+    <>
     <div className="space-y-6">
       {/* 自定义规范 */}
       <SettingsSection
@@ -136,5 +139,7 @@ export function ConventionSettings() {
         </SettingsSection>
       )}
     </div>
+    {ConfirmUI}
+    </>
   )
 }

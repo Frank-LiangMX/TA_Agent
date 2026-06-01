@@ -7,6 +7,8 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { RefreshCw, Trash2, Brain, AlertTriangle, CheckCircle2, Clock, Zap } from 'lucide-react'
 import { API_BASE } from '@/lib/api'
+import { useConfirm } from '@/hooks/useConfirm'
+import { Tooltip } from '@/components/ui/Tooltip'
 
 interface UsageLog {
   ts: string
@@ -21,6 +23,7 @@ interface UsageLog {
 }
 
 export function UsageSettings() {
+  const { confirm, ConfirmUI } = useConfirm()
   const [logs, setLogs] = useState<UsageLog[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -45,7 +48,7 @@ export function UsageSettings() {
   }, [fetchLogs])
 
   const handleClear = async () => {
-    if (!confirm('确定清空所有用量日志？')) return
+    if (!await confirm('确定清空所有用量日志？', { danger: true })) return
     await fetch(`${API_BASE}/api/usage/logs`, { method: 'DELETE' })
     setPage(0)
     fetchLogs()
@@ -108,20 +111,22 @@ export function UsageSettings() {
           共 {total} 条记录
         </span>
         <div className="flex items-center gap-2">
-          <button
-            onClick={fetchLogs}
-            className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-            title="刷新"
-          >
-            <RefreshCw size={14} />
-          </button>
-          <button
-            onClick={handleClear}
-            className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-            title="清空日志"
-          >
-            <Trash2 size={14} />
-          </button>
+          <Tooltip content="刷新">
+            <button
+              onClick={fetchLogs}
+              className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            >
+              <RefreshCw size={14} />
+            </button>
+          </Tooltip>
+          <Tooltip content="清空日志">
+            <button
+              onClick={handleClear}
+              className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+            >
+              <Trash2 size={14} />
+            </button>
+          </Tooltip>
         </div>
       </div>
 
@@ -214,6 +219,7 @@ export function UsageSettings() {
           </button>
         </div>
       )}
+      {ConfirmUI}
     </div>
   )
 }

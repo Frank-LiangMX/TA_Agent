@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { SettingsSection, SettingsCard, SettingsRow } from './primitives'
 import { API_BASE } from '@/lib/api'
+import { useConfirm } from '@/hooks/useConfirm'
 
 interface ToolInfo {
   name: string
@@ -24,15 +25,22 @@ interface PluginInfo {
 const TIER_LABELS: Record<string, { label: string; icon: React.ReactNode; desc: string }> = {
   core:      { label: '核心工具', icon: <Cpu size={16} />, desc: '内置，启动即注册' },
   extension: { label: '引擎扩展', icon: <Box size={16} />, desc: 'Python 桥接，需要外部引擎配合' },
-  mcp:       { label: 'MCP 工具', icon: <Plug size={16} />, desc: '通过 MCP 协议连接的动态工具' },
+  mcp:       { label: 'MCP 管理', icon: <Plug size={16} />, desc: '内置：列出/添加/启用 MCP 服务器。外部服务器提供的工具在「MCP 服务器」页查看' },
   plugin:    { label: '可选插件', icon: <Archive size={16} />, desc: '按需安装的 Python 插件' },
 }
 
 const TIER_ORDER = ['core', 'extension', 'mcp', 'plugin']
 
-export function ToolSettings() {
+interface ToolSettingsProps {
+  /** 工作台模式切换后递增，触发重新拉取工具列表 */
+  refreshKey?: number
+}
+
+export function ToolSettings({ refreshKey = 0 }: ToolSettingsProps) {
+  const { confirm, ConfirmUI } = useConfirm()
   const [tools, setTools] = useState<ToolInfo[]>([])
   const [tierSummary, setTierSummary] = useState<Record<string, number>>({})
+  const [agentMode, setAgentMode] = useState<'ta' | 'general'>('ta')
   const [installed, setInstalled] = useState<string[]>([])
   const [available, setAvailable] = useState<PluginInfo[]>([])
   const [loading, setLoading] = useState(true)
@@ -42,15 +50,25 @@ export function ToolSettings() {
   const [expandedCats, setExpandedCats] = useState<Set<string>>(new Set())
 
   useEffect(() => {
+    setLoading(true)
     Promise.all([fetchTools(), fetchPlugins()]).finally(() => setLoading(false))
-  }, [])
+  }, [refreshKey])
 
   const fetchTools = async () => {
     try {
       const res = await fetch(`${API_BASE}/api/tools`)
       const data = await res.json()
-      setTools(data.tools || [])
-      setTierSummary(data.tier_summary || {})
+      const list: ToolInfo[] = data.tools || []
+      setTools(list)
+      setAgentMode(data.agentMode === 'general' ? 'general' : 'ta')
+      const summary: Record<string, number> = data.tier_summary || {}
+      if (!Object.keys(summary).length && list.length) {
+        for (const t of list) {
+          summary[t.tier] = (summary[t.tier] || 0) + 1
+        }
+      }
+      setTierSummary(summary)
+      setActiveTier((prev) => (summary[prev] ? prev : TIER_ORDER.find((id) => summary[id]) || 'core'))
     } catch {}
   }
 
@@ -87,7 +105,7 @@ export function ToolSettings() {
   }
 
   const handleUninstall = async (filename: string) => {
-    if (!confirm(`确定卸载 ${filename}？`)) return
+    if (!await confirm(`确定卸载 ${filename}？`, { danger: true })) return
     setActionLoading(filename); setMessage('')
     try {
       const res = await fetch(`${API_BASE}/api/plugins/uninstall`, {
@@ -112,7 +130,7 @@ export function ToolSettings() {
     return acc
   }, {})
 
-  const categoryOrder = ['资产', '扫描', '几何', '贴图', '命名', '审核', '分析', '规范', '记忆', '配置', '入库', '渲染', '其他']
+  const categoryOrder = ['工作区', '资产', '扫描', '几何', '贴图', '命名', '审核', '分析', '规范', '记忆', '配置', '入库', '渲染', 'MCP', '其他']
   const sortedCategories = categoryOrder.filter(c => grouped[c])
 
   if (loading) {
@@ -133,6 +151,11 @@ export function ToolSettings() {
           <button onClick={() => setMessage('')} className="ml-auto text-xs hover:underline">关闭</button>
         </div>
       )}
+
+      <p className="text-xs text-muted-foreground">
+        当前工作台：<span className="font-medium text-foreground">{agentMode === 'general' ? '通用模式' : 'TA 模式'}</span>
+        ，仅显示该模式下 Agent 可用的工具
+      </p>
 
       {/* 层级 Tabs */}
       <div className="flex gap-2 p-1 rounded-lg bg-muted/50">
@@ -162,9 +185,14 @@ export function ToolSettings() {
         {TIER_LABELS[activeTier]?.desc || ''}
       </p>
 
-      {/* 核心工具 / 引擎扩展 / MCP 工具：按分类折叠显示 */}
+      {/* 核心工具 / 引擎扩展 / MCP 管理：按分类折叠显示 */}
       {activeTier !== 'plugin' && (
         <SettingsCard>
+          {activeTier === 'mcp' && (
+            <div className="px-4 py-2.5 text-xs text-muted-foreground border-b border-border/30 bg-muted/20">
+              Playwright 等服务器注册的 <code className="font-mono">mcp__*</code> 工具不在此列表，请在设置 → <strong>MCP 服务器</strong> 中查看与管理。
+            </div>
+          )}
           {sortedCategories.length === 0 && (
             <div className="px-4 py-8 text-center text-sm text-muted-foreground/60">当前层级无工具</div>
           )}
@@ -256,6 +284,7 @@ export function ToolSettings() {
           )}
         </SettingsSection>
       )}
+      {ConfirmUI}
     </div>
   )
 }

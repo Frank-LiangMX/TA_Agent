@@ -53,6 +53,31 @@ def _get_runtime_app_config() -> dict:
     except (OSError, json.JSONDecodeError):
         return {}
 
+
+def get_agent_runtime_mode() -> str:
+    """获取当前 Agent 运行模式（ta/general）。
+
+    优先级：
+    1. 环境变量 TAGENT_AGENT_MODE
+    2. app-config.json 的 agent_mode 字段
+    3. 默认 ta
+    """
+    env_mode = (os.environ.get("TAGENT_AGENT_MODE") or "").strip().lower()
+    if env_mode in {"ta", "general"}:
+        return env_mode
+
+    app_config = _get_runtime_app_config()
+    cfg_mode = str(app_config.get("agent_mode", "")).strip().lower()
+    if cfg_mode in {"ta", "general"}:
+        return cfg_mode
+
+    return "ta"
+
+
+def get_memory_namespace() -> str:
+    """记忆命名空间，当前与运行模式同名。"""
+    return get_agent_runtime_mode()
+
 def _get_runtime_llm_config() -> dict | None:
     app_config = _get_runtime_app_config()
     if app_config.get("mode", "local") != "local":
@@ -429,6 +454,18 @@ TAG_STORE_DIR = os.path.join(RUNTIME_DIR, "tag_store")
 # 会话数据目录
 SESSIONS_DIR = os.path.join(RUNTIME_DIR, "sessions")
 
+# ========== 工作区路径 ==========
+# 通用模式会话工作区目录
+WORKSPACES_DIR = os.path.join(RUNTIME_DIR, "workspaces")
+DEFAULT_WORKSPACE_NAME = "默认工作区"
+
+
+def get_default_workspace_path() -> str:
+    """通用模式未指定目录时使用的共享默认工作区（与 Proma 类似）。"""
+    path = os.path.join(WORKSPACES_DIR, "default")
+    os.makedirs(path, exist_ok=True)
+    return os.path.abspath(path)
+
 # ========== 记忆系统路径 ==========
 # 记忆数据目录
 MEMORY_DIR = os.path.join(RUNTIME_DIR, "memory")
@@ -462,6 +499,7 @@ def ensure_directories():
     dirs = [
         TAG_STORE_DIR,
         SESSIONS_DIR,
+        WORKSPACES_DIR,
         MEMORY_DIR,
         CONFIGS_DIR,
         CHECKPOINTS_DIR,

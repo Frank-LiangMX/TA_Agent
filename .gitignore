@@ -42,3 +42,4 @@ electron/dist/
 *.tmp
 *.temp
 *.log
+.playwright-mcp/

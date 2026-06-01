@@ -378,12 +378,10 @@ bun run dev
 
 ---
 
-## 八、桌面应用（规划中）
+## 八、桌面应用（已完成）
 
-> 详见实验文档：`docs/experiments/frontend/2026-05-19-electron-desktop-app.md`
+> 详见参考文档：`docs/reference/electron.md`
 
-计划使用 Electron 实现双模式：
-- **桌面应用**：Electron 窗口 + 本地 Python 进程
-- **浏览器访问**：服务器部署，团队远程使用
-
-实验验证后，稳定设计将写入本节。
+已使用 Electron 实现双模式：
+- **桌面应用**：Electron 窗口 + 本地 Python 进程（`dev-electron.bat` 启动）
+- **浏览器访问**：服务器部署，团队远程使用（`dev-web.bat` 启动）

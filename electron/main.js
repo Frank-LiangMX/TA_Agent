@@ -23,6 +23,8 @@ const STARTUP_TIMEOUT = 30000
 
 if (process.platform === 'win32') {
   app.setAppUserModelId('com.tagent.desktop')
+  // 与 Proma 一致：深色背景下避免 ClearType 彩色边缘
+  app.commandLine.appendSwitch('disable-lcd-text')
   try {
     spawnSync('chcp', ['65001'], { shell: true, stdio: 'ignore' })
   } catch {

@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from config import MEMORY_DIR
+from config import MEMORY_DIR, get_memory_namespace
 from .provider import MemoryProvider, CorrectionRecord, Rule
 
 
@@ -31,9 +31,10 @@ class FileMemoryProvider:
     All state is persisted in the unified MEMORY_DIR.
     """
 
-    def __init__(self, project_root: str = None):
+    def __init__(self, project_root: str = None, namespace: str | None = None):
         # 使用统一路径配置，忽略传入的 project_root
-        self._memory_dir = Path(MEMORY_DIR)
+        self._namespace = (namespace or get_memory_namespace()).strip().lower() or "ta"
+        self._memory_dir = Path(MEMORY_DIR) / self._namespace
         self._profile_path = self._memory_dir / "profile.md"
         self._rules_path = self._memory_dir / "rules.json"
         self._corrections_path = self._memory_dir / "corrections.jsonl"
@@ -280,6 +281,7 @@ class FileMemoryProvider:
         total_tokens_estimate = total_chars // 3  # conservative estimate
 
         return {
+            "namespace": self._namespace,
             "profile_chars": profile_chars,
             "rule_count": rule_count,
             "correction_count": correction_count,

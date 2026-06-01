@@ -5,14 +5,16 @@
  * 按资产类型展示不同的审核维度。
  */
 
-import React, { useState, useMemo, useCallback, useEffect } from 'react'
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import {
   FileCheck, RefreshCw, CheckCircle2, XCircle,
   AlertTriangle, ChevronDown, ChevronRight, ChevronLeft, Send, Loader2,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { PageHeader } from '@/components/layout/PageHeader'
 import { tagentClient } from '@/services/websocket'
 import { useReviews } from '@/lib/cache'
+import { useConfirm } from '@/hooks/useConfirm'
 
 interface ReviewCriterion {
   value: unknown
@@ -38,9 +40,16 @@ type TabType = 'high' | 'low'
 
 const PAGE_SIZE = 20
 
-export function ReviewQueue() {
+interface ReviewQueueProps {
+  /** 从分析页等入口指定初始 Tab（挂载时生效） */
+  initialTab?: TabType
+}
+
+export function ReviewQueue({ initialTab }: ReviewQueueProps) {
+  const { confirm, ConfirmUI } = useConfirm()
   const { data, loading, refresh } = useReviews()
-  const [activeTab, setActiveTab] = useState<TabType>('high')
+  const [activeTab, setActiveTab] = useState<TabType>(initialTab ?? 'high')
+  const skipAutoTabRef = useRef(!!initialTab)
   const [highPage, setHighPage] = useState(1)
   const [lowPage, setLowPage] = useState(1)
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -54,9 +63,17 @@ export function ReviewQueue() {
     setTimeout(() => refresh(), 2000)
   }, [refresh])
 
+  useEffect(() => {
+    if (initialTab) setActiveTab(initialTab)
+  }, [initialTab])
+
   // 自动切到有内容的 tab：优先低置信度（需要审核），其次高置信度
   useEffect(() => {
     if (!data) return
+    if (skipAutoTabRef.current) {
+      skipAutoTabRef.current = false
+      return
+    }
     const hasLow = (data.low_confidence || []).length > 0
     const hasHigh = (data.high_confidence || []).length > 0
     if (!hasLow && hasHigh) setActiveTab('high')
@@ -129,7 +146,7 @@ export function ReviewQueue() {
 
   const batchReject = async () => {
     if (selected.size === 0) return
-    if (!confirm(`确定拒绝选中的 ${selected.size} 个资产？`)) return
+    if (!await confirm(`确定拒绝选中的 ${selected.size} 个资产？`, { danger: true })) return
     const ids = Array.from(selected)
     const count = ids.length
     setProcessingIds(new Set(ids))
@@ -249,29 +266,29 @@ export function ReviewQueue() {
 
   return (
     <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-      {/* 头部 */}
-      <header className="h-14 flex items-center justify-between px-4 border-b border-border/50 shrink-0">
-        <div className="flex items-center gap-2">
-          <FileCheck size={18} className="text-primary" />
-          <h2 className="text-sm font-medium">审核队列</h2>
-          {data && <span className="text-xs text-muted-foreground">{data.total_pending} 个待审</span>}
-        </div>
-        <div className="flex items-center gap-2">
-          {selected.size > 0 && (
-            <>
-              <button onClick={batchApprove} disabled={actionLoading === 'batch'} className="text-xs bg-success text-white px-3 py-1.5 rounded-lg hover:bg-success/80 transition-colors">
-                {actionLoading === 'batch' ? '提交中...' : `批量通过 (${selected.size})`}
-              </button>
-              <button onClick={batchReject} disabled={actionLoading === 'batch-reject'} className="text-xs bg-destructive text-white px-3 py-1.5 rounded-lg hover:bg-destructive/80 transition-colors">
-                {actionLoading === 'batch-reject' ? '提交中...' : `批量拒绝 (${selected.size})`}
-              </button>
-            </>
-          )}
-          <button onClick={refresh} disabled={loading} className="text-muted-foreground hover:text-foreground transition-colors p-1.5 rounded hover:bg-muted">
-            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-          </button>
-        </div>
-      </header>
+      <PageHeader
+        actions={
+          <div className="flex items-center gap-2">
+            {selected.size > 0 && (
+              <>
+                <button onClick={batchApprove} disabled={actionLoading === 'batch'} className="text-xs bg-success text-white px-3 py-1.5 rounded-lg hover:bg-success/80 transition-colors">
+                  {actionLoading === 'batch' ? '提交中...' : `批量通过 (${selected.size})`}
+                </button>
+                <button onClick={batchReject} disabled={actionLoading === 'batch-reject'} className="text-xs bg-destructive text-white px-3 py-1.5 rounded-lg hover:bg-destructive/80 transition-colors">
+                  {actionLoading === 'batch-reject' ? '提交中...' : `批量拒绝 (${selected.size})`}
+                </button>
+              </>
+            )}
+            <button onClick={refresh} disabled={loading} className="text-muted-foreground hover:text-foreground transition-colors p-1.5 rounded hover:bg-muted">
+              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+            </button>
+          </div>
+        }
+      >
+        <FileCheck size={18} className="text-primary shrink-0" />
+        <h2 className="text-sm font-medium">审核队列</h2>
+        {data && <span className="text-xs text-muted-foreground">{data.total_pending} 个待审</span>}
+      </PageHeader>
 
       {/* Tab 栏 */}
       {data && data.total_pending > 0 && (
@@ -359,6 +376,7 @@ export function ReviewQueue() {
           </button>
         </div>
       </div>
+      {ConfirmUI}
     </div>
   )
 }

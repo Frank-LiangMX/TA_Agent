@@ -8,6 +8,8 @@ import React, { useState, useEffect } from 'react'
 import { Cpu, Check, Loader2, Plus, X, Edit2, Trash2, Star, StarOff } from 'lucide-react'
 import { SettingsSection, SettingsCard, SettingsRow } from './primitives'
 import { API_BASE } from '@/lib/api'
+import { useConfirm } from '@/hooks/useConfirm'
+import { Tooltip } from '@/components/ui/Tooltip'
 
 interface Model {
   id: string
@@ -25,6 +27,7 @@ interface ModelWithKey extends Model {
 }
 
 export function ModelSettings() {
+  const { confirm, ConfirmUI } = useConfirm()
   const [models, setModels] = useState<Model[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -132,7 +135,7 @@ export function ModelSettings() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('确定删除这个模型？')) return
+    if (!await confirm('确定删除这个模型？', { danger: true })) return
     setDeleting(id)
     try {
       const res = await fetch(`${API_BASE}/api/config/models/${id}`, { method: 'DELETE' })
@@ -358,29 +361,32 @@ export function ModelSettings() {
               >
                 <div className="flex items-center gap-2">
                   {activeId !== m.id && (
-                    <button
-                      onClick={() => handleActivate(m.id)}
-                      title="设为启用"
-                      className="p-1 text-muted-foreground hover:text-primary"
-                    >
-                      <Star size={14} />
-                    </button>
+                    <Tooltip content="设为启用">
+                      <button
+                        onClick={() => handleActivate(m.id)}
+                        className="p-1 text-muted-foreground hover:text-primary"
+                      >
+                        <Star size={14} />
+                      </button>
+                    </Tooltip>
                   )}
-                  <button
-                    onClick={() => handleEdit(m)}
-                    title="编辑"
-                    className="p-1 text-muted-foreground hover:text-foreground"
-                  >
-                    <Edit2 size={14} />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(m.id)}
-                    disabled={deleting === m.id}
-                    title="删除"
-                    className="p-1 text-muted-foreground hover:text-destructive disabled:opacity-50"
-                  >
-                    {deleting === m.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                  </button>
+                  <Tooltip content="编辑">
+                    <button
+                      onClick={() => handleEdit(m)}
+                      className="p-1 text-muted-foreground hover:text-foreground"
+                    >
+                      <Edit2 size={14} />
+                    </button>
+                  </Tooltip>
+                  <Tooltip content="删除">
+                    <button
+                      onClick={() => handleDelete(m.id)}
+                      disabled={deleting === m.id}
+                      className="p-1 text-muted-foreground hover:text-destructive disabled:opacity-50"
+                    >
+                      {deleting === m.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                    </button>
+                  </Tooltip>
                 </div>
               </SettingsRow>
             ))
@@ -391,6 +397,7 @@ export function ModelSettings() {
       <div className="text-xs text-muted-foreground px-2">
         💡 点击星标启用模型，被启用的模型会用于所有 LLM 调用
       </div>
+      {ConfirmUI}
     </div>
   )
 }

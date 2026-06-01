@@ -1,6 +1,6 @@
 # 文档地图
 
-> 最后更新：2026-05-29
+> 最后更新：2026-06-01
 
 ## 文档结构
 
@@ -46,6 +46,8 @@ docs/
 | 管理员分配机制 | `decisions/user-auth-design.md` (5.2 节) |
 | Bug 排查记录 | `experiments/frontend/2026-05-22-bug-report.md` |
 | 隐藏问题排查 | `experiments/backend/2026-05-27-hidden-bugs-audit.md` |
+| 双模式记忆设计草案 | `experiments/backend/2026-06-01-dual-mode-memory-design.md` |
+| **工作台双模式（TA/通用）实施台账** | `experiments/backend/2026-06-01-workbench-dual-mode-roadmap.md` |
 
 ## 写入规则
 
@@ -58,3 +60,4 @@ docs/
 - 2026-05-19：原先的 6 个文档按此结构重组
 - 2026-05-26：添加联机模式、中心服务器、权限管理相关文档
 - 2026-05-29：新增 Electron 架构文档，开始微信 Bridge 模块
+- 2026-06-01：新增工作台双模式（TA/通用）实施台账，与记忆设计稿区分

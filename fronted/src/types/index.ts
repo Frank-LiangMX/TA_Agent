@@ -127,6 +127,8 @@ export interface SessionMeta {
   isArchived: boolean
   tags: string[]
   summary: string
+  workspacePath?: string
+  workspaceName?: string
 }
 
 // ===== 分析进度 =====

@@ -27,9 +27,9 @@
   --dialog: 0 0% 100%;
   --dialog-foreground: 0 0% 3.9%;
   --content-area: 0 0% 100%;
-  --tooltip: 0 0% 15%;
-  --tooltip-foreground: 0 0% 98%;
-  --tooltip-muted: 0 0% 75%;
+  --tooltip: 0 0% 95%;
+  --tooltip-foreground: 0 0% 10%;
+  --tooltip-muted: 0 0% 50%;
   --success: 142 76% 36%;
   --success-foreground: 0 0% 98%;
   --warning: 38 92% 50%;
@@ -97,9 +97,9 @@
   --dialog-foreground: 210 30% 15%;
   --destructive: 0 84.2% 60.2%;
   --destructive-foreground: 0 0% 98%;
-  --tooltip: 210 45% 18%;
-  --tooltip-foreground: 0 0% 98%;
-  --tooltip-muted: 210 20% 75%;
+  --tooltip: 205 20% 92%;
+  --tooltip-foreground: 210 30% 15%;
+  --tooltip-muted: 205 10% 50%;
   --success: 142 76% 36%;
   --success-foreground: 0 0% 98%;
   --warning: 38 92% 50%;
@@ -167,9 +167,9 @@
   --dialog-foreground: 150 25% 15%;
   --destructive: 0 72% 51%;
   --destructive-foreground: 0 0% 100%;
-  --tooltip: 150 20% 18%;
-  --tooltip-foreground: 0 0% 98%;
-  --tooltip-muted: 140 10% 60%;
+  --tooltip: 140 15% 92%;
+  --tooltip-foreground: 150 25% 15%;
+  --tooltip-muted: 140 10% 50%;
   --success: 142 76% 36%;
   --success-foreground: 0 0% 98%;
   --warning: 38 92% 50%;
@@ -237,9 +237,9 @@
   --dialog-foreground: 40 8% 18%;
   --destructive: 0 65% 50%;
   --destructive-foreground: 0 0% 100%;
-  --tooltip: 40 8% 20%;
-  --tooltip-foreground: 0 0% 98%;
-  --tooltip-muted: 40 5% 55%;
+  --tooltip: 40 10% 92%;
+  --tooltip-foreground: 40 8% 15%;
+  --tooltip-muted: 40 5% 50%;
   --success: 142 76% 36%;
   --success-foreground: 0 0% 98%;
   --warning: 38 92% 50%;
@@ -347,50 +347,42 @@ pre code,
   display: none;
 }
 
-/* 纤细滚动条 */
-.scrollbar-thin,
-.scrollbar-thin > * {
-  scrollbar-width: thin;
-  scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
-}
-.scrollbar-thin::-webkit-scrollbar,
-.scrollbar-thin > *::-webkit-scrollbar {
-  width: 6px;
-}
-.scrollbar-thin::-webkit-scrollbar-track,
-.scrollbar-thin > *::-webkit-scrollbar-track {
-  background: transparent;
-}
-.scrollbar-thin::-webkit-scrollbar-thumb,
-.scrollbar-thin > *::-webkit-scrollbar-thumb {
-  background-color: hsl(var(--muted-foreground) / 0.3);
-  border-radius: 3px;
-}
-.scrollbar-thin::-webkit-scrollbar-thumb:hover,
-.scrollbar-thin > *::-webkit-scrollbar-thumb:hover {
-  background-color: hsl(var(--muted-foreground) / 0.5);
+/* 纤细滚动条（Proma 视觉；Chromium 121+ 同元素上的 scrollbar-color 会压制 ::-webkit-scrollbar） */
+.scrollbar-thin {
+  --scrollbar-thumb: hsl(var(--muted-foreground) / 0.3);
+  --scrollbar-thumb-hover: hsl(var(--muted-foreground) / 0.5);
 }
 
-/* 会话标签悬停预览：长会话需要始终保留可见滚动控件 */
-.session-preview-scroll {
-  scrollbar-width: thin;
-  scrollbar-gutter: stable;
-  scrollbar-color: hsl(var(--muted-foreground) / 0.55) hsl(var(--muted) / 0.45);
+@supports selector(::-webkit-scrollbar) {
+  .scrollbar-thin,
+  .scrollbar-thin > * {
+    scrollbar-width: auto;
+    scrollbar-color: unset;
+  }
+  .scrollbar-thin::-webkit-scrollbar,
+  .scrollbar-thin > *::-webkit-scrollbar {
+    width: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track,
+  .scrollbar-thin > *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb,
+  .scrollbar-thin > *::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb);
+    border-radius: 3px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover,
+  .scrollbar-thin > *::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scrollbar-thumb-hover);
+  }
 }
-.session-preview-scroll::-webkit-scrollbar {
-  width: 10px;
-}
-.session-preview-scroll::-webkit-scrollbar-track {
-  background: hsl(var(--muted) / 0.45);
-  border-radius: 999px;
-}
-.session-preview-scroll::-webkit-scrollbar-thumb {
-  background-color: hsl(var(--muted-foreground) / 0.55);
-  border: 2px solid hsl(var(--popover));
-  border-radius: 999px;
-}
-.session-preview-scroll::-webkit-scrollbar-thumb:hover {
-  background-color: hsl(var(--muted-foreground) / 0.75);
+
+@supports not selector(::-webkit-scrollbar) {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
+  }
 }
 
 /* 微妙阴影（替代边框的层次感） */
@@ -485,6 +477,21 @@ pre code,
   transform-origin: bottom center;
 }
 
+/* 聊天输入框聚焦描边（随 --primary / --ring 随主题变化，对齐 Hermes input focus） */
+@layer components {
+  .composer-focus-shell {
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+  .composer-focus-shell:focus-within {
+    outline: none;
+    border-color: hsl(var(--primary) / 0.5);
+    box-shadow:
+      0 0 0 1px hsl(var(--ring) / 0.42),
+      0 0 0 3px hsl(var(--primary) / 0.1),
+      0 0 24px -6px hsl(var(--primary) / 0.2);
+  }
+}
+
 /* 消息导航面板滑入 */
 @keyframes slide-in-right {
   from { opacity: 0; transform: translateX(10px); }
@@ -555,7 +562,20 @@ textarea:disabled {
   background-color: hsl(var(--muted));
 }
 
-/* Electron 窗口拖拽区域 */
+/* Tooltip 样式（跟随主题） */
+.tooltip-pop {
+  background-color: hsl(var(--tooltip)) !important;
+  color: hsl(var(--tooltip-foreground)) !important;
+  border: 1px solid hsl(var(--border) / 0.3);
+  animation: tooltip-fade-in 0.15s ease-out;
+}
+
+@keyframes tooltip-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Electron 窗口拖拽区域（勿加 pointer-events-none，否则无法拖动） */
 .titlebar-drag-region {
   -webkit-app-region: drag;
   app-region: drag;
@@ -563,4 +583,70 @@ textarea:disabled {
 .titlebar-no-drag {
   -webkit-app-region: no-drag;
   app-region: no-drag;
+}
+
+/* Windows 窗口控制按钮 */
+.window-controls {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+  gap: 1px;
+}
+
+/* 内嵌顶栏：与 h-9 标签行同高，左侧分隔线 */
+.window-controls--inline {
+  flex-shrink: 0;
+  align-self: stretch;
+  align-items: center;
+  padding: 0 2px;
+  border-left: 1px solid hsl(var(--border) / 0.45);
+  background: hsl(var(--muted) / 0.35);
+}
+
+.window-controls--inline .window-control-btn {
+  width: 32px;
+  height: 24px;
+}
+
+/* 全屏向导页：浮在窗口右上角 */
+.window-controls--fixed {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  z-index: 100;
+  height: 28px;
+}
+
+.window-control-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 28px;
+  border-radius: 4px;
+  color: hsl(var(--muted-foreground));
+  background: transparent;
+  border: none;
+  cursor: default;
+  transition: background-color 0.15s ease, color 0.15s ease;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.window-control-btn:hover {
+  background-color: hsl(var(--muted) / 0.35);
+  color: hsl(var(--foreground));
+}
+
+.window-control-btn:active {
+  background-color: hsl(var(--muted) / 0.5);
+}
+
+.window-control-close:hover {
+  background-color: #c42b1c;
+  color: #fff;
+}
+
+.window-control-close:active {
+  background-color: #a01d11;
+  color: #fff;
 }

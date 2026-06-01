@@ -3,8 +3,8 @@
  */
 
 import React, { useState, useEffect } from 'react'
-import { Wifi, WifiOff, RefreshCw, AlertCircle, CheckCircle, Loader2 } from 'lucide-react'
-import { getConfig, saveConfig, type AppConfig } from '../../services/config'
+import { Wifi, WifiOff, RefreshCw, AlertCircle, CheckCircle, Loader2, Package, Bot } from 'lucide-react'
+import { getConfig, saveConfig, type AppConfig, setAgentMode } from '../../services/config'
 import { healthCheck } from '../../services/api'
 import { tagentClient } from '../../services/websocket'
 import { clearCache } from '../../lib/cache'
@@ -20,6 +20,7 @@ export function ModeSettings({ onModeChange }: ModeSettingsProps) {
   const [switching, setSwitching] = useState(false)
   const [serverStatus, setServerStatus] = useState<'unknown' | 'connected' | 'error'>('unknown')
   const [error, setError] = useState('')
+  const [agentMode, setAgentModeState] = useState<'ta' | 'general'>('ta')
 
   // 联机模式表单
   const [serverHost, setServerHost] = useState('')
@@ -39,6 +40,7 @@ export function ModeSettings({ onModeChange }: ModeSettingsProps) {
       setServerPort(String(cfg.online.server_port || '8081'))
       setUserId(cfg.online.user_id || '')
       setUserName(cfg.online.user_name || '')
+      setAgentModeState(cfg.agent_mode === 'general' ? 'general' : 'ta')
 
       // 如果是联机模式，检查服务器状态
       if (cfg.mode === 'online' && cfg.online.server_host) {
@@ -133,6 +135,26 @@ export function ModeSettings({ onModeChange }: ModeSettingsProps) {
     }
   }
 
+  const handleSwitchAgentMode = async (mode: 'ta' | 'general') => {
+    if (switching || agentMode === mode) return
+    const modeLabel = mode === 'general' ? '通用模式' : 'TA 模式'
+    const confirmed = window.confirm(
+      `确认切换到${modeLabel}？\n\n将切换工作台界面，不会删除另一个模式的会话与记忆。`
+    )
+    if (!confirmed) return
+    setSwitching(true)
+    setError('')
+    try {
+      await setAgentMode(mode)
+      setAgentModeState(mode)
+      onModeChange?.()
+    } catch (err) {
+      setError('切换工作台失败: ' + (err instanceof Error ? err.message : String(err)))
+    } finally {
+      setSwitching(false)
+    }
+  }
+
   if (loading) {
     return <div className="text-muted-foreground">加载中...</div>
   }
@@ -161,6 +183,15 @@ export function ModeSettings({ onModeChange }: ModeSettingsProps) {
                   ? <Wifi size={18} />
                   : <WifiOff size={18} />
             }
+          />
+          <SettingsRow
+            label={agentMode === 'general' ? '通用工作台' : 'TA 工作台'}
+            description={
+              agentMode === 'general'
+                ? '会话级工作区，聚焦办公与编码任务'
+                : '资产库、分析、审核、搜索与流水线工作流'
+            }
+            icon={agentMode === 'general' ? <Bot size={18} /> : <Package size={18} />}
           />
         </SettingsCard>
 
@@ -213,6 +244,53 @@ export function ModeSettings({ onModeChange }: ModeSettingsProps) {
               <li>• 使用服务器 LLM 配额</li>
               <li>• 数据同步到服务器</li>
               <li>• 支持多人协作</li>
+            </ul>
+          </div>
+        </div>
+      </SettingsSection>
+
+      <SettingsSection
+        title="工作台模式"
+        description="TA 模式包含资产与审核工作流，通用模式仅保留对话工作台"
+      >
+        <div className="grid grid-cols-2 gap-4">
+          <div
+            className={`p-4 border-2 rounded-xl cursor-pointer transition-all ${
+              switching ? 'opacity-50 pointer-events-none' : ''
+            } ${
+              agentMode === 'ta'
+                ? 'border-primary bg-primary/5'
+                : 'border-border hover:border-primary/50'
+            }`}
+            onClick={() => !switching && handleSwitchAgentMode('ta')}
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <Package size={20} />
+              <span className="font-medium">TA 模式</span>
+            </div>
+            <ul className="text-sm text-muted-foreground space-y-1">
+              <li>• 资产库 / 分析 / 审核 / 搜索 / 流水线</li>
+              <li>• 游戏资产管理工作流</li>
+            </ul>
+          </div>
+
+          <div
+            className={`p-4 border-2 rounded-xl cursor-pointer transition-all ${
+              switching ? 'opacity-50 pointer-events-none' : ''
+            } ${
+              agentMode === 'general'
+                ? 'border-primary bg-primary/5'
+                : 'border-border hover:border-primary/50'
+            }`}
+            onClick={() => !switching && handleSwitchAgentMode('general')}
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <Bot size={20} />
+              <span className="font-medium">通用模式</span>
+            </div>
+            <ul className="text-sm text-muted-foreground space-y-1">
+              <li>• 仅对话工作台 + 会话工作区</li>
+              <li>• 办公 / 编码任务优先</li>
             </ul>
           </div>
         </div>

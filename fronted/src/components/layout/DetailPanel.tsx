@@ -11,6 +11,7 @@ import { getDataSource } from '@/lib/cache'
 import { API_BASE } from '@/lib/api'
 import { FbxViewerModal, FbxViewerInline } from '@/components/viewer'
 import type { FieldConfig } from './detailFields'
+import { PageHeader } from '@/components/layout/PageHeader'
 import {
   MESH_FIELDS, TEXTURE_FIELDS, ANIMATION_FIELDS,
   META_FIELDS, CATEGORY_FIELDS, VISUAL_FIELDS,
@@ -44,16 +45,20 @@ export function DetailPanel({ asset, onClose }: DetailPanelProps) {
 
   return (
     <div className="w-full h-full flex flex-col overflow-hidden">
-      {/* 头部 */}
-      <div className="h-14 flex items-center justify-between px-4 border-b border-border/50 shrink-0">
+      <PageHeader
+        showWindowControls={false}
+        actions={
+          <button
+            onClick={onClose}
+            className="text-muted-foreground hover:text-foreground transition-colors p-1.5 rounded hover:bg-muted"
+            aria-label="关闭详情"
+          >
+            <X size={16} />
+          </button>
+        }
+      >
         <h3 className="text-sm font-medium truncate">{name}</h3>
-        <button
-          onClick={onClose}
-          className="text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <X size={16} />
-        </button>
-      </div>
+      </PageHeader>
 
       {/* 内容 */}
       <div className="flex-1 overflow-y-auto scrollbar-thin p-4 space-y-4">

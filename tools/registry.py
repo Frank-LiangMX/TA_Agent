@@ -25,7 +25,12 @@ from tools.core.texture import check_texture_info, check_texture_batch
 from tools.core.report import generate_report
 from tools.core.identity import analyze_assets, run_ai_inference, update_asset_type, update_asset, search_assets, get_asset_detail, list_assets
 from tools.core.convention_tools import discover_conventions, load_conventions
-from tools.core.memory_llm_tools import record_correction, get_memory_stats, update_project_profile
+from tools.core.memory_llm_tools import (
+    record_correction,
+    get_memory_stats,
+    update_project_profile,
+    append_profile_fact,
+)
 from tools.core.renderer import render_asset_preview
 from tools.core.review import get_pending_reviews, get_review_detail, submit_review, batch_approve
 from tools.core.review_schema import GET_PENDING_REVIEWS_DEF, GET_REVIEW_DETAIL_DEF, SUBMIT_REVIEW_DEF, BATCH_APPROVE_DEF
@@ -51,6 +56,16 @@ from tools.extensions.ue5_bridge import (
 from tools.mcp_bridge import (
     MCP_TOOLS, MCP_TOOL_FUNCTIONS,
 )
+from tools.core.workspace_tools import (
+    WORKSPACE_READ_FILE_DEF,
+    WORKSPACE_WRITE_FILE_DEF,
+    WORKSPACE_LIST_DIR_DEF,
+    workspace_read_file,
+    workspace_write_file,
+    workspace_list_dir,
+)
+from config import get_agent_runtime_mode
+from tools.path_resolve import normalize_tool_arguments
 
 
 # ========== Schema 注册 ==========
@@ -68,11 +83,16 @@ from tools.core.identity import (
     SEARCH_ASSETS_DEF, GET_ASSET_DETAIL_DEF, LIST_ASSETS_DEF,
 )
 from tools.core.convention_tools import DISCOVER_CONVENTIONS_DEF, LOAD_CONVENTIONS_DEF
-from tools.core.memory_llm_tools import RECORD_CORRECTION_DEF, GET_MEMORY_STATS_DEF, UPDATE_PROJECT_PROFILE_DEF
+from tools.core.memory_llm_tools import (
+    RECORD_CORRECTION_DEF,
+    GET_MEMORY_STATS_DEF,
+    UPDATE_PROJECT_PROFILE_DEF,
+    APPEND_PROFILE_FACT_DEF,
+)
 from tools.core.renderer import SCHEMA as RENDERER_SCHEMA
 
 # ========== 工具层级分类 ==========
-# tier: core(内置) | extension(扩展) | mcp(动态) | plugin(可选插件)
+# tier: core | extension | mcp(内置管理) | mcp_remote(外部服务器) | plugin
 # core+extension 启动即注册，mcp 从 mcp.json 加载，plugin 从 plugins/ 加载
 
 TOOL_TIER: dict[str, str] = {}  # tool_name → tier
@@ -82,9 +102,41 @@ def _tag_tier(name: str, tier: str):
     TOOL_TIER[name] = tier
 
 
+def tag_mcp_remote_tools():
+    """为外部 MCP 服务器注入的 mcp__* 工具标注层级（reload 后调用）。"""
+    for schema in TOOLS:
+        name = schema["function"]["name"]
+        if name.startswith("mcp__"):
+            _tag_tier(name, "mcp_remote")
+
+
 # ========== Schema 注册 ==========
 
+# 通用模式允许的核心工具（不含动态 mcp__*）
+GENERAL_CORE_TOOL_NAMES = frozenset({
+    "workspace_read_file",
+    "workspace_write_file",
+    "workspace_list_dir",
+    "scan_directory",
+    "check_file_info",
+    "record_correction",
+    "get_memory_stats",
+    "update_project_profile",
+    "append_profile_fact",
+    "discover_conventions",
+    "load_conventions",
+    "mcp_list_servers",
+    "mcp_add_server",
+    "mcp_remove_server",
+    "mcp_toggle_server",
+    "mcp_reload_servers",
+    "mcp_test_connection",
+})
+
 TOOLS = [
+    WORKSPACE_READ_FILE_DEF,
+    WORKSPACE_WRITE_FILE_DEF,
+    WORKSPACE_LIST_DIR_DEF,
     NAMING_SCHEMA,
     SUGGEST_SCHEMA,
     DIR_SCHEMA,
@@ -108,6 +160,7 @@ TOOLS = [
     RECORD_CORRECTION_DEF,
     GET_MEMORY_STATS_DEF,
     UPDATE_PROJECT_PROFILE_DEF,
+    APPEND_PROFILE_FACT_DEF,
     RENDERER_SCHEMA,
     GET_PENDING_REVIEWS_DEF,
     GET_REVIEW_DETAIL_DEF,
@@ -144,7 +197,7 @@ def _build_tier_map():
         elif name in ext_names:
             _tag_tier(name, "extension")
         elif name.startswith("mcp__"):
-            _tag_tier(name, "mcp")
+            _tag_tier(name, "mcp_remote")
         else:
             _tag_tier(name, "core")
 
@@ -162,9 +215,25 @@ def get_tools_by_tier() -> dict[str, list[str]]:
     return tiers
 
 
+def get_tier_summary_for_mode(agent_mode: str | None = None) -> dict[str, int]:
+    """按运行模式统计各层级可用工具数量（与 get_tools_for_mode 一致）。"""
+    summary = {"core": 0, "extension": 0, "mcp": 0, "plugin": 0}
+    for schema in get_tools_for_mode(agent_mode):
+        name = schema.get("function", {}).get("name", "")
+        tier = TOOL_TIER.get(name, "core")
+        if tier == "mcp_remote":
+            continue
+        if tier in summary:
+            summary[tier] += 1
+    return summary
+
+
 # ========== 工具执行函数注册 ==========
 
 TOOL_FUNCTIONS = {
+    "workspace_read_file":    workspace_read_file,
+    "workspace_write_file":   workspace_write_file,
+    "workspace_list_dir":     workspace_list_dir,
     "check_naming":           check_naming,
     "suggest_naming":         suggest_naming,
     "check_directory_structure": check_directory_structure,
@@ -188,6 +257,7 @@ TOOL_FUNCTIONS = {
     "record_correction":      record_correction,
     "get_memory_stats":       get_memory_stats,
     "update_project_profile": update_project_profile,
+    "append_profile_fact":    append_profile_fact,
     "render_asset_preview":   render_asset_preview,
     "get_pending_reviews":    get_pending_reviews,
     "get_review_detail":      get_review_detail,
@@ -211,14 +281,39 @@ TOOL_FUNCTIONS = {
 }
 
 
-def execute_tool(tool_name: str, arguments: dict) -> str:
+def is_tool_allowed(tool_name: str, agent_mode: str | None = None) -> bool:
+    """当前运行模式下是否允许调用该工具。"""
+    mode = (agent_mode or get_agent_runtime_mode()).strip().lower()
+    if mode != "general":
+        return True
+    if tool_name in GENERAL_CORE_TOOL_NAMES:
+        return True
+    if tool_name.startswith("mcp__"):
+        return True
+    return False
+
+
+def get_tools_for_mode(agent_mode: str | None = None) -> list:
+    """按运行模式返回可供 LLM 使用的工具 Schema 列表。"""
+    mode = (agent_mode or get_agent_runtime_mode()).strip().lower()
+    if mode != "general":
+        return TOOLS
+    return [s for s in TOOLS if is_tool_allowed(s["function"]["name"], mode)]
+
+
+def execute_tool(tool_name: str, arguments: dict, agent_mode: str | None = None) -> str:
     """执行工具并返回 JSON 字符串结果"""
+    if not is_tool_allowed(tool_name, agent_mode):
+        return json.dumps(
+            {"error": f"工具 {tool_name} 在通用模式下不可用"},
+            ensure_ascii=False,
+        )
     func = TOOL_FUNCTIONS.get(tool_name)
     if not func:
         return json.dumps({"error": f"未知工具: {tool_name}"}, ensure_ascii=False)
 
     try:
-        result = func(**arguments)
+        result = func(**normalize_tool_arguments(arguments))
         return json.dumps(result, ensure_ascii=False, indent=2)
     except Exception as e:
         return json.dumps({"error": f"工具执行失败: {str(e)}"}, ensure_ascii=False)
@@ -311,7 +406,7 @@ def _load_mcp_servers():
     for schema in TOOLS:
         name = schema["function"]["name"]
         if name.startswith("mcp__") and name not in TOOL_TIER:
-            _tag_tier(name, "mcp")
+            _tag_tier(name, "mcp_remote")
     if count:
         print(f"  MCP 加载: {count} 个工具已注册")
 _load_mcp_servers()

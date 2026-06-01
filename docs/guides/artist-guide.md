@@ -8,7 +8,7 @@
 
 ### 启动方式
 
-找到 `F:\ta_agent\fronted\` 目录，双击 `Start.bat`。
+找到 `F:\ta_agent\` 根目录，双击 `dev-web.bat`（浏览器模式）或 `dev-electron.bat`（桌面应用模式）。
 
 等终端出现如下提示就说明启动完成：
 
@@ -19,7 +19,7 @@
 
 然后打开浏览器，访问 **http://localhost:5175** 即可进入主界面。
 
-> 关闭时双击 `Stop.bat` 即可。
+> 关闭时双击 `stop-web.bat` 即可。
 
 ### 界面布局
 

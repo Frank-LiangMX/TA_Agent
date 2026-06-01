@@ -8,7 +8,20 @@ MCP 客户端桥接 — 连接外部 MCP 服务器，注入 TA Agent 工具系�
 import json
 import asyncio
 import os
-from typing import Any
+import concurrent.futures
+from typing import Any, Coroutine, TypeVar
+
+T = TypeVar("T")
+
+
+def _run_async(coro: Coroutine[Any, Any, T]) -> T:
+    """在同步代码中运行协程；若已在 FastAPI 事件循环内则放到独立线程执行。"""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()
 
 # MCP 服务器状态追踪
 _server_status: dict[str, dict] = {}
@@ -52,6 +65,7 @@ def get_mcp_status() -> dict:
             "enabled": cfg.get("enabled", False),
             "connected": status.get("connected", False),
             "tools": status.get("tools", 0),
+            "tool_names": status.get("tool_names", []),
             "error": status.get("error", None),
         }
     return result
@@ -66,28 +80,49 @@ def add_mcp_server(name: str, cfg: dict) -> dict:
         return {"success": False, "error": f"服务器 {name} 已存在"}
     config["servers"][name] = cfg
     _write_config(config)
-    return {"success": True, "message": f"已添加 {name}"}
+    reload_info = reload_mcp_servers()
+    return {
+        "success": True,
+        "message": f"已添加 {name}",
+        "loaded_tools": reload_info.get("loaded_tools", 0),
+        "removed_tools": reload_info.get("removed_tools", 0),
+        "status": reload_info.get("status"),
+    }
 
 
 def remove_mcp_server(name: str) -> dict:
-    """删除 MCP 服务器"""
+    """删除 MCP 服务器，并同步卸载已注册的 mcp__ 工具"""
     config = _read_config()
     if name not in config.get("servers", {}):
         return {"success": False, "error": f"服务器 {name} 不存在"}
     del config["servers"][name]
     _write_config(config)
     _server_status.pop(name, None)
-    return {"success": True, "message": f"已删除 {name}"}
+    reload_info = reload_mcp_servers()
+    return {
+        "success": True,
+        "message": f"已删除 {name}",
+        "loaded_tools": reload_info.get("loaded_tools", 0),
+        "removed_tools": reload_info.get("removed_tools", 0),
+        "status": reload_info.get("status"),
+    }
 
 
 def update_mcp_server(name: str, cfg: dict) -> dict:
-    """更新 MCP 服务器配置（支持切换 enabled）"""
+    """更新 MCP 服务器配置（支持切换 enabled），并同步工具注册表"""
     config = _read_config()
     if name not in config.get("servers", {}):
         return {"success": False, "error": f"服务器 {name} 不存在"}
     config["servers"][name].update(cfg)
     _write_config(config)
-    return {"success": True, "message": f"已更新 {name}"}
+    reload_info = reload_mcp_servers()
+    return {
+        "success": True,
+        "message": f"已更新 {name}",
+        "loaded_tools": reload_info.get("loaded_tools", 0),
+        "removed_tools": reload_info.get("removed_tools", 0),
+        "status": reload_info.get("status"),
+    }
 
 
 # ========== Schema 转换 ==========
@@ -132,7 +167,7 @@ async def _connect_server(name: str, cfg: dict, register_tools: bool = True) -> 
                 tools_result = await session.list_tools()
 
                 if not tools_result or not tools_result.tools:
-                    _server_status[name] = {"connected": True, "tools": 0}
+                    _server_status[name] = {"connected": True, "tools": 0, "tool_names": []}
                     return schemas, functions
 
                 for tool in tools_result.tools:
@@ -144,7 +179,11 @@ async def _connect_server(name: str, cfg: dict, register_tools: bool = True) -> 
                     executor = _make_mcp_executor(name, cfg, tool_name)
                     functions[tool_name] = executor
 
-                _server_status[name] = {"connected": True, "tools": len(tools_result.tools)}
+                _server_status[name] = {
+                    "connected": True,
+                    "tools": len(tools_result.tools),
+                    "tool_names": [s["function"]["name"] for s in schemas],
+                }
 
                 if register_tools:
                     _register_tools(schemas, functions)
@@ -160,7 +199,7 @@ async def _connect_server(name: str, cfg: dict, register_tools: bool = True) -> 
 def _make_mcp_executor(name: str, cfg: dict, tool_name: str):
     """为 MCP 工具创建同步执行函数"""
     def executor(**kwargs) -> dict:
-        return asyncio.run(_call_mcp_tool(name, cfg, tool_name, kwargs))
+        return _run_async(_call_mcp_tool(name, cfg, tool_name, kwargs))
     return executor
 
 
@@ -202,12 +241,13 @@ async def _call_mcp_tool(name: str, cfg: dict, tool_name: str, arguments: dict) 
 
 def _register_tools(schemas: list[dict], functions: dict[str, callable]):
     """将 MCP 工具注册到全局 TOOLS / TOOL_FUNCTIONS"""
-    from tools.registry import TOOLS, TOOL_FUNCTIONS
+    from tools.registry import TOOLS, TOOL_FUNCTIONS, tag_mcp_remote_tools
     for schema in schemas:
         name = schema["function"]["name"]
         if name not in TOOL_FUNCTIONS:
             TOOLS.append(schema)
             TOOL_FUNCTIONS[name] = functions.get(name)
+    tag_mcp_remote_tools()
 
 
 def _unregister_tools(name: str):
@@ -228,7 +268,7 @@ def _unregister_tools(name: str):
 def test_connection(cfg: dict) -> dict:
     """测试 MCP 服务器连接（不注册工具，不保存配置）"""
     try:
-        schemas, _ = asyncio.run(_connect_server("_test_", cfg, register_tools=False))
+        schemas, _ = _run_async(_connect_server("_test_", cfg, register_tools=False))
         tool_names = [s["function"]["name"] for s in schemas]
         return {
             "success": True,
@@ -253,7 +293,7 @@ def _load_mcp_servers_sync():
             _server_status[name] = {"connected": False, "error": f"不支持的类型"}
             continue
         try:
-            schemas, _ = asyncio.run(_connect_server(name, cfg, register_tools=True))
+            schemas, _ = _run_async(_connect_server(name, cfg, register_tools=True))
             total += len(schemas)
         except Exception as e:
             _server_status[name] = {"connected": False, "error": str(e)[:200]}
@@ -270,6 +310,8 @@ def reload_mcp_servers() -> dict:
 
     # 重新加载
     count = _load_mcp_servers_sync()
+    from tools.registry import tag_mcp_remote_tools
+    tag_mcp_remote_tools()
 
     return {
         "success": True,

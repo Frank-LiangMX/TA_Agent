@@ -4,7 +4,8 @@
  * 搜索 + 置顶 + 日期分组 + 归档折叠 + 批量管理
  */
 
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Search,
   Pin,
@@ -21,6 +22,7 @@ import {
   X,
 } from 'lucide-react'
 import { listSessions, createSession, updateSession, deleteSession } from '@/services/sessions'
+import { useConfirm } from '@/hooks/useConfirm'
 import type { SessionMeta } from '@/types'
 
 interface SessionPopoverProps {
@@ -32,6 +34,7 @@ interface SessionPopoverProps {
 }
 
 export function SessionPopover({ currentSessionId, refreshKey = 0, onSelect, onNewSession, onClose }: SessionPopoverProps) {
+  const { confirm, ConfirmUI } = useConfirm()
   const [sessions, setSessions] = useState<SessionMeta[]>([])
   const [search, setSearch] = useState('')
   const [showArchived, setShowArchived] = useState(false)
@@ -98,9 +101,21 @@ export function SessionPopover({ currentSessionId, refreshKey = 0, onSelect, onN
   // 删除单个
   const handleDelete = async (e: React.MouseEvent, sessionId: string) => {
     e.stopPropagation()
-    if (!confirm('确定删除这个会话？')) return
+    if (!await confirm('确定删除这个会话？', { danger: true })) return
     await deleteSession(sessionId)
     if (sessionId === currentSessionId) onNewSession()
+    loadSessions()
+  }
+
+  // 设置会话工作区
+  const handleSetWorkspace = async (e: React.MouseEvent, session: SessionMeta) => {
+    e.stopPropagation()
+    const current = session.workspacePath || ''
+    const nextPath = window.prompt('设置该会话工作区路径（绝对路径）', current)
+    if (nextPath == null) return
+    const trimmed = nextPath.trim()
+    if (!trimmed) return
+    await updateSession(session.sessionId, { workspacePath: trimmed })
     loadSessions()
   }
 
@@ -126,7 +141,7 @@ export function SessionPopover({ currentSessionId, refreshKey = 0, onSelect, onN
   // 批量删除
   const handleBatchDelete = async () => {
     if (selected.size === 0) return
-    if (!confirm(`确定删除选中的 ${selected.size} 个会话？`)) return
+    if (!await confirm(`确定删除选中的 ${selected.size} 个会话？`, { danger: true })) return
     const ids = Array.from(selected)
     for (const id of ids) {
       await deleteSession(id)
@@ -156,12 +171,15 @@ export function SessionPopover({ currentSessionId, refreshKey = 0, onSelect, onN
     onTogglePin: handleTogglePin,
     onArchive: handleArchive,
     onDelete: handleDelete,
+    onSetWorkspace: handleSetWorkspace,
     onToggleSelect: toggleSelect,
   }
 
-  return (
+  return createPortal(
+    <>
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center pt-16"
+      data-session-ui-root
+      className="fixed inset-0 z-[110] flex items-start justify-center pt-16"
       onClick={handleBackdropClick}
     >
       <div className="w-96 max-h-[70vh] bg-popover rounded-lg shadow-xl border border-border/30 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
@@ -264,10 +282,11 @@ export function SessionPopover({ currentSessionId, refreshKey = 0, onSelect, onN
         </div>
       </div>
     </div>
+    {ConfirmUI}
+    </>,
+    document.body,
   )
 }
-
-// ===== 会话分组 =====
 
 function SessionGroup({
   label,
@@ -283,6 +302,7 @@ function SessionGroup({
   onTogglePin: (e: React.MouseEvent, s: SessionMeta) => void
   onArchive: (e: React.MouseEvent, s: SessionMeta) => void
   onDelete: (e: React.MouseEvent, id: string) => void
+  onSetWorkspace: (e: React.MouseEvent, s: SessionMeta) => void
   onToggleSelect: (id: string) => void
 }) {
   if (sessions.length === 0) return null
@@ -312,6 +332,7 @@ function SessionItem({
   onTogglePin,
   onArchive,
   onDelete,
+  onSetWorkspace,
   onToggleSelect,
 }: {
   session: SessionMeta
@@ -322,10 +343,57 @@ function SessionItem({
   onTogglePin: (e: React.MouseEvent, s: SessionMeta) => void
   onArchive: (e: React.MouseEvent, s: SessionMeta) => void
   onDelete: (e: React.MouseEvent, id: string) => void
+  onSetWorkspace: (e: React.MouseEvent, s: SessionMeta) => void
   onToggleSelect: (id: string) => void
 }) {
   const [showMenu, setShowMenu] = useState(false)
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null)
+  const menuButtonRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
   const isSelected = selected.has(session.sessionId)
+
+  const closeMenu = () => {
+    setShowMenu(false)
+    setMenuPos(null)
+  }
+
+  const openMenu = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (showMenu) {
+      closeMenu()
+      return
+    }
+    const btn = menuButtonRef.current
+    if (!btn) return
+    const rect = btn.getBoundingClientRect()
+    const menuWidth = 144
+    const menuHeight = 160
+    let top = rect.bottom + 4
+    if (top + menuHeight > window.innerHeight - 8) {
+      top = Math.max(8, rect.top - menuHeight - 4)
+    }
+    let left = rect.right - menuWidth
+    left = Math.max(8, Math.min(left, window.innerWidth - menuWidth - 8))
+    setMenuPos({ top, left })
+    setShowMenu(true)
+  }
+
+  useEffect(() => {
+    if (!showMenu) return
+    const onOutside = (e: MouseEvent) => {
+      const target = e.target as Node
+      if (menuButtonRef.current?.contains(target)) return
+      if (menuRef.current?.contains(target)) return
+      closeMenu()
+    }
+    const onScroll = () => closeMenu()
+    document.addEventListener('mousedown', onOutside)
+    window.addEventListener('scroll', onScroll, true)
+    return () => {
+      document.removeEventListener('mousedown', onOutside)
+      window.removeEventListener('scroll', onScroll, true)
+    }
+  }, [showMenu])
 
   const timeStr = useMemo(() => {
     const d = new Date(session.lastActive)
@@ -386,6 +454,11 @@ function SessionItem({
         <div className="text-[11px] text-muted-foreground">
           {session.messageCount} 条消息 · {timeStr}
         </div>
+        {session.workspaceName ? (
+          <div className="text-[10px] text-muted-foreground/80 truncate">
+            工作区: {session.workspaceName}
+          </div>
+        ) : null}
       </div>
 
       {/* 操作按钮（非管理模式） */}
@@ -395,10 +468,8 @@ function SessionItem({
             <Pin size={12} className="text-primary fill-current" />
           )}
           <button
-            onClick={(e) => {
-              e.stopPropagation()
-              setShowMenu(!showMenu)
-            }}
+            ref={menuButtonRef}
+            onClick={openMenu}
             className="p-1 rounded hover:bg-foreground/10 transition-colors"
           >
             <MoreHorizontal size={14} className="text-muted-foreground" />
@@ -406,11 +477,16 @@ function SessionItem({
         </div>
       )}
 
-      {/* 右键菜单 */}
-      {showMenu && !selectMode && (
-        <div className="absolute right-0 top-full z-10 w-36 bg-popover rounded-md shadow-lg border border-border/30 py-1 animate-in fade-in zoom-in-95 duration-100">
+      {/* 操作菜单：Portal 到 body，避免被列表 overflow 裁切 */}
+      {showMenu && !selectMode && menuPos && createPortal(
+        <div
+          ref={menuRef}
+          className="fixed z-[120] w-36 bg-popover rounded-md shadow-lg border border-border/30 py-1 animate-in fade-in zoom-in-95 duration-100"
+          style={{ top: menuPos.top, left: menuPos.left }}
+          onClick={(e) => e.stopPropagation()}
+        >
           <button
-            onClick={(e) => { onTogglePin(e, session); setShowMenu(false) }}
+            onClick={(e) => { onTogglePin(e, session); closeMenu() }}
             className="w-full px-3 py-1.5 text-xs text-left hover:bg-accent flex items-center gap-2"
           >
             <Pin size={12} />
@@ -418,7 +494,7 @@ function SessionItem({
           </button>
           {!session.isArchived && (
             <button
-              onClick={(e) => { onArchive(e, session); setShowMenu(false) }}
+              onClick={(e) => { onArchive(e, session); closeMenu() }}
               className="w-full px-3 py-1.5 text-xs text-left hover:bg-accent flex items-center gap-2"
             >
               <Archive size={12} />
@@ -426,13 +502,21 @@ function SessionItem({
             </button>
           )}
           <button
-            onClick={(e) => { onDelete(e, session.sessionId); setShowMenu(false) }}
+            onClick={(e) => { onSetWorkspace(e, session); closeMenu() }}
+            className="w-full px-3 py-1.5 text-xs text-left hover:bg-accent flex items-center gap-2"
+          >
+            <MessageSquare size={12} />
+            设置工作区
+          </button>
+          <button
+            onClick={(e) => { onDelete(e, session.sessionId); closeMenu() }}
             className="w-full px-3 py-1.5 text-xs text-left hover:bg-accent text-destructive flex items-center gap-2"
           >
             <Trash2 size={12} />
             删除
           </button>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

@@ -46,6 +46,15 @@ Agent → 返回匹配资产列表（含匹配度百分比）
 - **L1 纠正规则**：用户纠正后的精简推断规则
 - **L2 归档**：原始纠正记录
 
+### 工作台双模式（TA / 通用）
+
+为兼容「游戏资产管理（TA）」与「通用办公/编码（General）」，已实现模式切换、会话/记忆/工具隔离、工作区与默认工作区等能力。**进度与待办以单一台账为准**（避免与旧文档不一致）：
+
+- 📋 [实施台账](docs/experiments/backend/2026-06-01-workbench-dual-mode-roadmap.md) — 已完成 / 待做 / 文档分工 / 验收清单
+- 📐 [记忆系统设计草案](docs/experiments/backend/2026-06-01-dual-mode-memory-design.md) — L0 自动 pipeline、global 偏好、Subagent（未实现部分）
+
+与「本地/联机」客户端双模式无关，见 `docs/decisions/client-dual-mode-design.md`。
+
 ## 项目结构
 
 ```
@@ -63,19 +72,23 @@ ta_agent/
 │   └── search.py         # 语义化检索引擎
 ├── tools/
 │   ├── registry.py       # 工具注册中心
-│   ├── naming.py         # 命名规范检查
-│   ├── mesh.py           # 模型面数检查
-│   ├── mesh_fbx.py       # FBX 信息读取
-│   ├── texture.py        # 贴图规格检查
-│   ├── identity.py       # 资产身份分析
-│   ├── review.py         # 人工审核工作流
-│   ├── intake.py         # 入库工作流（Phase 3）
-│   ├── renderer.py       # 渲染预览图
-│   ├── render_studio.py  # 高质量渲染模块
-│   ├── vision.py         # 多模态视觉分析
-│   ├── memory/           # 记忆系统
-│   ├── asset_operations.py # 文件操作（重命名、移动）
-│   └── config_tools.py   # 项目配置工具
+│   ├── mcp_bridge.py     # MCP 协议桥接
+│   ├── core/             # 核心工具（41 个）
+│   │   ├── naming.py     # 命名规范检查
+│   │   ├── mesh.py       # 模型面数检查
+│   │   ├── mesh_fbx.py   # FBX 信息读取
+│   │   ├── texture.py    # 贴图规格检查
+│   │   ├── identity.py   # 资产身份分析
+│   │   ├── review.py     # 人工审核工作流
+│   │   ├── intake.py     # 入库工作流
+│   │   ├── renderer.py   # 渲染预览图
+│   │   ├── config_tools.py # 项目配置工具
+│   │   ├── asset_operations.py # 文件操作（重命名、移动）
+│   │   └── ...
+│   ├── extensions/       # 引擎扩展（9 个 UE5 工具）
+│   │   └── ue5_bridge.py
+│   ├── plugins/          # 可选插件
+│   └── memory/           # 记忆系统
 ├── conventions/          # 规范发现与加载
 ├── tests/                # 测试
 └── 游戏TA_AI_Agent设计文档.md
@@ -187,7 +200,7 @@ for r in results:
 
 ## 工具一览
 
-Agent 共注册 **36 个工具**，覆盖资产全生命周期：
+Agent 共注册 **54 个工具**，覆盖资产全生命周期：
 
 | 类别 | 工具 | 说明 |
 |---|---|---|
@@ -216,6 +229,11 @@ Agent 共注册 **36 个工具**，覆盖资产全生命周期：
 ## 设计文档
 
 详细的架构设计、功能模块、技术选型见 [游戏TA_AI_Agent设计文档.md](游戏TA_AI_Agent设计文档.md)。
+
+工作台双模式（TA / 通用）文档：
+
+- [实施台账（进度/待办）](docs/experiments/backend/2026-06-01-workbench-dual-mode-roadmap.md)
+- [记忆与协作设计草案](docs/experiments/backend/2026-06-01-dual-mode-memory-design.md)
 
 ## License
 

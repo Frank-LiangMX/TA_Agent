@@ -6,12 +6,14 @@
  * - 左侧下拉按钮打开会话列表弹窗
  * - 弹窗中选择会话 → 开新标签页
  */
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useCallback, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Plus, X, MessageSquare, ChevronDown, User, Bot, AlertCircle } from 'lucide-react'
 import { getSession, getSessionMessages } from '@/services/sessions'
 import { SessionPopover } from './SessionPopover'
+import { Tooltip } from '@/components/ui/Tooltip'
 
 interface SessionTabBarProps {
   openTabs: string[]
@@ -39,6 +41,7 @@ interface HoverState {
   title: string
   items: PreviewItem[]
   messageCount?: number
+  workspaceName?: string
 }
 
 const MAX_TABS = 8
@@ -61,6 +64,31 @@ export function SessionTabBar({
   const fetchCache = useRef<Map<string, PreviewItem[]>>(new Map())
 
   const visibleTabs = openTabs.slice(0, MAX_TABS)
+
+  const dismissPreview = useCallback(() => {
+    hoverRequestId.current += 1
+    if (showTimer.current) {
+      clearTimeout(showTimer.current)
+      showTimer.current = null
+    }
+    if (hideTimer.current) {
+      clearTimeout(hideTimer.current)
+      hideTimer.current = null
+    }
+    setHoverState(null)
+  }, [])
+
+  // 切换会话后关闭预览，并作废尚未完成的 hover 请求
+  useEffect(() => {
+    dismissPreview()
+  }, [activeTabId, dismissPreview])
+
+  // 会话列表 UI 打开时通知消息区收起剪刀等悬停控件
+  useEffect(() => {
+    if (hoverState || showPopover) {
+      window.dispatchEvent(new CustomEvent('session-ui-active'))
+    }
+  }, [hoverState, showPopover])
 
   const getPreviewRect = (tabRect: DOMRect) => {
     const width = Math.min(PREVIEW_WIDTH, window.innerWidth - PREVIEW_MARGIN * 2)
@@ -108,7 +136,7 @@ export function SessionTabBar({
   const handleTabMouseEnter = (e: React.MouseEvent, tabId: string) => {
     // 当前活跃标签不触发预览浮窗
     if (tabId === activeTabId) return
-    
+
     if (hideTimer.current) clearTimeout(hideTimer.current)
     if (showTimer.current) clearTimeout(showTimer.current)
 
@@ -137,6 +165,7 @@ export function SessionTabBar({
           ...prev,
           title: tabTitles[tabId] || meta?.title || '新会话',
           messageCount: meta?.messageCount,
+          workspaceName: meta?.workspaceName || '',
           items,
         } : null)
       } catch {
@@ -165,15 +194,16 @@ export function SessionTabBar({
 
   return (
     <>
-      <div className="flex items-center gap-1 min-w-0 max-w-full overflow-x-auto scrollbar-none h-9 select-none">
+      <div className="flex items-center gap-1 min-w-0 max-w-full overflow-x-auto scrollbar-none h-9 select-none titlebar-no-drag">
         {/* 会话列表按钮 */}
-        <button
-          onClick={() => setShowPopover(!showPopover)}
-          className="flex items-center justify-center px-1.5 h-full text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] transition-colors shrink-0"
-          title="所有会话"
-        >
-          <ChevronDown size={12} />
-        </button>
+        <Tooltip content="所有会话">
+          <button
+            onClick={() => setShowPopover(!showPopover)}
+            className="flex items-center justify-center px-1.5 h-full text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] transition-colors shrink-0"
+          >
+            <ChevronDown size={12} />
+          </button>
+        </Tooltip>
 
         {/* 标签页 */}
         {visibleTabs.map((tabId) => {
@@ -185,7 +215,7 @@ export function SessionTabBar({
               className={`group relative flex items-center gap-1.5 px-3 h-7 cursor-pointer shrink-0 max-w-[160px]
                 transition-colors
                 ${isActive ? 'text-foreground bg-content-area rounded-t-md' : 'text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04]'}`}
-              onClick={() => onTabSelect(tabId)}
+              onClick={() => { dismissPreview(); onTabSelect(tabId) }}
               onMouseEnter={(e) => handleTabMouseEnter(e, tabId)}
               onMouseLeave={handleMouseLeave}
             >
@@ -208,9 +238,10 @@ export function SessionTabBar({
         })}
       </div>
 
-      {/* 悬停预览浮窗 — 消息列表 */}
-      {hoverState && (
+      {/* 悬停预览浮窗 — Portal 到 body，避免顶栏 overflow 裁切导致指针穿透到底层消息区 */}
+      {hoverState && createPortal(
         <div
+          data-session-ui-root
           className="fixed z-[100] rounded-lg border bg-popover text-popover-foreground shadow-xl origin-top
                      animate-in fade-in-0 zoom-in-95 duration-150 grid overflow-hidden max-w-[calc(100vw-16px)]"
           style={{
@@ -225,14 +256,21 @@ export function SessionTabBar({
         >
           {/* Header: 标题 + 消息数 */}
           <div className="flex items-center justify-between gap-2 px-3 py-2 border-b min-w-0">
-            <span className="text-xs font-medium truncate">{hoverState.title}</span>
+            <div className="min-w-0">
+              <div className="text-xs font-medium truncate">{hoverState.title}</div>
+              {hoverState.workspaceName ? (
+                <div className="text-[10px] text-muted-foreground/70 truncate">
+                  工作区: {hoverState.workspaceName}
+                </div>
+              ) : null}
+            </div>
             {hoverState.messageCount !== undefined && (
               <span className="text-[10px] text-muted-foreground/60 shrink-0 ml-2">{hoverState.messageCount}</span>
             )}
           </div>
 
           {/* 消息列表 */}
-          <div className="session-preview-scroll overflow-y-scroll overflow-x-hidden overscroll-contain p-1.5 min-h-0 max-w-full"
+          <div className="overflow-y-auto overflow-x-hidden overscroll-contain p-1.5 min-h-0 max-w-full scrollbar-thin"
                onWheel={(e) => e.stopPropagation()}>
             {hoverState.items.length === 0 ? (
               <div className="flex items-center justify-center h-16 text-xs text-muted-foreground/40">暂无消息</div>
@@ -260,7 +298,8 @@ export function SessionTabBar({
               ))
             )}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
       {/* 会话列表弹窗 */}
@@ -268,8 +307,8 @@ export function SessionTabBar({
         <SessionPopover
           currentSessionId={activeTabId}
           refreshKey={sessionRefreshKey}
-          onSelect={(sid) => { setShowPopover(false); onTabSelect(sid) }}
-          onNewSession={() => { setShowPopover(false); onNewTab() }}
+          onSelect={(sid) => { dismissPreview(); setShowPopover(false); onTabSelect(sid) }}
+          onNewSession={() => { dismissPreview(); setShowPopover(false); onNewTab() }}
           onClose={() => setShowPopover(false)}
         />
       )}

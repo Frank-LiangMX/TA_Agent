@@ -15,12 +15,15 @@ import {
   BarChart3,
   FileCheck,
   GitBranch,
+  FolderOpen,
+  Clock3,
 } from 'lucide-react'
 
-export type ViewType = 'chat' | 'assets' | 'analysis' | 'review' | 'search' | 'workflow' | 'settings'
+export type ViewType = 'chat' | 'workspace' | 'history' | 'assets' | 'analysis' | 'review' | 'search' | 'workflow' | 'settings'
 
 interface SidebarProps {
   activeView: ViewType
+  agentMode: 'ta' | 'general'
   onViewChange: (view: ViewType) => void
 }
 
@@ -35,11 +38,19 @@ async function getDataSource(): Promise<string> {
   return API_BASE
 }
 
-export function Sidebar({ activeView, onViewChange }: SidebarProps) {
+export function Sidebar({
+  activeView,
+  agentMode,
+  onViewChange,
+}: SidebarProps) {
   const [reviewCount, setReviewCount] = useState(0)
 
   // 定期刷新待审核数量
   useEffect(() => {
+    if (agentMode !== 'ta') {
+      setReviewCount(0)
+      return
+    }
     const fetchCount = async () => {
       try {
         const dataSource = await getDataSource()
@@ -53,11 +64,11 @@ export function Sidebar({ activeView, onViewChange }: SidebarProps) {
     fetchCount()
     const timer = setInterval(fetchCount, 30000)
     return () => clearInterval(timer)
-  }, [])
+  }, [agentMode])
 
   // 切换到审核页面时立即刷新
   useEffect(() => {
-    if (activeView === 'review') {
+    if (agentMode === 'ta' && activeView === 'review') {
       getDataSource().then(dataSource => {
         fetch(`${dataSource}/api/reviews/pending`)
           .then((res) => res.json())
@@ -65,33 +76,43 @@ export function Sidebar({ activeView, onViewChange }: SidebarProps) {
           .catch(() => {})
       })
     }
-  }, [activeView])
+  }, [activeView, agentMode])
+
+  const navItems = agentMode === 'general'
+    ? [
+        { id: 'chat' as ViewType, label: '对话', icon: <MessageSquare size={18} /> },
+        { id: 'workspace' as ViewType, label: '工作区', icon: <FolderOpen size={18} /> },
+        { id: 'history' as ViewType, label: '历史', icon: <Clock3 size={18} /> },
+      ]
+    : [
+        { id: 'chat' as ViewType, label: '对话', icon: <MessageSquare size={18} /> },
+        { id: 'assets' as ViewType, label: '资产库', icon: <Package size={18} /> },
+        { id: 'analysis' as ViewType, label: '分析', icon: <BarChart3 size={18} /> },
+        { id: 'review' as ViewType, label: '审核', icon: <FileCheck size={18} />, badge: reviewCount },
+        { id: 'search' as ViewType, label: '搜索', icon: <Search size={18} /> },
+        { id: 'workflow' as ViewType, label: '流水线', icon: <GitBranch size={18} /> },
+      ]
 
   return (
     <div className="w-full h-full flex flex-col">
       {/* Logo */}
-      <div className="h-14 flex items-center px-4 border-b border-border/50 titlebar-drag-region">
-        <div className="flex items-center gap-2">
+      <div className="titlebar-drag-region flex h-14 items-center border-b border-border/50 px-4">
+        <div className="titlebar-no-drag flex min-w-0 items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-background border border-border/60 flex items-center justify-center overflow-hidden">
             <img src={agentIcon} alt="TAgent" className="w-full h-full object-cover" />
           </div>
           <div>
             <h1 className="text-sm font-semibold"><BlurText text="TAgent" delay={80} /></h1>
-            <p className="text-xs text-muted-foreground">游戏 TA AI Agent</p>
+            <p className="text-xs text-muted-foreground">
+              {agentMode === 'general' ? '通用工作台' : '游戏 TA AI Agent'}
+            </p>
           </div>
         </div>
       </div>
 
       {/* 导航 */}
       <nav className="flex-1 p-2 space-y-1">
-        {[
-          { id: 'chat' as ViewType, label: '对话', icon: <MessageSquare size={18} /> },
-          { id: 'assets' as ViewType, label: '资产库', icon: <Package size={18} /> },
-          { id: 'analysis' as ViewType, label: '分析', icon: <BarChart3 size={18} /> },
-          { id: 'review' as ViewType, label: '审核', icon: <FileCheck size={18} />, badge: reviewCount },
-          { id: 'search' as ViewType, label: '搜索', icon: <Search size={18} /> },
-          { id: 'workflow' as ViewType, label: '流水线', icon: <GitBranch size={18} /> },
-        ].map((item) => (
+        {navItems.map((item) => (
           <button
             key={item.id}
             onClick={() => onViewChange(item.id)}

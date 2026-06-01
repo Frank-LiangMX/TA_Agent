@@ -95,6 +95,48 @@ def get_memory_stats() -> dict:
     return memory.get_memory_stats()
 
 
+def append_profile_fact(fact: str, section: str = "") -> dict:
+    """向 L0 画像追加一条事实（合并写入，不覆盖已有内容）。"""
+    memory = get_memory_provider()
+    if not memory:
+        return {"error": "记忆系统未初始化"}
+
+    text = (fact or "").strip()
+    if not text:
+        return {"error": "fact 不能为空"}
+
+    line = text if text.startswith("-") else f"- {text}"
+    existing = (memory.get_project_profile() or "").strip()
+    sec = (section or "").strip()
+
+    if sec:
+        header = f"## {sec}"
+        if header in existing:
+            parts = existing.split(header, 1)
+            before = parts[0].rstrip()
+            rest = parts[1]
+            if "\n## " in rest:
+                body, after = rest.split("\n## ", 1)
+                body = body.rstrip() + "\n" + line
+                new_profile = f"{before}\n\n{header}{body}\n## {after}".strip()
+            else:
+                new_profile = f"{before}\n\n{header}{rest.rstrip()}\n{line}".strip()
+        else:
+            block = f"{header}\n{line}"
+            new_profile = f"{existing}\n\n{block}".strip() if existing else block
+    else:
+        new_profile = f"{existing}\n{line}".strip() if existing else line
+
+    if hasattr(memory, "update_project_profile"):
+        memory.update_project_profile(new_profile)
+        return {
+            "success": True,
+            "message": "已追加到 L0 记忆",
+            "profile_chars": len(new_profile),
+        }
+    return {"error": "当前记忆实现不支持更新项目画像"}
+
+
 def update_project_profile(profile_content: str) -> dict:
     """更新项目画像（L0 记忆）。
 
@@ -169,17 +211,39 @@ GET_MEMORY_STATS_DEF = {
     }
 }
 
+APPEND_PROFILE_FACT_DEF = {
+    "type": "function",
+    "function": {
+        "name": "append_profile_fact",
+        "description": "向 L0 长期记忆追加一条用户环境事实（如 Blender 路径、常用命令）。优先于 update_project_profile，避免覆盖已有记忆。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "fact": {
+                    "type": "string",
+                    "description": "要记住的事实，建议一行，如「Blender: ~/AppData/.../blender.exe」",
+                },
+                "section": {
+                    "type": "string",
+                    "description": "可选分组标题，如「工具路径」「习惯偏好」",
+                },
+            },
+            "required": ["fact"],
+        },
+    },
+}
+
 UPDATE_PROJECT_PROFILE_DEF = {
     "type": "function",
     "function": {
         "name": "update_project_profile",
-        "description": "更新项目画像（L0 记忆）。用于记录项目的整体风格、命名约定、目录结构等。",
+        "description": "更新 L0 长期记忆（项目画像/用户环境）。TA：命名规范、质量阈值等；通用：Blender/UE 等工具路径、常用命令、技术栈偏好。须合并保留已有条目，勿整段覆盖。",
         "parameters": {
             "type": "object",
             "properties": {
                 "profile_content": {
                     "type": "string",
-                    "description": "项目画像内容（应简洁，不超过 500 tokens）"
+                    "description": "合并后的完整 L0 文本（简洁，建议不超过 500 tokens）。包含旧内容 + 新增事实。"
                 }
             },
             "required": ["profile_content"]

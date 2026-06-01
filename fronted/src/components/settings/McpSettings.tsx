@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { SettingsSection, SettingsCard, SettingsRow } from './primitives'
 import { API_BASE } from '@/lib/api'
+import { useConfirm } from '@/hooks/useConfirm'
 
 interface McpServerStatus {
   type: string
@@ -29,6 +30,7 @@ interface McpServerConfig {
 }
 
 export function McpSettings() {
+  const { confirm, ConfirmUI } = useConfirm()
   const [statuses, setStatuses] = useState<Record<string, McpServerStatus>>({})
   const [configs, setConfigs] = useState<Record<string, McpServerConfig>>({})
   const [loading, setLoading] = useState(true)
@@ -128,7 +130,13 @@ export function McpSettings() {
       body: JSON.stringify({ enabled }),
     }).then(r => r.json())
     if (res.success) {
-      showMsg('success', enabled ? `${name} 已启用` : `${name} 已禁用`)
+      const n = res.loaded_tools ?? 0
+      showMsg(
+        'success',
+        enabled
+          ? `${name} 已启用，${n} 个 MCP 工具已注册`
+          : `${name} 已禁用，相关 MCP 工具已卸载`,
+      )
       fetchAll()
     } else {
       showMsg('error', res.error || '操作失败')
@@ -136,12 +144,12 @@ export function McpSettings() {
   }
 
   const handleDelete = async (name: string) => {
-    if (!confirm(`确定删除 MCP 服务器 "${name}"？`)) return
+    if (!await confirm(`确定删除 MCP 服务器 "${name}"？`, { danger: true })) return
     const res = await fetch(`${API_BASE}/api/mcp/servers/${encodeURIComponent(name)}`, {
       method: 'DELETE',
     }).then(r => r.json())
     if (res.success) {
-      showMsg('success', `已删除 ${name}`)
+      showMsg('success', `已删除 ${name}，MCP 工具已同步卸载`)
       fetchAll()
     } else {
       showMsg('error', res.error || '删除失败')
@@ -383,6 +391,18 @@ export function McpSettings() {
                       <span>{status.tools} 个</span>
                     </div>
                   )}
+                  {status.tool_names?.length > 0 && (
+                    <div className="pt-1">
+                      <div className="text-muted-foreground mb-1.5">Agent 可用工具（mcp__ 前缀）</div>
+                      <div className="flex flex-wrap gap-1 max-h-40 overflow-y-auto">
+                        {status.tool_names.map((t: string) => (
+                          <code key={t} className="text-[11px] bg-muted px-1.5 py-0.5 rounded font-mono">
+                            {t}
+                          </code>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   {status.error && (
                     <div className="rounded bg-destructive/10 border border-destructive/30 p-2 text-destructive">{status.error}</div>
                   )}
@@ -414,6 +434,7 @@ export function McpSettings() {
           </SettingsCard>
         )
       })}
+      {ConfirmUI}
     </div>
   )
 }

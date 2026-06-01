@@ -8,6 +8,7 @@ interface ElectronActionResult {
 
 interface AppConfig {
   mode: 'local' | 'online'
+  agent_mode?: 'ta' | 'general'
   local: {
     llm_provider: string
     llm_api_key: string
@@ -43,6 +44,7 @@ declare global {
       minimizeWindow?: () => void
       maximizeWindow?: () => void
       closeWindow?: () => void
+      isMaximized?: () => Promise<boolean>
 
       // 文件对话框
       openFile?: () => Promise<unknown>

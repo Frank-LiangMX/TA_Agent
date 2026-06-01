@@ -1,40 +1,58 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Toaster } from 'sonner'
 import { tagentClient } from './services/websocket'
-import { getSession, listSessions } from './services/sessions'
+import { listSessions } from './services/sessions'
 import { getConfig, type AppConfig } from './services/config'
 import { healthCheck } from './services/api'
 import { Sidebar, type ViewType } from './components/layout/Sidebar'
 import { ResizeHandle } from './components/layout/ResizeHandle'
 import { MainPanel } from './components/layout/MainPanel'
-import { AssetLibrary } from './components/asset/AssetLibrary'
+import { AssetLibrary, type AssetLibraryFilterHints } from './components/asset/AssetLibrary'
 import { ReviewQueue } from './components/review/ReviewQueue'
 import { SearchView } from './components/search/SearchView'
 import { DetailPanel } from './components/layout/DetailPanel'
 import { DashboardView } from './components/dashboard/DashboardView'
 import { WorkflowView } from './components/workflow/WorkflowView'
 import { SettingsView } from './components/settings/SettingsView'
+import { GeneralWorkspaceView } from './components/general/GeneralWorkspaceView'
+import { GeneralHistoryView } from './components/general/GeneralHistoryView'
 import { TourGuide } from './components/onboarding/TourGuide'
 import { ModeSelect, LoginView, LocalConfigView } from './components/auth'
+import { ElectronChrome } from './components/layout/ElectronChrome'
 
 type AppState = 'loading' | 'mode-select' | 'login' | 'local-config' | 'ready'
 
 export default function App() {
+  const isViewAllowed = (view: ViewType, mode: 'ta' | 'general') => {
+    if (mode === 'general') {
+      return view === 'chat' || view === 'workspace' || view === 'history' || view === 'settings'
+    }
+    return true
+  }
+
   const [appState, setAppState] = useState<AppState>('loading')
   const [config, setConfig] = useState<AppConfig | null>(null)
+  const [agentMode, setAgentMode] = useState<'ta' | 'general'>('ta')
   const [activeView, setActiveView] = useState<ViewType>('chat')
   const [previousView, setPreviousView] = useState<ViewType>('chat')
   const [detailWidth, setDetailWidth] = useState(320)
   const [selectedAsset, setSelectedAsset] = useState<Record<string, unknown> | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
+  const [assetFilterHints, setAssetFilterHints] = useState<AssetLibraryFilterHints | undefined>()
+  const [assetLibraryNavKey, setAssetLibraryNavKey] = useState(0)
+  const [reviewInitialTab, setReviewInitialTab] = useState<'high' | 'low' | undefined>()
+  const [reviewNavKey, setReviewNavKey] = useState(0)
   const sidebarRef = useRef<HTMLDivElement>(null)
   const detailRef = useRef<HTMLDivElement>(null)
+  const wsConnectGenRef = useRef(0)
 
   useEffect(() => {
     const initApp = async () => {
       try {
         const appConfig = await getConfig()
         setConfig(appConfig)
+        const runtimeAgentMode = appConfig.agent_mode === 'general' ? 'general' : 'ta'
+        setAgentMode(runtimeAgentMode)
 
         if (!appConfig.mode || (appConfig.mode === 'local' && !appConfig.local.llm_api_key)) {
           setAppState('mode-select')
@@ -63,29 +81,32 @@ export default function App() {
   useEffect(() => {
     if (appState !== 'ready') return
 
+    const connectGen = ++wsConnectGenRef.current
     let cancelled = false
 
     const connectInitialSession = async () => {
       const storedActiveId = localStorage.getItem('tagent-active-tab')
       if (storedActiveId) {
         try {
-          const existing = await getSession(storedActiveId)
-          if (!cancelled && existing) {
-            await tagentClient.connect(storedActiveId)
-            return
-          }
-        } catch {}
+          await tagentClient.connect(storedActiveId)
+          if (cancelled || connectGen !== wsConnectGenRef.current) return
+          return
+        } catch {
+          // 存储的会话可能已删除，继续尝试列表恢复
+        }
       }
 
       try {
         const sessions = await listSessions(false)
-        if (!cancelled && sessions.length > 0) {
+        if (!cancelled && connectGen === wsConnectGenRef.current && sessions.length > 0) {
           await tagentClient.connect(sessions[0].sessionId)
           return
         }
       } catch {}
 
-      if (!cancelled) await tagentClient.connect()
+      if (!cancelled && connectGen === wsConnectGenRef.current) {
+        await tagentClient.connect()
+      }
     }
 
     connectInitialSession().catch(err => {
@@ -93,7 +114,9 @@ export default function App() {
     })
     return () => {
       cancelled = true
-      tagentClient.disconnect()
+      if (connectGen === wsConnectGenRef.current) {
+        tagentClient.disconnect()
+      }
     }
   }, [appState])
 
@@ -104,6 +127,10 @@ export default function App() {
   }, [activeView])
 
   const handleViewChange = (view: ViewType) => {
+    if (!isViewAllowed(view, agentMode)) {
+      setActiveView('chat')
+      return
+    }
     if (view === 'settings' && activeView === 'settings') {
       setActiveView(previousView)
     } else {
@@ -117,6 +144,31 @@ export default function App() {
   const handleAssetSelect = (asset: Record<string, unknown>) => {
     setSelectedAsset(asset)
     setDetailOpen(true)
+  }
+
+  const handleDashboardNavigate = (
+    view: ViewType,
+    options?: { reviewTab?: 'high' | 'low'; assetStatus?: string; assetSortBy?: 'name' | 'type' | 'tri_count' },
+  ) => {
+    if (view === 'review') {
+      setReviewInitialTab(options?.reviewTab)
+      setReviewNavKey((k) => k + 1)
+    }
+    if (view === 'assets') {
+      setAssetFilterHints(
+        options?.assetStatus || options?.assetSortBy
+          ? { status: options.assetStatus, sortBy: options.assetSortBy }
+          : undefined,
+      )
+      setAssetLibraryNavKey((k) => k + 1)
+    }
+    handleViewChange(view)
+  }
+
+  const handleSidebarViewChange = (view: ViewType) => {
+    if (view === 'assets') setAssetFilterHints(undefined)
+    if (view === 'review') setReviewInitialTab(undefined)
+    handleViewChange(view)
   }
 
   const handleModeSelected = async (mode: 'local' | 'online') => {
@@ -140,10 +192,33 @@ export default function App() {
   }
 
   const handleModeChange = () => {
-    // 模式切换后刷新数据
-    // 通过更新 key 强制重新渲染组件
-    setSessionRefreshKey(prev => prev + 1)
+    getConfig()
+      .then(async (cfg) => {
+        const nextMode = cfg.agent_mode === 'general' ? 'general' : 'ta'
+        setAgentMode(nextMode)
+        if (!isViewAllowed(activeView, nextMode)) {
+          setActiveView('chat')
+        }
+        const storedActiveId = localStorage.getItem('tagent-active-tab')
+        tagentClient.disconnect()
+        try {
+          if (storedActiveId) {
+            await tagentClient.connect(storedActiveId)
+          } else {
+            await tagentClient.connect()
+          }
+        } catch (err) {
+          console.error('[App] 模式切换后重连失败:', err)
+        }
+      })
+      .catch(() => {})
   }
+
+  useEffect(() => {
+    if (!isViewAllowed(activeView, agentMode)) {
+      setActiveView('chat')
+    }
+  }, [activeView, agentMode])
 
   if (appState === 'loading') {
     return (
@@ -157,73 +232,96 @@ export default function App() {
   }
 
   if (appState === 'mode-select') {
-    return <ModeSelect onModeSelected={handleModeSelected} />
+    return (
+      <>
+        <ElectronChrome mode="floating" />
+        <ModeSelect onModeSelected={handleModeSelected} />
+      </>
+    )
   }
 
   if (appState === 'login') {
-    return <LoginView onLoginSuccess={handleLoginSuccess} onBack={handleBackToModeSelect} />
+    return (
+      <>
+        <ElectronChrome mode="floating" />
+        <LoginView onLoginSuccess={handleLoginSuccess} onBack={handleBackToModeSelect} />
+      </>
+    )
   }
 
   if (appState === 'local-config') {
-    return <LocalConfigView onConfigComplete={handleLocalConfigComplete} onBack={handleBackToModeSelect} />
+    return (
+      <>
+        <ElectronChrome mode="floating" />
+        <LocalConfigView onConfigComplete={handleLocalConfigComplete} onBack={handleBackToModeSelect} />
+      </>
+    )
   }
 
   return (
     <div className="h-screen w-screen overflow-hidden relative" style={{ background: 'linear-gradient(135deg, hsl(var(--shell-start)) 0%, hsl(var(--shell-end)) 100%)' }}>
+      <ElectronChrome mode="shell" />
 
-      {/* 内容区域 */}
-      <div className="h-full flex overflow-hidden p-2 gap-2">
+      <div className="relative h-full flex overflow-hidden p-2 gap-2">
         {/* 侧边栏卡片（设置页面隐藏） */}
         {activeView !== 'settings' && (
         <div className="shrink-0">
-          <div ref={sidebarRef} className="relative flex flex-col h-full rounded-2xl shadow-xl border border-black/5 overflow-hidden bg-background" style={{ width: 256 }}>
-            {/* 透明拖拽区域 */}
-            <div className="absolute top-0 left-0 right-0 h-9 z-10 titlebar-drag-region" />
-            <Sidebar activeView={activeView} onViewChange={handleViewChange} />
+          <div ref={sidebarRef} className="flex flex-col h-full rounded-2xl shadow-xl border border-black/5 overflow-hidden bg-background" style={{ width: 256 }}>
+            <Sidebar
+              activeView={activeView}
+              agentMode={agentMode}
+              onViewChange={handleSidebarViewChange}
+            />
           </div>
         </div>
         )}
 
-        {/* 主内容卡片 */}
-        {activeView !== 'settings' ? (
+        {/* 主内容：设置为双卡，其余为单卡 */}
+        {activeView === 'settings' ? (
+          <div className="flex-1 min-w-0 min-h-0">
+            <SettingsView onBack={() => handleViewChange('chat')} onModeChange={handleModeChange} />
+          </div>
+        ) : (
           <div className="flex-1 min-w-0">
             <div className="flex flex-col h-full rounded-2xl shadow-xl border border-black/5 overflow-hidden bg-content-area">
-            {/* 非聊天页面：窗口栏（拖拽 + 控制按钮） */}
-            {activeView !== 'chat' && (
-            <div className="flex items-center h-9 shrink-0 bg-background">
-              <div className="flex-1 h-full titlebar-drag-region" />
-              {typeof window !== 'undefined' && (window as any).electronAPI?.isElectron && (
-                <div className="flex items-center shrink-0 h-9 titlebar-no-drag pr-2">
-                  <button onClick={() => (window as any).electronAPI.minimizeWindow()} className="h-8 w-9 flex items-center justify-center hover:bg-black/10 rounded transition-colors">
-                    <svg width="10" height="1" viewBox="0 0 10 1" fill="none"><rect width="10" height="1" fill="#888"/></svg>
-                  </button>
-                  <button onClick={() => (window as any).electronAPI.maximizeWindow()} className="h-8 w-9 flex items-center justify-center hover:bg-black/10 rounded transition-colors">
-                    <svg width="8" height="8" viewBox="0 0 8 8" fill="none"><rect x="0.5" y="0.5" width="7" height="7" stroke="#888"/></svg>
-                  </button>
-                  <button onClick={() => (window as any).electronAPI.closeWindow()} className="h-8 w-9 flex items-center justify-center hover:bg-red-500 hover:text-white rounded transition-colors">
-                    <svg width="8" height="8" viewBox="0 0 8 8" fill="none"><path d="M1 1l6 6M7 1l-6 6" stroke="#888" strokeWidth="1.2"/></svg>
-                  </button>
-                </div>
-              )}
-            </div>
-            )}
             <div className="flex-1 flex min-w-0 overflow-hidden">
               <div className={`flex-1 flex flex-col min-w-0 h-full ${activeView === 'chat' ? '' : 'hidden'}`}>
-                <MainPanel onAssetSelect={handleAssetSelect} />
+                <MainPanel onAssetSelect={handleAssetSelect} agentMode={agentMode} />
               </div>
-              <div className={`flex-1 flex flex-col min-w-0 h-full ${activeView === 'assets' ? '' : 'hidden'}`}>
-                <AssetLibrary key={`assets-${activeView}`} onAssetSelect={handleAssetSelect} />
+              <div className={`flex-1 flex flex-col min-w-0 h-full ${agentMode === 'general' && activeView === 'workspace' ? '' : 'hidden'}`}>
+                <GeneralWorkspaceView sessionId={tagentClient.sessionId} />
               </div>
-              <div className={`flex-1 flex flex-col min-w-0 h-full ${activeView === 'analysis' ? '' : 'hidden'}`}>
-                <DashboardView />
+              <div className={`flex-1 flex flex-col min-w-0 h-full ${agentMode === 'general' && activeView === 'history' ? '' : 'hidden'}`}>
+                <GeneralHistoryView
+                  onOpenSession={async (sid) => {
+                    await tagentClient.reconnectWithSession(sid)
+                    setActiveView('chat')
+                  }}
+                />
               </div>
-              <div className={`flex-1 flex flex-col min-w-0 h-full ${activeView === 'review' ? '' : 'hidden'}`}>
-                <ReviewQueue key={`review-${activeView}`} />
+              <div className={`flex-1 flex flex-col min-w-0 h-full ${agentMode === 'ta' && activeView === 'assets' ? '' : 'hidden'}`}>
+                <AssetLibrary
+                  key={`assets-${assetLibraryNavKey}`}
+                  filterHints={assetFilterHints}
+                  onAssetSelect={handleAssetSelect}
+                />
               </div>
-              <div className={`flex-1 flex flex-col min-w-0 h-full ${activeView === 'search' ? '' : 'hidden'}`}>
+              <div className={`flex-1 flex flex-col min-w-0 h-full ${agentMode === 'ta' && activeView === 'analysis' ? '' : 'hidden'}`}>
+                <DashboardView
+                  onNavigate={handleDashboardNavigate}
+                  onAssetSelect={(asset) => {
+                    handleAssetSelect(asset)
+                    handleViewChange('assets')
+                  }}
+                />
+              </div>
+              <div className={`flex-1 flex flex-col min-w-0 h-full ${agentMode === 'ta' && activeView === 'review' ? '' : 'hidden'}`}>
+                <ReviewQueue key={`review-${reviewNavKey}`} initialTab={reviewInitialTab} />
+              </div>
+              <div className={`flex-1 flex flex-col min-w-0 h-full ${agentMode === 'ta' && activeView === 'search' ? '' : 'hidden'}`}>
                 <SearchView onAssetSelect={handleAssetSelect} />
               </div>
-              <div className={`flex-1 flex flex-col min-w-0 h-full ${activeView === 'workflow' ? '' : 'hidden'}`}>
+              <div className={`flex-1 flex flex-col min-w-0 h-full ${agentMode === 'ta' && activeView === 'workflow' ? '' : 'hidden'}`}>
                 <WorkflowView onNavigate={(view) => handleViewChange(view as ViewType)} />
               </div>
 
@@ -238,33 +336,15 @@ export default function App() {
             </div>
             </div>
           </div>
-        ) : (
-          <div className="flex-1 min-w-0">
-            <div className="relative flex flex-col h-full">
-              {/* 设置页窗口栏（透明覆盖层） */}
-              <div className="absolute top-0 left-0 right-0 h-9 z-10 flex items-center titlebar-drag-region">
-                <div className="flex-1 h-full" />
-                {typeof window !== 'undefined' && (window as any).electronAPI?.isElectron && (
-                  <div className="flex items-center shrink-0 h-9 titlebar-no-drag pr-2">
-                    <button onClick={() => (window as any).electronAPI.minimizeWindow()} className="h-8 w-9 flex items-center justify-center hover:bg-black/10 rounded transition-colors">
-                      <svg width="10" height="1" viewBox="0 0 10 1" fill="none"><rect width="10" height="1" fill="#888"/></svg>
-                    </button>
-                    <button onClick={() => (window as any).electronAPI.maximizeWindow()} className="h-8 w-9 flex items-center justify-center hover:bg-black/10 rounded transition-colors">
-                      <svg width="8" height="8" viewBox="0 0 8 8" fill="none"><rect x="0.5" y="0.5" width="7" height="7" stroke="#888"/></svg>
-                    </button>
-                    <button onClick={() => (window as any).electronAPI.closeWindow()} className="h-8 w-9 flex items-center justify-center hover:bg-red-500 hover:text-white rounded transition-colors">
-                      <svg width="8" height="8" viewBox="0 0 8 8" fill="none"><path d="M1 1l6 6M7 1l-6 6" stroke="#888" strokeWidth="1.2"/></svg>
-                    </button>
-                  </div>
-                )}
-              </div>
-              <SettingsView onBack={() => handleViewChange('chat')} onModeChange={handleModeChange} />
-            </div>
-          </div>
         )}
       </div>
 
       <Toaster position="top-right" theme="dark" />
+      <div className="pointer-events-none absolute right-4 bottom-4 z-40">
+        <span className="rounded-full border border-border/70 bg-card/85 px-2.5 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur-sm">
+          工作台: {agentMode === 'general' ? '通用' : 'TA'}
+        </span>
+      </div>
       <TourGuide />
     </div>
   )

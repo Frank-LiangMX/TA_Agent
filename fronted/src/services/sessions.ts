@@ -48,7 +48,7 @@ export async function createSession(title = '新会话'): Promise<SessionMeta> {
 /** 更新会话 */
 export async function updateSession(
   sessionId: string,
-  patch: Partial<Pick<SessionMeta, 'title' | 'isPinned' | 'isArchived' | 'workflowMode'>>
+  patch: Partial<Pick<SessionMeta, 'title' | 'isPinned' | 'isArchived' | 'workflowMode' | 'workspacePath'>>
 ): Promise<SessionMeta | null> {
   const data = await request<SessionMeta & { error?: string }>(`/api/sessions/${sessionId}`, {
     method: 'PATCH',

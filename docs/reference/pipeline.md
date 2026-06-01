@@ -29,7 +29,7 @@
 
 ## 二、数据结构
 
-### 流水线配置（`~/.ta_agent/pipeline.json`）
+### 流水线配置（`RUNTIME_DIR/configs/pipeline.json`）
 
 ```json
 {
@@ -55,7 +55,7 @@
 **core_stages 字段**：id, label, icon, description, order（全部必填）
 **custom_stages 额外字段**：insertAfter（必填，插入到哪个核心阶段之后）, prompt（必填，支持 {path} 变量）, enabled（可选，默认 true）
 
-### 阶段执行记录（`~/.ta_agent/pipeline_runs.jsonl`）
+### 阶段执行记录（`RUNTIME_DIR/pipeline_runs.jsonl`）
 
 每行一条执行记录：
 
@@ -79,7 +79,7 @@
 ### 3.1 流水线配置
 
 - `GET /api/pipeline` — 获取流水线配置
-- `POST /api/pipeline` — 更新流水线配置（请求体：完整 pipeline.json）
+- `POST /api/pipeline` — 更新流水线配置（请求体：完整 RUNTIME_DIR/configs/pipeline.json）
 
 ### 3.2 阶段执行
 
@@ -93,7 +93,7 @@
 1. 从 pipeline.json 读取 stage 的 prompt
 2. 替换 {path} 等变量
 3. 通过 session_manager 将 prompt 作为用户消息发送给 Agent
-4. 记录执行到 pipeline_runs.jsonl
+4. 记录执行到 RUNTIME_DIR/pipeline_runs.jsonl
 ```
 
 ### 3.3 查询
@@ -108,12 +108,12 @@
 ```
 用户点击"面数检查"节点
     → 前端 POST /api/pipeline/run { stageId: "mesh_check", variables }
-    → 后端读取 pipeline.json 中 mesh_check 的 prompt
+    → 后端读取 RUNTIME_DIR/configs/pipeline.json 中 mesh_check 的 prompt
     → 替换变量
     → 通过 WebSocket 发送给 Agent（复用 sendMessage 机制）
     → Agent LLM 理解 prompt → 决定调用 check_mesh_budget 工具
     → 前端跳转到对话页，显示执行过程
-    → 执行完成 → 记录到 pipeline_runs.jsonl
+    → 执行完成 → 记录到 RUNTIME_DIR/pipeline_runs.jsonl
     → 流水线页面更新节点状态为"已完成"
 ```
 
@@ -123,11 +123,11 @@
 
 ### 新增阶段
 
-只需在 `pipeline.json` 中添加一个 stage 对象，写好 prompt。不需要改任何代码。
+只需在 `RUNTIME_DIR/configs/pipeline.json` 中添加一个 stage 对象，写好 prompt。不需要改任何代码。
 
 ### 不同项目自定义
 
-每个项目的 `pipeline.json` 独立：
+每个项目的 `RUNTIME_DIR/configs/pipeline.json` 独立：
 - 角色项目：增加"骨骼检查"、"动画检查"
 - 场景项目：增加"LOD 检查"、"碰撞体检查"
 - UI 项目：增加"图标尺寸检查"

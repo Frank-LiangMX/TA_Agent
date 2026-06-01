@@ -3,7 +3,7 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Square, Wifi, WifiOff, Loader2, CheckCircle2, FolderSearch, Brain, FileCheck, Package, MessageSquare, Bot, Paperclip } from 'lucide-react'
+import { Send, Square, Loader2, CheckCircle2, FolderSearch, Brain, FileCheck, Package, MessageSquare, Bot, Paperclip } from 'lucide-react'
 import { ChatMessage } from '../chat/ChatMessage'
 import { ContextDivider } from '../chat/ContextDivider'
 import { ScrollMinimap } from '../chat/ScrollMinimap'
@@ -13,9 +13,23 @@ import { AttachmentPreview, type Attachment } from './AttachmentPreview'
 import { SessionTabBar } from '../session/SessionTabBar'
 import { ThinkingDots, SkeletonBlock } from '../animations'
 import { tagentClient, type ConnectionStatus } from '@/services/websocket'
-import { getSessionMessages, getSession } from '@/services/sessions'
+import { getSessionMessages, getSession, updateSession } from '@/services/sessions'
 import { fetchPipelineRunsForSession, type PipelineRun } from '@/services/pipeline'
 import type { ChatMessage as ChatMessageType, ToolCall } from '@/types'
+import {
+  appendThinkingSegment,
+  appendTextSegment,
+  appendToolStart,
+  appendToolResult,
+  finalizeTurn,
+  createEmptyTurn,
+  getTurnSegments,
+  syncTurnDerivedFields,
+  type AssistantTurnMessage,
+} from '@/lib/chat-turn'
+import { Tooltip } from '@/components/ui/Tooltip'
+import { AppTitleBar } from '@/components/layout/AppTitleBar'
+import { PAGE_TITLE_BAR_STYLE } from '@/components/layout/PageHeader'
 
 interface ProgressEvent {
   phase: string
@@ -46,6 +60,7 @@ function formatElapsed(seconds: number): string {
 
 interface MainPanelProps {
   onAssetSelect: (asset: Record<string, unknown>) => void
+  agentMode?: 'ta' | 'general'
 }
 
 // Mock 消息（未连接后端时使用）
@@ -58,7 +73,7 @@ const MOCK_MESSAGES: ChatMessageType[] = [
   },
 ]
 
-export function MainPanel({ onAssetSelect }: MainPanelProps) {
+export function MainPanel({ onAssetSelect, agentMode = 'ta' }: MainPanelProps) {
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(tagentClient.status)
@@ -80,8 +95,6 @@ export function MainPanel({ onAssetSelect }: MainPanelProps) {
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
-  const streamingMsgRef = useRef<string | null>(null)
-  const streamingMsgRefs = useRef<Record<string, string | null>>({})
   const [visibleCount, setVisibleCount] = useState(50)
   const [contextCutoff, setContextCutoff] = useState<number | null>(null)
   const [activeTools, setActiveTools] = useState<Map<string, { name: string; startTime: number }>>(new Map())
@@ -92,6 +105,9 @@ export function MainPanel({ onAssetSelect }: MainPanelProps) {
   const [isAtBottom, setIsAtBottom] = useState(true)
   const [streamingTabs, setStreamingTabs] = useState<Set<string>>(new Set())
   const [promptSuggestion, setPromptSuggestion] = useState<string | null>(null)
+  const [workspaceInfo, setWorkspaceInfo] = useState<{ name: string; path: string } | null>(null)
+  const [editingWorkspace, setEditingWorkspace] = useState(false)
+  const [workspaceDraft, setWorkspaceDraft] = useState('')
 
   // 当前标签的消息
   // Ref 保持 openTabIds 在事件回调中最新
@@ -106,7 +122,9 @@ export function MainPanel({ onAssetSelect }: MainPanelProps) {
   const messages = activeTabId ? (tabMessages[activeTabId] || []) : []
   const sessionId = activeTabId
   const isActiveTabStreaming = activeTabId ? streamingTabs.has(activeTabId) : isStreaming
-  const activeStreamingMsgId = activeTabId ? streamingMsgRefs.current[activeTabId] : streamingMsgRef.current
+  const activeTurnMessage = messages.find(
+    (m) => m.role === 'assistant' && !!(m as any)._turnOpen,
+  )
   const setMessagesForTab = useCallback((tabId: string | null | undefined, updater: ChatMessageType[] | ((prev: ChatMessageType[]) => ChatMessageType[])) => {
     if (!tabId) return
     setTabMessages(prev => {
@@ -128,12 +146,84 @@ export function MainPanel({ onAssetSelect }: MainPanelProps) {
     if (activeTabId) localStorage.setItem('tagent-active-tab', activeTabId)
   }, [activeTabId])
 
+  const handleSetActiveWorkspace = useCallback(async () => {
+    const targetTabId = activeTabIdRef.current
+    if (!targetTabId) {
+      window.alert('请先打开一个会话再设置工作区')
+      return
+    }
+    const trimmed = workspaceDraft.trim()
+    if (!trimmed) {
+      window.alert('工作区路径不能为空')
+      return
+    }
+    try {
+      const updated = await updateSession(targetTabId, { workspacePath: trimmed })
+      setWorkspaceInfo({
+        name: updated?.workspaceName || '',
+        path: updated?.workspacePath || trimmed,
+      })
+      setEditingWorkspace(false)
+      setSessionRefreshKey((k) => k + 1)
+    } catch (e) {
+      console.error('[Workspace] 设置工作区失败:', e)
+      window.alert('设置工作区失败，请检查路径后重试')
+    }
+  }, [workspaceDraft])
+
+  const handlePickWorkspaceFolder = useCallback(async () => {
+    try {
+      const picker = (window as any).electronAPI?.openFolder as (() => Promise<unknown>) | undefined
+      if (!picker) {
+        window.alert('当前环境不支持目录选择，请手动输入绝对路径')
+        return
+      }
+      const result = await picker()
+      const data = result as { canceled?: boolean; filePaths?: string[]; path?: string } | undefined
+      if (!data || data.canceled) return
+      const picked = data.filePaths?.[0] || data.path || ''
+      if (picked) {
+        setWorkspaceDraft(picked)
+      }
+    } catch (e) {
+      console.error('[Workspace] 选择目录失败:', e)
+      window.alert('打开目录选择器失败，请手动输入路径')
+    }
+  }, [])
+
   useEffect(() => {
     if (!activeTabId || sessionRefreshKey === 0) return
     getSession(activeTabId).then(meta => {
       if (meta?.title) setTabTitles(prev => ({ ...prev, [activeTabId]: meta.title }))
+      if (meta?.workspacePath || meta?.workspaceName) {
+        setWorkspaceInfo({
+          name: meta?.workspaceName || '',
+          path: meta?.workspacePath || '',
+        })
+      } else {
+        setWorkspaceInfo(null)
+      }
     }).catch(() => {})
   }, [activeTabId, sessionRefreshKey])
+
+  useEffect(() => {
+    if (!activeTabId) {
+      setWorkspaceInfo(null)
+      return
+    }
+    getSession(activeTabId).then(meta => {
+      if (meta?.workspacePath || meta?.workspaceName) {
+        setWorkspaceInfo({
+          name: meta?.workspaceName || '',
+          path: meta?.workspacePath || '',
+        })
+      } else {
+        setWorkspaceInfo(null)
+      }
+    }).catch(() => {
+      setWorkspaceInfo(null)
+    })
+  }, [activeTabId])
 
 const loadTabHistory = useCallback(async (tabId: string) => {
     try {
@@ -160,7 +250,7 @@ const loadTabHistory = useCallback(async (tabId: string) => {
           .filter((msg: Record<string, unknown>) => {
             const role = msg.role as string
             if (role === 'tool') return false
-            if (role === 'assistant' && !msg.content && !msg.toolCalls) return false
+            if (role === 'assistant' && !msg.content && !msg.toolCalls && !msg.thinking) return false
             return true
           })
           .map((msg: Record<string, unknown>, i: number) => {
@@ -198,9 +288,55 @@ const loadTabHistory = useCallback(async (tabId: string) => {
               timestamp: msg.timestamp ? new Date(msg.timestamp as string).getTime() : Date.now(),
               toolCalls,
               _toolResults,
+              ...(msg.thinking ? { _thinking: msg.thinking as string } : {}),
+              ...(toolCalls?.length ? { _toolStatus: 'done' as const } : {}),
             }
           })
-        setTabMessages(prev => ({ ...prev, [tabId]: converted }))
+
+        const mergeHistoryTurns = (msgs: ChatMessageType[]): ChatMessageType[] => {
+          const out: ChatMessageType[] = []
+          for (const msg of msgs) {
+            const prev = out[out.length - 1]
+            if (
+              prev?.role === 'assistant' &&
+              msg.role === 'assistant' &&
+              msg.toolCalls?.length &&
+              !msg.content?.trim() &&
+              !(msg as any)._thinking
+            ) {
+              out[out.length - 1] = {
+                ...prev,
+                toolCalls: [...(prev.toolCalls || []), ...msg.toolCalls],
+                _toolResults: {
+                  ...((prev as any)._toolResults || {}),
+                  ...((msg as any)._toolResults || {}),
+                },
+                _toolStatus: 'done',
+              } as ChatMessageType
+              continue
+            }
+            if (
+              prev?.role === 'assistant' &&
+              msg.role === 'assistant' &&
+              prev.toolCalls?.length &&
+              !prev.content?.trim()
+            ) {
+              out[out.length - 1] = {
+                ...prev,
+                content: msg.content || prev.content,
+                _thinking: (msg as any)._thinking || (prev as any)._thinking,
+                _toolStatus: 'done',
+              } as ChatMessageType
+              continue
+            }
+            out.push(msg)
+          }
+          return out.map((m) =>
+            m.role === 'assistant' ? syncTurnDerivedFields(m as AssistantTurnMessage) : m,
+          )
+        }
+
+        setTabMessages(prev => ({ ...prev, [tabId]: mergeHistoryTurns(converted) }))
         setVisibleCount(Math.max(converted.length, 50))
       } else {
         setTabMessages(prev => ({ ...prev, [tabId]: [] }))
@@ -218,7 +354,6 @@ const loadTabHistory = useCallback(async (tabId: string) => {
     setOpenTabIds(prev => prev.includes(tabId) ? prev : [...prev, tabId])
     setActiveTabId(tabId)
     setContextCutoff(null)
-    streamingMsgRef.current = null
     setIsStreaming(false)
     setActiveTools(new Map())
     setProgress(null)
@@ -255,7 +390,6 @@ const loadTabHistory = useCallback(async (tabId: string) => {
   // 新建标签
   const handleNewTab = useCallback(() => {
     setContextCutoff(null)
-    streamingMsgRef.current = null
     setIsStreaming(false)
     tagentClient.disconnect()
     tagentClient.connect()
@@ -340,30 +474,35 @@ const loadTabHistory = useCallback(async (tabId: string) => {
 
     // 连接确认：捕获后端分配的 sessionId
     const unsubConnected = tagentClient.on('connected', (payload: any) => {
-      if (payload?.sessionId) {
-        const newSessionId = payload.sessionId
+      if (!payload?.sessionId) return
+      const newSessionId = payload.sessionId as string
+      const isRestore =
+        newSessionId === activeTabIdRef.current ||
+        newSessionId === localStorage.getItem('tagent-active-tab') ||
+        openTabIdsRef.current.includes(newSessionId)
 
-        // 只保留当前连接的会话，清理旧的累积会话
-        setOpenTabIds(prev => {
-          // 如果已存在，不修改
-          if (prev.includes(newSessionId)) return prev
-          // 否则，只保留当前会话（清理旧的累积会话）
-          return [newSessionId]
-        })
+      setOpenTabIds(prev => (prev.includes(newSessionId) ? prev : [...prev, newSessionId]))
+      if (!activeTabIdRef.current || !isRestore) {
         setActiveTabId(newSessionId)
+      }
 
-        if (!tabMessagesRef.current[newSessionId]) {
-          loadTabHistory(newSessionId)
-        }
+      if (!tabMessagesRef.current[newSessionId]?.length) {
+        loadTabHistory(newSessionId)
+      }
 
-        // 异步加载标题
-        if (payload.title) {
-          setTabTitles(prev => ({ ...prev, [newSessionId]: payload.title }))
-        } else {
-          getSession(newSessionId).then(meta => {
-            if (meta?.title) setTabTitles(prev => ({ ...prev, [newSessionId]: meta.title }))
-          }).catch(() => {})
-        }
+      if (payload.workspacePath || payload.workspaceName) {
+        setWorkspaceInfo({
+          name: payload.workspaceName || '',
+          path: payload.workspacePath || '',
+        })
+      }
+
+      if (payload.title) {
+        setTabTitles(prev => ({ ...prev, [newSessionId]: payload.title }))
+      } else {
+        getSession(newSessionId).then(meta => {
+          if (meta?.title) setTabTitles(prev => ({ ...prev, [newSessionId]: meta.title }))
+        }).catch(() => {})
       }
     })
 
@@ -376,96 +515,68 @@ const loadTabHistory = useCallback(async (tabId: string) => {
       }
     })
 
-    // 流式文本
+    const findActiveTurnIndex = (msgs: ChatMessageType[]) =>
+      msgs.findIndex((m) => m.role === 'assistant' && !!(m as any)._turnOpen)
+
+    const closeOpenTurn = (msgs: ChatMessageType[]) =>
+      msgs.map((m) => {
+        if (m.role !== 'assistant' || !(m as any)._turnOpen) return m
+        return finalizeTurn(m as AssistantTurnMessage, m.content || '', undefined)
+      })
+
+    const resolveEventTabId = (eventSessionId?: string | null) => {
+      const wsId = tagentClient.sessionId
+      const active = activeTabIdRef.current
+      if (eventSessionId && (eventSessionId === active || eventSessionId === wsId)) {
+        return eventSessionId
+      }
+      return wsId || active || eventSessionId || null
+    }
+
+    const applyToOpenTurn = (
+      prev: ChatMessageType[],
+      updater: (msg: AssistantTurnMessage) => AssistantTurnMessage,
+    ): ChatMessageType[] => {
+      const idx = findActiveTurnIndex(prev)
+      if (idx >= 0) {
+        return prev.map((m, i) =>
+          i === idx ? updater(m as AssistantTurnMessage) : m,
+        )
+      }
+      return [...prev, updater(createEmptyTurn())]
+    }
+
     const unsubText = tagentClient.on('stream_text', (payload: any) => {
       const { text, sessionId } = payload
-      const targetTabId = sessionId || activeTabIdRef.current
-      setMessagesForTab(targetTabId, (prev) => {
-        const last = prev[prev.length - 1]
-        const streamId = targetTabId ? streamingMsgRefs.current[targetTabId] : streamingMsgRef.current
-        // 情况 1：追加到当前流式消息
-        if (last && last.id === streamId) {
-          return [...prev.slice(0, -1), { ...last, content: last.content + text, _streaming: true }]
-        }
-        // 情况 2：最后一条是 thinking 消息，替换为流式消息（保留思考内容）
-        if (last && last.role === 'assistant' && !last.toolCalls && !(last as any)._toolStatus) {
-          const id = `stream-${Date.now()}`
-          streamingMsgRef.current = id
-          if (targetTabId) streamingMsgRefs.current[targetTabId] = id
-          const thinkingContent = last.content?.startsWith('💭') ? last.content : undefined
-          return [...prev.slice(0, -1), { id, role: 'assistant', content: text, timestamp: Date.now(), _startTime: Date.now(), _thinking: thinkingContent, _streaming: true }]
-        }
-        // 情况 3：创建新的流式消息
-        const id = `stream-${Date.now()}`
-        streamingMsgRef.current = id
-        if (targetTabId) streamingMsgRefs.current[targetTabId] = id
-        return [...prev, { id, role: 'assistant', content: text, timestamp: Date.now(), _startTime: Date.now(), _streaming: true }]
-      })
+      const targetTabId = resolveEventTabId(sessionId)
+      if (!text || !targetTabId) return
+      setMessagesForTab(targetTabId, (prev) =>
+        applyToOpenTurn(prev, (msg) => appendTextSegment(msg, text)),
+      )
     })
 
-    // Agent 思考（不设置 ref，让后续 stream 替换 thinking 消息）
     const unsubThinking = tagentClient.on('agent_thinking', (payload: any) => {
       const { text, sessionId } = payload
-      const targetTabId = sessionId || activeTabIdRef.current
-      if (targetTabId && streamingMsgRefs.current[targetTabId]) return  // 流式输出进行中，跳过
-      setMessagesForTab(targetTabId, (prev) => {
-        const last = prev[prev.length - 1]
-        if (last && last.role === 'assistant' && !last.toolCalls && !(last as any)._toolStatus) {
-          return [...prev.slice(0, -1), {
-            ...last,
-            content: `💭 *思考中...*\n\n${text}`,
-          }]
-        }
-        return [...prev, {
-          id: `think-${Date.now()}`,
-          role: 'assistant',
-          content: `💭 *思考中...*\n\n${text}`,
-          timestamp: Date.now(),
-        }]
-      })
+      const targetTabId = resolveEventTabId(sessionId)
+      if (!text || !targetTabId) return
+      setMessagesForTab(targetTabId, (prev) =>
+        applyToOpenTurn(prev, (msg) => appendThinkingSegment(msg, text)),
+      )
     })
 
-    // 工具调用开始（同类工具合并到一条消息）
     const unsubToolStart = tagentClient.on('tool_start', (payload: any) => {
       const { toolCall, sessionId } = payload
-      const targetTabId = sessionId || activeTabIdRef.current
+      const targetTabId = resolveEventTabId(sessionId)
       setActiveTools((prev) => new Map(prev).set(toolCall.id, { name: toolCall.name, startTime: Date.now() }))
-      setMessagesForTab(targetTabId, (prev) => {
-        const last = prev[prev.length - 1]
-        const newToolCall: ToolCall = {
-          id: toolCall.id,
-          name: toolCall.name,
-          arguments: toolCall.arguments,
-        }
-        // 如果最后一条是同名工具消息（无论运行中还是已完成），合并进去
-        if (
-          last &&
-          last.toolCalls &&
-          last.toolCalls.length > 0 &&
-          last.toolCalls[0].name === toolCall.name
-        ) {
-          return [
-            ...prev.slice(0, -1),
-            {
-              ...last,
-              toolCalls: [...last.toolCalls, newToolCall],
-              _toolStatus: 'running',
-            },
-          ]
-        }
-        // 否则创建新消息
-        const id = `tool-${toolCall.id}`
-        return [...prev, {
-          id,
-          role: 'assistant' as const,
-          content: '',
-          timestamp: Date.now(),
-          toolCalls: [newToolCall],
-          _toolStatus: 'running',
-        } as any]
-      })
-      streamingMsgRef.current = null
-      if (targetTabId) streamingMsgRefs.current[targetTabId] = null
+      if (!targetTabId) return
+      const newToolCall: ToolCall = {
+        id: toolCall.id,
+        name: toolCall.name,
+        arguments: toolCall.arguments,
+      }
+      setMessagesForTab(targetTabId, (prev) =>
+        applyToOpenTurn(prev, (msg) => appendToolStart(msg, newToolCall)),
+      )
     })
 
     // 工具调用结果（支持合并消息的独立结果）
@@ -476,22 +587,32 @@ const loadTabHistory = useCallback(async (tabId: string) => {
         next.delete(toolCallId)
         return next
       })
-      setMessagesForTab(sessionId || activeTabIdRef.current, (prev) => {
-        return prev.map((msg: any) => {
-          if (msg.toolCalls?.some((tc: ToolCall) => tc.id === toolCallId)) {
-            const results = { ...(msg._toolResults || {}), [toolCallId]: typeof result === 'string' ? result : JSON.stringify(result, null, 2) }
-            const allDone = msg.toolCalls.every((tc: ToolCall) => results[tc.id])
-            return {
-              ...msg,
-              _toolStatus: allDone ? 'done' : 'running',
-              _toolResults: results,
-              // 兼容单工具的 _toolResult
-              _toolResult: msg.toolCalls.length === 1 ? results[toolCallId] : undefined,
-            }
+      const toolTabId = resolveEventTabId(sessionId)
+      if (!toolTabId) return
+      const resultStr =
+        typeof result === 'string' ? result : JSON.stringify(result, null, 2)
+      setMessagesForTab(toolTabId, (prev) =>
+        prev.map((msg) => {
+          const segs = getTurnSegments(msg as AssistantTurnMessage)
+          const hasTool = segs.some(
+            (s) =>
+              s.type === 'tools' &&
+              s.toolCalls.some((tc) => tc.id === toolCallId),
+          )
+          if (!hasTool) return msg
+          const updated = appendToolResult(
+            msg as AssistantTurnMessage,
+            toolCallId,
+            resultStr,
+          )
+          const tools = updated.toolCalls
+          return {
+            ...updated,
+            _toolResult:
+              tools?.length === 1 ? updated._toolResults?.[toolCallId] : undefined,
           }
-          return msg
-        })
-      })
+        }),
+      )
 
       // 联机模式：同步工具结果到服务器
       import('@/services/sync').then(({ syncToolResult }) => {
@@ -503,89 +624,106 @@ const loadTabHistory = useCallback(async (tabId: string) => {
 
     // 完成
     const unsubDone = tagentClient.on('done', (payload: any) => {
-      const { content, sessionId, suggestion } = payload
-      console.log('[MainPanel] done event received:', { suggestion, sessionId })
-      const currentTabId = sessionId || activeTabIdRef.current
-      const streamId = currentTabId ? streamingMsgRefs.current[currentTabId] : streamingMsgRef.current
-      streamingMsgRef.current = null
-      if (currentTabId) streamingMsgRefs.current[currentTabId] = null
+      const { content, sessionId, suggestion, thinking } = payload
+      const currentTabId = resolveEventTabId(sessionId)
       setIsStreaming(false)
       setActiveTools(new Map())
-      setProgress(null) // 兜底：清除进度条
-      setSessionRefreshKey((k) => k + 1) // 刷新会话标题
+      setProgress(null)
+      setSessionRefreshKey((k) => k + 1)
 
-      // 设置建议（如果有）
-      if (suggestion) {
-        setPromptSuggestion(suggestion)
-      }
+      if (suggestion) setPromptSuggestion(suggestion)
 
-      // 联机模式：记录 LLM 用量（粗略估算）
       if (content) {
-        const tokensEstimate = content.length * 2 // 粗略估算：中文约 2 token/字
+        const tokensEstimate = content.length * 2
         import('@/services/sync').then(({ logLlmUsage }) => {
           logLlmUsage('agent', tokensEstimate).catch(() => {})
         })
       }
 
-      // 移除当前标签的运行状态
       if (currentTabId) {
-        setStreamingTabs(prev => {
+        setStreamingTabs((prev) => {
           const next = new Set(prev)
           next.delete(currentTabId)
           return next
         })
       }
 
-      if (content) {
-        setMessagesForTab(currentTabId, (prev) => {
-          const last = prev[prev.length - 1]
-          // 如果最后一条是流式消息，替换为完整内容 + 计算用时
-          if (last && last.id === streamId) {
-            const elapsed = (last as any)._startTime ? (Date.now() - (last as any)._startTime) / 1000 : null
-            return [...prev.slice(0, -1), { ...last, content, _elapsed: elapsed }]
-          }
-          // 如果最后一条是工具消息，追加最终回答
-          if (last && (last as any)._toolStatus) {
-            return [...prev, {
-              id: `done-${Date.now()}`,
-              role: 'assistant' as const,
-              content,
-              timestamp: Date.now(),
-            }]
-          }
-          // 其他情况：添加新消息
-          return [...prev, {
-            id: `done-${Date.now()}`,
-            role: 'assistant' as const,
-            content,
-            timestamp: Date.now(),
-          }]
-        })
-      }
+      const answerText = (content as string) || ''
+      if (!currentTabId) return
+
+      setMessagesForTab(currentTabId, (prev) => {
+        const turnIdx = findActiveTurnIndex(prev)
+        if (turnIdx >= 0) {
+          const msg = prev[turnIdx] as AssistantTurnMessage
+          const elapsed = msg._startTime
+            ? (Date.now() - msg._startTime) / 1000
+            : null
+          const finalized = finalizeTurn(
+            msg,
+            answerText || msg.content || '',
+            (thinking as string) || undefined,
+          )
+          const withToolsDone = finalized.segments?.some((s) => s.type === 'tools')
+            ? syncTurnDerivedFields({
+                ...finalized,
+                segments: finalized.segments!.map((s) =>
+                  s.type === 'tools' ? { ...s, status: 'done' as const } : s,
+                ),
+              })
+            : finalized
+          return [
+            ...prev.slice(0, turnIdx),
+            { ...withToolsDone, _elapsed: elapsed },
+            ...prev.slice(turnIdx + 1),
+          ]
+        }
+
+        if (answerText) {
+          return [
+            ...closeOpenTurn(prev),
+            syncTurnDerivedFields(
+              finalizeTurn(
+                {
+                  id: `done-${Date.now()}`,
+                  role: 'assistant',
+                  content: '',
+                  timestamp: Date.now(),
+                  segments: [],
+                },
+                answerText,
+                thinking as string | undefined,
+              ),
+            ),
+          ]
+        }
+
+        return closeOpenTurn(prev)
+      })
     })
 
-    // 错误
     const unsubError = tagentClient.on('error', (payload: any) => {
       const { error, sessionId } = payload
-      const currentTabId = sessionId || activeTabIdRef.current
-      streamingMsgRef.current = null
-      if (currentTabId) streamingMsgRefs.current[currentTabId] = null
+      const currentTabId = resolveEventTabId(sessionId) || activeTabIdRef.current
       setIsStreaming(false)
       setActiveTools(new Map())
-      // 移除当前标签的运行状态
       if (currentTabId) {
-        setStreamingTabs(prev => {
+        setStreamingTabs((prev) => {
           const next = new Set(prev)
           next.delete(currentTabId)
           return next
         })
+        const errText =
+          typeof error === 'string' ? error : (error != null ? String(error) : '未知错误')
+        setMessagesForTab(currentTabId, (prev) => [
+          ...closeOpenTurn(prev),
+          {
+            id: `error-${Date.now()}`,
+            role: 'assistant' as const,
+            content: `❌ ${errText}`,
+            timestamp: Date.now(),
+          },
+        ])
       }
-      setMessagesForTab(currentTabId, (prev) => [...prev, {
-        id: `error-${Date.now()}`,
-        role: 'assistant' as const,
-        content: `❌ ${error}`,
-        timestamp: Date.now(),
-      }])
     })
 
     return () => {
@@ -647,8 +785,6 @@ const loadTabHistory = useCallback(async (tabId: string) => {
     setInput('')
     setMentionQuery(null)
     setIsStreaming(true)
-    streamingMsgRef.current = null
-    streamingMsgRefs.current[targetTabId] = null
     // 标记当前标签为运行中
     setStreamingTabs(prev => new Set(prev).add(targetTabId))
 
@@ -672,19 +808,29 @@ const loadTabHistory = useCallback(async (tabId: string) => {
     attachments.forEach((a) => { if (a.previewUrl) URL.revokeObjectURL(a.previewUrl) })
     setAttachments([])
 
-    // 添加用户消息
     const userMsg: ChatMessageType = {
       id: `user-${Date.now()}`,
       role: 'user',
       content,
       timestamp: Date.now(),
     }
-    setMessagesForTab(targetTabId, (prev) => [...prev, userMsg])
 
     if (connectionStatus === 'connected') {
-      // 真实模式：通过 WebSocket 发送
+      let messageTabId = targetTabId
       try {
-        await tagentClient.sendMessage(content, contextCutoff, targetTabId, thinkingEnabled, imageAttachments.length > 0 ? imageAttachments : undefined, fileAttachments.length > 0 ? fileAttachments : undefined)
+        if (targetTabId && tagentClient.sessionId && targetTabId !== tagentClient.sessionId) {
+          await tagentClient.switchSession(targetTabId)
+        }
+        messageTabId = tagentClient.sessionId || targetTabId
+        setMessagesForTab(messageTabId, (prev) => [...prev, userMsg])
+        await tagentClient.sendMessage(
+          content,
+          contextCutoff,
+          messageTabId,
+          thinkingEnabled,
+          imageAttachments.length > 0 ? imageAttachments : undefined,
+          fileAttachments.length > 0 ? fileAttachments : undefined,
+        )
         setTimeout(() => setSessionRefreshKey((k) => k + 1), 300)
       } catch (e: any) {
         setIsStreaming(false)
@@ -693,10 +839,10 @@ const loadTabHistory = useCallback(async (tabId: string) => {
           next.delete(targetTabId)
           return next
         })
-        setMessagesForTab(targetTabId, (prev) => [...prev, {
+        setMessagesForTab(messageTabId, (prev) => [...prev, {
           id: `error-${Date.now()}`,
           role: 'assistant',
-          content: `❌ 发送失败: ${e.message}`,
+          content: `❌ 发送失败: ${e instanceof Error ? e.message : String(e)}`,
           timestamp: Date.now(),
         }])
       }
@@ -731,8 +877,6 @@ const loadTabHistory = useCallback(async (tabId: string) => {
 
   // 停止当前对话（断开重连以中断 Agent）
   const handleStop = useCallback(async () => {
-    streamingMsgRef.current = null
-    if (sessionId) streamingMsgRefs.current[sessionId] = null
     setIsStreaming(false)
     if (sessionId) {
       setStreamingTabs(prev => {
@@ -767,9 +911,11 @@ const loadTabHistory = useCallback(async (tabId: string) => {
 
   return (
     <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-      {/* 头部：标签栏 + 拖拽 + 连接状态 */}
-      <div className="flex items-center shrink-0 h-9" style={{ backgroundColor: 'hsl(var(--muted) / 0.5)' }}>
-        <div className="flex items-center min-w-0 h-9">
+      {/* 头部：标签栏 + 拖拽 + 连接状态（窗口按钮见 ElectronChrome） */}
+      <AppTitleBar
+        size="sm"
+        style={PAGE_TITLE_BAR_STYLE}
+        leading={
           <SessionTabBar
             openTabs={openTabIds}
             activeTabId={activeTabId}
@@ -780,52 +926,98 @@ const loadTabHistory = useCallback(async (tabId: string) => {
             onTabClose={handleTabClose}
             onNewTab={handleNewTab}
           />
-        </div>
-        {/* 拖拽区域 */}
-        <div className="flex-1 h-full titlebar-drag-region" />
-        {/* 连接状态 */}
-        <div className="flex items-center gap-2 shrink-0 h-9">
-          <ConnectionBadge status={connectionStatus} />
-        </div>
-        {/* 窗口控制按钮（仅 Electron） */}
-        {typeof window !== 'undefined' && (window as any).electronAPI?.isElectron && (
-          <div className="flex items-center shrink-0 h-9 titlebar-no-drag pr-2">
-            <button onClick={() => (window as any).electronAPI.minimizeWindow()} className="h-8 w-9 flex items-center justify-center hover:bg-black/10 rounded transition-colors">
-              <svg width="10" height="1" viewBox="0 0 10 1" fill="none"><rect width="10" height="1" fill="#888"/></svg>
-            </button>
-            <button onClick={() => (window as any).electronAPI.maximizeWindow()} className="h-8 w-9 flex items-center justify-center hover:bg-black/10 rounded transition-colors">
-              <svg width="8" height="8" viewBox="0 0 8 8" fill="none"><rect x="0.5" y="0.5" width="7" height="7" stroke="#888"/></svg>
-            </button>
-            <button onClick={() => (window as any).electronAPI.closeWindow()} className="h-8 w-9 flex items-center justify-center hover:bg-red-500 hover:text-white rounded transition-colors">
-              <svg width="8" height="8" viewBox="0 0 8 8" fill="none"><path d="M1 1l6 6M7 1l-6 6" stroke="#888" strokeWidth="1.2"/></svg>
-            </button>
-          </div>
-        )}
-      </div>
+        }
+        trailing={<ConnectionBadge status={connectionStatus} />}
+      />
 
-      <PipelineProgress sessionId={sessionId} />
+      {agentMode === 'general' && (
+        <div className="px-4 py-1 border-b border-border/30 bg-muted/15">
+          {!editingWorkspace ? (
+            <div className="flex items-center gap-2 min-w-0">
+              <span
+                className="text-[11px] text-muted-foreground truncate"
+                title={workspaceInfo?.path || '系统默认工作区目录'}
+              >
+                {workspaceInfo?.name || '默认工作区'}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setWorkspaceDraft(workspaceInfo?.path || '')
+                  setEditingWorkspace(true)
+                }}
+                className="shrink-0 text-[11px] px-1.5 py-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+              >
+                设置
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <input
+                value={workspaceDraft}
+                onChange={(e) => setWorkspaceDraft(e.target.value)}
+                placeholder="本地目录路径"
+                className="flex-1 min-w-0 text-[11px] px-2 py-0.5 rounded border border-border/60 bg-background text-foreground outline-none focus:ring-1 focus:ring-ring"
+              />
+              <button
+                type="button"
+                onClick={handlePickWorkspaceFolder}
+                className="shrink-0 text-[11px] px-1.5 py-0.5 rounded border border-border/60 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+              >
+                浏览
+              </button>
+              <button
+                type="button"
+                onClick={handleSetActiveWorkspace}
+                className="shrink-0 text-[11px] px-1.5 py-0.5 rounded border border-border/60 text-foreground hover:bg-accent transition-colors"
+              >
+                保存
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditingWorkspace(false)}
+                className="shrink-0 text-[11px] px-1.5 py-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+              >
+                取消
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {agentMode === 'ta' ? <PipelineProgress sessionId={sessionId} /> : null}
 
       {/* 消息列表 */}
-      <div className="flex-1 min-h-0 relative overflow-x-hidden">
-      <div ref={listRef} onScroll={handleScroll} className="h-full overflow-y-auto overflow-x-hidden scrollbar-thin p-4 space-y-4">
-        {/* 无会话时的空白状态 */}
-        {!activeTabId && openTabIds.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+      <div className="flex-1 min-h-0 relative overflow-x-hidden flex flex-col">
+      {!activeTabId && openTabIds.length === 0 ? (
+        <div className="flex-1 flex items-center justify-center overflow-hidden px-6">
+          <div className="flex flex-col items-center text-center text-muted-foreground max-w-sm">
             <MessageSquare size={48} className="opacity-20 mb-4" />
             <p className="text-sm">没有打开的会话</p>
-            <p className="text-xs mt-1 opacity-60">点击左侧会话列表打开一个会话</p>
+            <p className="text-xs mt-2 opacity-60 leading-relaxed">点击标签栏「+」新建，或从「历史」打开已有会话</p>
           </div>
-        )}
-        
-        {/* 有会话但无消息 */}
-        {activeTabId && messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+        </div>
+      ) : activeTabId && messages.length === 0 ? (
+        <div className="flex-1 flex items-center justify-center overflow-hidden px-6">
+          <div className="flex flex-col items-center text-center text-muted-foreground max-w-md">
             <Bot size={48} className="opacity-20 mb-4" />
-            <p className="text-sm">开始新对话</p>
-            <p className="text-xs mt-1 opacity-60">输入消息开始与 Agent 交流</p>
+            <p className="text-sm font-medium text-foreground/80">
+              {agentMode === 'general' ? '通用工作台' : '开始新对话'}
+            </p>
+            <p className="text-xs mt-3 opacity-60 leading-relaxed">
+              {agentMode === 'general'
+                ? '可读写工作区文件、整理文档或协作编码。试试发送：「你能做什么」或「列出工作区根目录」'
+                : '输入消息开始与 Agent 交流，例如：分析某文件夹下的资产'}
+            </p>
           </div>
-        )}
-        
+        </div>
+      ) : (
+      <>
+      <div
+        ref={listRef}
+        onScroll={handleScroll}
+        className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden scrollbar-thin py-4 px-12 space-y-4"
+      >
         {messages.length > visibleCount && (
           <div className="text-center py-2">
             <button
@@ -904,7 +1096,7 @@ const loadTabHistory = useCallback(async (tabId: string) => {
               </div>
             )}
             {/* 思考中 */}
-            {!progress && activeTools.size === 0 && !activeStreamingMsgId && (
+            {!progress && activeTools.size === 0 && !activeTurnMessage && (
               <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 rounded-lg">
                 <ThinkingDots text="思考中..." />
               </div>
@@ -915,7 +1107,6 @@ const loadTabHistory = useCallback(async (tabId: string) => {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* 消息导航 */}
       <ScrollMinimap
         messages={messages}
         scrollContainerRef={listRef}
@@ -925,7 +1116,6 @@ const loadTabHistory = useCallback(async (tabId: string) => {
         }}
       />
 
-      {/* 滚动到底部按钮 */}
       {!isAtBottom && isActiveTabStreaming && (
         <button
           onClick={() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })}
@@ -933,6 +1123,8 @@ const loadTabHistory = useCallback(async (tabId: string) => {
         >
           ↓ 新消息
         </button>
+      )}
+      </>
       )}
       </div>
 
@@ -959,7 +1151,7 @@ const loadTabHistory = useCallback(async (tabId: string) => {
             </button>
           </div>
         )}
-        <div className="relative rounded-xl border border-border/50 bg-card transition-all duration-200">
+        <div className="composer-focus-shell relative rounded-xl border border-border/50 bg-card">
           {/* 流式动画 */}
           {isActiveTabStreaming && (
             <div
@@ -1018,9 +1210,14 @@ const loadTabHistory = useCallback(async (tabId: string) => {
                 setAttachments((prev) => [...prev, ...newAttachments])
               }
             }}
-            placeholder={connectionStatus === 'connected'
-              ? '输入消息... (Enter 发送, Shift+Enter 换行)'
-              : '未连接后端，将以 Mock 模式响应...'
+            placeholder={
+              connectionStatus === 'connected'
+                ? (
+                  agentMode === 'general'
+                    ? '输入办公/编码任务... (Enter 发送, Shift+Enter 换行)'
+                    : '输入消息... (Enter 发送, Shift+Enter 换行)'
+                )
+                : '未连接后端，将以 Mock 模式响应...'
             }
             rows={1}
             className="w-full bg-transparent resize-none outline-none text-sm placeholder:text-muted-foreground min-h-[24px] max-h-[120px] px-3 pt-2 scrollbar-none"
@@ -1032,7 +1229,7 @@ const loadTabHistory = useCallback(async (tabId: string) => {
             }}
           />
           {/* @ 资产提及弹出框 */}
-          {mentionQuery !== null && (
+          {agentMode === 'ta' && mentionQuery !== null && (
             <AssetMentionPopover
               query={mentionQuery}
               onSelect={(asset) => {
@@ -1047,16 +1244,18 @@ const loadTabHistory = useCallback(async (tabId: string) => {
           <div className="flex items-center justify-between px-2 py-1 h-[40px]">
             <div className="flex items-center gap-1.5 flex-1 min-w-0">
               {/* 附件按钮 */}
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                title="添加附件"
-              >
-                <Paperclip size={18} />
-              </button>
+              <Tooltip content="添加附件">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                >
+                  <Paperclip size={18} />
+                </button>
+              </Tooltip>
               {/* 模型选择器 */}
               <ModelSelector />
               {/* 思考模式开关 */}
+              <Tooltip content={thinkingEnabled ? '关闭思考模式' : '开启思考模式'}>
               <button
                 onClick={() => {
                   const next = !thinkingEnabled
@@ -1068,10 +1267,10 @@ const loadTabHistory = useCallback(async (tabId: string) => {
                     ? 'text-success hover:bg-success/10'
                     : 'text-muted-foreground hover:text-foreground hover:bg-accent'
                 }`}
-                title={thinkingEnabled ? '关闭思考模式' : '开启思考模式'}
               >
                 <Brain size={18} />
               </button>
+              </Tooltip>
             </div>
             {/* 发送/停止按钮 */}
             <button
@@ -1094,20 +1293,17 @@ const loadTabHistory = useCallback(async (tabId: string) => {
 
 /** 连接状态徽章 */
 function ConnectionBadge({ status }: { status: ConnectionStatus }) {
-  const styles = {
-    connected: 'bg-success/20 text-success',
-    connecting: 'bg-warning/20 text-warning animate-pulse-status',
-    disconnected: 'bg-muted text-muted-foreground',
+  const dotColor = {
+    connected: 'bg-green-500',
+    connecting: 'bg-yellow-500 animate-pulse-status',
+    disconnected: 'bg-red-500',
   }
-  const labels = {
-    connected: '已连接',
-    connecting: '连接中...',
-    disconnected: '未连接',
-  }
+  const mode = localStorage.getItem('tagent-mode') || 'local'
+  const modeLabel = mode === 'online' ? '联机模式' : '本地模式'
   return (
-    <span className={`text-xs px-2 py-0.5 rounded-full flex items-center gap-1 ${styles[status]}`}>
-      {status === 'connected' ? <Wifi size={10} /> : <WifiOff size={10} />}
-      {labels[status]}
+    <span className="text-xs flex items-center gap-1.5 text-muted-foreground">
+      <span className={`w-1.5 h-1.5 rounded-full ${dotColor[status]}`} />
+      {modeLabel}
     </span>
   )
 }

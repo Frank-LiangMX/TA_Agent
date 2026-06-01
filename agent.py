@@ -104,7 +104,8 @@ def _get_console():
 
 from openai import OpenAI
 from config import get_llm_config
-from tools import TOOLS, execute_tool
+from tools import TOOLS, execute_tool, get_tools_for_mode
+from config import get_agent_runtime_mode
 from conventions.context import get_conventions_context, set_conventions_context, retrieve_conventions
 
 # 导入记忆模块
@@ -361,21 +362,21 @@ BASE_SYSTEM_PROMPT = """你是一个游戏技术美术（TA）AI 助手，专门
 - 使用 **load_project_config** 加载配置，后续检查基于配置执行
 
 ## 路径解析（重要）
-用户可能会用中文描述路径（如"桌面"、"文档"、"下载"），你需要根据当前系统用户信息解析为实际路径。
+用户可能用中文或 `~` 描述路径。构造工具参数时请使用 `~` 前缀，**不要**在提示或回复中编造/暴露本机用户名或绝对路径；运行时由服务端展开 `~` 与中文别名。
 
 {system_context}
 
-### 常见中文路径映射：
-- "桌面" → {user_home}/Desktop
-- "文档" → {user_home}/Documents
-- "下载" → {user_home}/Downloads
-- "图片" → {user_home}/Pictures
-- "视频" → {user_home}/Videos
-- "音乐" → {user_home}/Music
+### 常见路径映射（工具参数写法）：
+- "桌面" / 「桌面」→ `~/Desktop`（若不存在服务端会尝试 `~/桌面`）
+- "文档" / 「文档」→ `~/Documents`
+- "下载" / 「下载」→ `~/Downloads`
+- "图片" → `~/Pictures`
+- "视频" → `~/Videos`
+- "音乐" → `~/Music`
 
 ### 注意事项：
-- 不要假设用户名是 Administrator，使用上面提供的实际用户主目录
-- 如果用户给的路径不存在，提示用户确认，不要猜测
+- 用户给出的绝对路径可直接用于工具；若路径不存在，提示用户确认
+- 面向用户的说明优先用相对描述或 `~`，避免复述完整本机路径
 
 ## 完整工作流程（重要）
 当用户要求分析或检查一个目录中的资产时，按以下流程执行：
@@ -512,63 +513,185 @@ GitHub 需要 env: GITHUB_PERSONAL_ACCESS_TOKEN=gho_xxx
 - 给出具体的修复建议，而不是笼统的"需要优化"
 """
 
+GENERAL_SYSTEM_PROMPT = """你是一个通用 AI 工作台助手（通用工作台模式），帮助用户完成办公协作、文档整理和本地项目编码（vibe coding）类任务。
 
-def _get_system_context() -> tuple[str, str]:
-    """获取系统上下文信息，返回 (system_context, user_home)"""
-    user_home = os.path.expanduser("~")
-    username = os.path.basename(user_home)
+你不是游戏技术美术（TA）资产助手。禁止向用户介绍或承诺：游戏资产分析、面数/贴图检查、资产库搜索、审核入库、UE5 导入、FBX 质检、命名规范流水线等（这些工具在本模式下不可用）。
 
-    # 检测常见桌面路径
-    desktop_path = os.path.join(user_home, "Desktop")
-    if not os.path.isdir(desktop_path):
-        # Windows 中文系统可能用"桌面"而非"Desktop"
-        desktop_cn = os.path.join(user_home, "桌面")
-        if os.path.isdir(desktop_cn):
-            desktop_path = desktop_cn
+## 给新用户的引导（重要）
+当用户问「你能做什么」「怎么用」「如何使用」「帮助」等时，只介绍下面的通用能力，不要照搬 TA 资产流程，不要使用 📁资产分析 / 审核入库 等表述。
 
-    system_context = f"""### 当前系统信息：
-- 操作系统：{sys.platform}
-- 用户名：{username}
-- 用户主目录：{user_home}
-- 桌面路径：{desktop_path}"""
+参考模板（可略作改写，但不得加入 TA 专用能力）：
 
-    return system_context, user_home
+"我可以帮你做这些事情：
+
+**本地项目** — 在你绑定的工作区里浏览、阅读、修改代码和配置文件（需先设置或使用默认工作区）。
+
+**办公协作** — 整理文档、列步骤、改文案、拆任务、做简要计划。
+
+**记住你的习惯** — 例如 Blender/编辑器路径、常用命令；你说「记住」我会写入长期记忆。
+
+**扩展工具** — 可按需配置 MCP（搜索、浏览器、GitHub 等）。
+
+**怎么开始**：
+直接说你想完成什么；涉及项目文件时，可在对话顶栏「设置/浏览」绑定文件夹。左侧「工作区」看目录，「历史」打开旧会话。"
+
+若本会话较早的消息里提到过游戏资产/UE5，以当前通用模式为准，不要重复介绍资产分析或入库。
+
+## 工作区（重要）
+用户可为每个会话绑定一个本地文件夹作为**工作区**。文件读写必须优先使用工作区工具：
+- **workspace_list_dir**：浏览目录结构
+- **workspace_read_file**：读取源码/配置/文档
+- **workspace_write_file**：创建或修改文件
+
+未指定时系统会使用「默认工作区」目录；用户可在对话页顶栏「设置/浏览」切换到本地项目文件夹。
+
+{workspace_section}
+
+## 能力范围
+1. 阅读、修改工作区内的代码与文档
+2. 扫描目录、查看文件元信息（scan_directory / check_file_info）
+3. 加载项目说明文档（discover_conventions / load_conventions）
+4. 记忆用户偏好与项目约定（append_profile_fact / get_memory_stats / update_project_profile）
+5. 通过 MCP 扩展能力（搜索、浏览器、GitHub 等）
+
+## 明确不做的事
+- 不要调用游戏资产质检、审核、入库、UE5 导入等 TA 专用能力（当前为通用模式，这些工具已禁用）
+- 不要假设用户在处理 FBX/贴图资产流水线
+
+## 路径与系统
+{system_context}
+
+### 中文路径映射（工具参数用 `~`，勿写本机绝对路径）
+- 「桌面」→ `~/Desktop`（或 `~/桌面`）
+- 「文档」→ `~/Documents`
+- 「下载」→ `~/Downloads`
+
+## 编码与文件操作
+- 修改前先 **workspace_read_file** 了解现有内容
+- 一次改动聚焦清晰；大文件分步读写
+- 写入路径使用相对工作区根目录（如 `src/main.py`）即可
+- 不要读取或写入工作区外的敏感系统路径
+
+## 记忆（重要）
+用户透露的**稳定事实**应写入记忆，而不是写进系统提示或只在当轮对话里记着：
+- **工具/软件路径**（如 Blender、UE、Python venv）、默认编辑器、常用命令 → **append_profile_fact**（追加一条，勿覆盖）；大批量整理再用 **update_project_profile** 合并全文
+- **一次性任务**、当前正在改的文件 → 留在会话上下文即可，不要写入长期记忆
+- 用户明确说「记住」「以后都这样」时，必须调用 **update_project_profile**
+- 写入时路径仍用 `~` 或相对描述，不要保存不必要的本机绝对路径
+- 可用 **get_memory_stats** 确认是否已记录
+
+## MCP
+用户要求安装 MCP 时：mcp_list_servers → mcp_test_connection → mcp_add_server → mcp_reload_servers
+
+## 输出风格
+- 简洁、可执行；说明下一步需要什么信息
+- 代码块注明路径；变更后简要总结改了什么
+"""
 
 
-def build_system_prompt(workflow_mode: str = None) -> str:
+def _format_workspace_section(workspace_path: str | None, workspace_name: str | None) -> str:
+    from config import DEFAULT_WORKSPACE_NAME
+
+    name = (workspace_name or "").strip() or DEFAULT_WORKSPACE_NAME
+    return f"""### 当前工作区
+- 名称：{name}
+- 文件操作请使用 workspace_* 工具，路径写相对于工作区根目录的形式（如 `src/main.py`）
+- 工作区根目录由服务端绑定，**勿在回复中复述本机绝对路径**"""
+
+
+def _get_system_context() -> str:
+    """获取写入系统提示的通用环境说明（不含本机绝对路径或用户名）。"""
+    platform_label = {
+        "win32": "Windows",
+        "darwin": "macOS",
+        "linux": "Linux",
+    }.get(sys.platform, sys.platform)
+
+    return f"""### 当前系统信息
+- 操作系统：{platform_label}
+- 用户主目录在工具参数中用 `~` 表示，由服务端在执行工具时展开
+- 不要在回复中主动列出本机绝对路径或用户名，除非用户明确要求"""
+
+
+def build_system_prompt(
+    workflow_mode: str = None,
+    *,
+    agent_mode: str | None = None,
+    workspace_path: str | None = None,
+    workspace_name: str | None = None,
+) -> str:
     """构建完整的系统提示（基础 + 工作流模式 + 已加载的规范文档）"""
-    mode = workflow_mode or WORKFLOW_MODE
-    system_context, user_home = _get_system_context()
+    runtime_mode = (agent_mode or get_agent_runtime_mode()).strip().lower()
+    wf_mode = workflow_mode or WORKFLOW_MODE
+    system_context = _get_system_context()
 
-    # 注入系统上下文到基础提示
-    prompt = BASE_SYSTEM_PROMPT.format(
-        system_context=system_context,
-        user_home=user_home,
-    )
+    if runtime_mode == "general":
+        prompt = GENERAL_SYSTEM_PROMPT.format(
+            workspace_section=_format_workspace_section(workspace_path, workspace_name),
+            system_context=system_context,
+        )
+        prompt = (
+            f"【运行模式】general（通用工作台）。回答能力范围问题时必须遵守通用引导，禁止介绍 TA 资产能力。\n\n"
+            + prompt
+        )
+    else:
+        prompt = BASE_SYSTEM_PROMPT.format(
+            system_context=system_context,
+        )
+        mode_instruction = MODE_INSTRUCTIONS.get(wf_mode, "")
+        if mode_instruction:
+            prompt += mode_instruction
 
-    # 注入工作流模式指令
-    mode_instruction = MODE_INSTRUCTIONS.get(mode, "")
-    if mode_instruction:
-        prompt += mode_instruction
+    # 规范文档：TA 主动检索；通用模式仅注入已加载内容
+    if runtime_mode == "general":
+        ctx = get_conventions_context()
+        conventions_docs = [ctx] if ctx else []
+    else:
+        conventions_docs = retrieve_conventions("项目规范")
 
-    # 注入规范文档（通过检索接口，未来可切换为 RAG）
-    # 当前：直接返回全文（与之前行为一致）
-    # 未来：retrieve_conventions 会返回相关片段
-    conventions_docs = retrieve_conventions("项目规范")
     if conventions_docs:
         conventions_content = "\n\n".join(conventions_docs)
+        label = "项目规范文档" if runtime_mode != "general" else "已加载的项目说明"
         prompt += f"""
 
-## 项目规范文档（已加载）
-以下是当前项目加载的规范文档内容，在执行所有检查时必须优先参考这些规范：
-
+## {label}（已加载）
 {conventions_content}
 
 ---
-注意：以上项目规范优先级高于默认规范。当项目规范与默认规范冲突时，以项目规范为准。
+请优先遵循以上文档中的约定。
 """
 
+    prompt = _append_memory_profile(prompt, runtime_mode)
+
     return prompt
+
+
+def _append_memory_profile(prompt: str, runtime_mode: str) -> str:
+    """将 L0 画像注入系统提示（跨会话的用户环境/项目约定）。"""
+    try:
+        from tools.core.memory_llm_tools import get_memory_provider
+
+        memory = get_memory_provider()
+        if not memory:
+            return prompt
+        profile = memory.get_project_profile()
+        if not profile or not profile.strip():
+            return prompt
+        if runtime_mode == "general":
+            heading = "## 用户环境与偏好（L0 记忆，跨会话）"
+            note = "以下为用户此前确认的环境信息（如工具路径、习惯）。调用工具前优先参考；用户补充新事实时用 update_project_profile 合并更新。"
+        else:
+            heading = "## 项目画像（L0 记忆）"
+            note = "以下为项目稳定约定。用户补充或纠正时用 update_project_profile 合并更新。"
+        return f"""{prompt}
+
+{heading}
+{note}
+
+{profile.strip()}
+"""
+    except Exception:
+        return prompt
 
 
 def create_client():
@@ -680,7 +803,7 @@ def agent_loop(user_message: str, history: list = None, workflow_mode: str = Non
         history = []
 
     # 构建消息列表（只发送 cutoff 之后的历史）
-    messages = [{"role": "system", "content": build_system_prompt(workflow_mode)}]
+    messages = [{"role": "system", "content": build_system_prompt(workflow_mode, agent_mode=get_agent_runtime_mode())}]
 
     # 智能压缩历史：限制消息数量，工具结果只保留摘要
     active_history = history[context_cutoff:]
@@ -739,7 +862,7 @@ def agent_loop(user_message: str, history: list = None, workflow_mode: str = Non
                     response = client.chat.completions.create(
                         model=model,
                         messages=messages,
-                        tools=TOOLS,
+                        tools=get_tools_for_mode(),
                         tool_choice="auto",
                         temperature=0.1,
                         stream=True,  # 流式输出
@@ -941,7 +1064,10 @@ def agent_loop(user_message: str, history: list = None, workflow_mode: str = Non
                     if conv_result.get("combined_context"):
                         set_conventions_context(conv_result["combined_context"])
                         # 更新系统提示，让后续 LLM 调用能看到新规范
-                        messages[0] = {"role": "system", "content": build_system_prompt(workflow_mode)}
+                        messages[0] = {
+                            "role": "system",
+                            "content": build_system_prompt(workflow_mode, agent_mode=get_agent_runtime_mode()),
+                        }
                         print(f"  ✓ 已加载 {conv_result.get('loaded', 0)} 份规范文档到上下文")
                 except (json.JSONDecodeError, KeyError):
                     pass
@@ -1064,14 +1190,15 @@ def main():
     _print_status()
 
     # 初始化记忆系统（使用统一路径配置）
-    from config import MEMORY_DIR, RUNTIME_DIR, SESSIONS_DIR
+    from config import MEMORY_DIR, RUNTIME_DIR, SESSIONS_DIR, get_memory_namespace
 
     try:
-        memory_provider = FileMemoryProvider()
+        namespace = get_memory_namespace()
+        memory_provider = FileMemoryProvider(namespace=namespace)
         set_memory_provider(memory_provider)
         stats = memory_provider.get_memory_stats()
         print(f"\n  记忆系统: OK")
-        print(f"  存储位置: {MEMORY_DIR}")
+        print(f"  存储位置: {MEMORY_DIR}/{namespace}")
         print(f"  项目画像: {'已设置' if memory_provider.get_project_profile() else '未设置'}")
         print(f"  规则数量: {stats['rule_count']}")
         print(f"  纠正记录: {stats['correction_count']}")

@@ -113,7 +113,11 @@ export class TAgentClient {
           if (pending) {
             this.pendingRequests.delete(data.id)
             if (data.error) {
-              pending.reject(data.error)
+              const errText =
+                typeof data.error === 'string'
+                  ? data.error
+                  : JSON.stringify(data.error)
+              pending.reject(new Error(errText || '请求失败'))
             } else {
               pending.resolve(data.result)
             }
@@ -266,8 +270,12 @@ export class TAgentClient {
 
   /** 切换会话（不断开连接） */
   async switchSession(sessionId: string): Promise<{ sessionId: string; messageCount: number }> {
-    this._sessionId = sessionId
-    return (await this.rpc('switchSession', { sessionId })) as { sessionId: string; messageCount: number }
+    const result = (await this.rpc('switchSession', { sessionId })) as {
+      sessionId: string
+      messageCount: number
+    }
+    this._sessionId = result.sessionId || sessionId
+    return result
   }
 
   /** 订阅事件 */
