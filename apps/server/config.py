@@ -10,7 +10,7 @@ SERVER_HOST = os.getenv("TAGENT_SERVER_HOST", "0.0.0.0")
 SERVER_PORT = int(os.getenv("TAGENT_SERVER_PORT", "8081"))
 
 # 数据目录
-DATA_DIR = os.getenv("TAGENT_DATA_DIR", str(Path(__file__).parent.parent / "data"))
+DATA_DIR = os.getenv("TAGENT_DATA_DIR", str(Path(__file__).parent.parent.parent / "data"))
 DB_PATH = os.path.join(DATA_DIR, "tagent.db")
 PREVIEWS_DIR = os.path.join(DATA_DIR, "previews")
 
