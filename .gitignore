@@ -26,12 +26,8 @@ tag_store/
 node_modules/
 
 # 构建产物
-dist/
-build/
+release/
 *.spec
-
-# Electron 打包产物（已迁移至根 dist/）
-electron/dist/
 
 # IDE
 .idea/

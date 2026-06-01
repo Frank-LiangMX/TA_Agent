@@ -1,14 +1,14 @@
 appId: com.tagent.desktop
 productName: TAgent
 directories:
-  output: ../dist/electron-build
+  output: ../release/electron
 files:
   - main.js
   - preload.js
   - updater.js
   - dist/**/*
 extraResources:
-  - from: ../build/TAgent
+  - from: ../release/pyinstaller/TAgent
     to: backend
     filter:
       - "**/*"
