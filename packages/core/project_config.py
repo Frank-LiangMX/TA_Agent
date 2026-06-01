@@ -365,7 +365,7 @@ def get_agent_config_dir() -> str:
         return env_dir
 
     # 默认使用脚本所在目录的 .ta_agent
-    script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    script_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     return os.path.join(script_dir, AGENT_CONFIG_DIR)
 
 
