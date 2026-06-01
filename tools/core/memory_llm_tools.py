@@ -1,15 +1,11 @@
 """
 记忆工具 - TA Agent 记忆系统的 LLM 工具接口
 
-提供给 LLM 调用的工具：
-  - record_correction: 记录用户纠正
-  - get_memory_stats: 查看记忆状态
-  - update_project_profile: 更新项目画像
+Layout v1: index（每轮注入）+ facts（按需读）+ sops/（开发者说明书）
 """
 
 from __future__ import annotations
 
-import json
 from typing import Optional
 
 from tools.memory import (
@@ -20,23 +16,17 @@ from tools.memory import (
 )
 
 
-# ========== 全局记忆实例（由 agent.py 初始化） ==========
-
 _memory_instance: Optional[MemoryProvider] = None
 
 
 def set_memory_provider(memory: MemoryProvider) -> None:
-    """设置全局记忆实例（由 agent.py 调用）"""
     global _memory_instance
     _memory_instance = memory
 
 
 def get_memory_provider() -> Optional[MemoryProvider]:
-    """获取全局记忆实例"""
     return _memory_instance
 
-
-# ========== 工具执行函数 ==========
 
 def record_correction(
     asset_name: str,
@@ -46,24 +36,10 @@ def record_correction(
     face_count: int = 0,
     material_name: str = "",
 ) -> dict:
-    """记录用户对资产分析结果的纠正。
-
-    参数:
-        asset_name: 资产名称
-        wrong_result: 错误的分析结果
-        correct_result: 正确的分析结果
-        reason: 纠正原因
-        face_count: 面数（可选，用于特征匹配）
-        material_name: 材质名（可选，用于特征匹配）
-
-    返回:
-        记录结果
-    """
     memory = get_memory_provider()
     if not memory:
         return {"error": "记忆系统未初始化"}
 
-    # 提取资产特征
     asset_features = extract_asset_features(
         asset_name=asset_name,
         face_count=face_count,
@@ -83,82 +59,104 @@ def record_correction(
 
 
 def get_memory_stats() -> dict:
-    """查看当前记忆系统的状态。
-
-    返回:
-        记忆统计信息
-    """
     memory = get_memory_provider()
     if not memory:
         return {"error": "记忆系统未初始化"}
 
-    return memory.get_memory_stats()
+    stats = memory.get_memory_stats()
+    index = ""
+    facts = ""
+    if hasattr(memory, "get_memory_index"):
+        index = (memory.get_memory_index() or "").strip()
+    else:
+        index = (memory.get_project_profile() or "").strip()
+    if hasattr(memory, "get_memory_facts"):
+        facts = (memory.get_memory_facts() or "").strip()
+
+    stats["index_preview"] = index[:800]
+    stats["facts_preview"] = facts[:1200]
+    if len(index) > 800:
+        stats["index_preview_truncated"] = True
+    if len(facts) > 1200:
+        stats["facts_preview_truncated"] = True
+    stats["profile_preview"] = stats.get("facts_preview", "")
+    return stats
 
 
 def append_profile_fact(fact: str, section: str = "") -> dict:
-    """向 L0 画像追加一条事实（合并写入，不覆盖已有内容）。"""
     memory = get_memory_provider()
     if not memory:
         return {"error": "记忆系统未初始化"}
 
-    text = (fact or "").strip()
-    if not text:
-        return {"error": "fact 不能为空"}
+    if hasattr(memory, "append_fact"):
+        result = memory.append_fact(fact, section=section)
+        if result.get("success"):
+            result["message"] = "已写入 facts 记忆"
+        return result
 
-    line = text if text.startswith("-") else f"- {text}"
-    existing = (memory.get_project_profile() or "").strip()
+    return {"error": "当前记忆实现不支持 append_fact"}
+
+
+def memory_read_facts(section: str = "") -> dict:
+    memory = get_memory_provider()
+    if not memory:
+        return {"error": "记忆系统未初始化"}
+    if not hasattr(memory, "get_memory_facts"):
+        content = memory.get_project_profile() or ""
+        return {"content": content, "section": section or None}
+
     sec = (section or "").strip()
-
     if sec:
-        header = f"## {sec}"
-        if header in existing:
-            parts = existing.split(header, 1)
-            before = parts[0].rstrip()
-            rest = parts[1]
-            if "\n## " in rest:
-                body, after = rest.split("\n## ", 1)
-                body = body.rstrip() + "\n" + line
-                new_profile = f"{before}\n\n{header}{body}\n## {after}".strip()
-            else:
-                new_profile = f"{before}\n\n{header}{rest.rstrip()}\n{line}".strip()
-        else:
-            block = f"{header}\n{line}"
-            new_profile = f"{existing}\n\n{block}".strip() if existing else block
-    else:
-        new_profile = f"{existing}\n{line}".strip() if existing else line
+        content = memory.get_memory_facts_section(sec)
+        if content is None:
+            return {"error": f"facts 中无 section「{sec}」", "section": sec}
+        return {"content": content, "section": sec}
 
-    if hasattr(memory, "update_project_profile"):
-        memory.update_project_profile(new_profile)
+    content = memory.get_memory_facts() or ""
+    if not content:
+        return {"content": "", "message": "facts 为空"}
+    return {"content": content}
+
+
+def memory_read_sop(name: str) -> dict:
+    memory = get_memory_provider()
+    if not memory:
+        return {"error": "记忆系统未初始化"}
+    if not hasattr(memory, "read_sop"):
+        return {"error": "当前记忆实现不支持 SOP"}
+
+    raw = (name or "").strip()
+    if not raw:
+        return {"error": "name 不能为空"}
+
+    content = memory.read_sop(raw)
+    if content is None:
+        available = memory.list_sops() if hasattr(memory, "list_sops") else []
         return {
-            "success": True,
-            "message": "已追加到 L0 记忆",
-            "profile_chars": len(new_profile),
+            "error": f"未找到 SOP「{raw}」",
+            "available_sops": available,
         }
-    return {"error": "当前记忆实现不支持更新项目画像"}
+    return {"name": raw.replace(".md", ""), "content": content}
 
 
 def update_project_profile(profile_content: str) -> dict:
-    """更新项目画像（L0 记忆）。
-
-    参数:
-        profile_content: 项目画像内容（应简洁，不超过 500 tokens）
-
-    返回:
-        更新结果
-    """
     memory = get_memory_provider()
     if not memory:
         return {"error": "记忆系统未初始化"}
 
-    # 检查是否有 update_project_profile 方法
-    if hasattr(memory, 'update_project_profile'):
-        memory.update_project_profile(profile_content)
+    text = (profile_content or "").strip()
+    if not text:
+        return {"error": "profile_content 不能为空"}
+
+    if hasattr(memory, "update_memory_facts"):
+        memory.update_memory_facts(text)
+        return {"success": True, "message": "facts 已更新（index 导航已同步）"}
+
+    if hasattr(memory, "update_project_profile"):
+        memory.update_project_profile(text)
         return {"success": True, "message": "项目画像已更新"}
-    else:
-        return {"error": "当前记忆实现不支持更新项目画像"}
+    return {"error": "当前记忆实现不支持更新"}
 
-
-# ========== Schema 定义 ==========
 
 RECORD_CORRECTION_DEF = {
     "type": "function",
@@ -168,67 +166,72 @@ RECORD_CORRECTION_DEF = {
         "parameters": {
             "type": "object",
             "properties": {
-                "asset_name": {
-                    "type": "string",
-                    "description": "资产名称"
-                },
-                "wrong_result": {
-                    "type": "string",
-                    "description": "错误的分析结果（如：building/wall）"
-                },
-                "correct_result": {
-                    "type": "string",
-                    "description": "正确的分析结果（如：weapon/sword）"
-                },
-                "reason": {
-                    "type": "string",
-                    "description": "纠正原因（可选）"
-                },
-                "face_count": {
-                    "type": "integer",
-                    "description": "面数（可选，用于特征匹配）"
-                },
-                "material_name": {
-                    "type": "string",
-                    "description": "材质名（可选，用于特征匹配）"
-                }
+                "asset_name": {"type": "string", "description": "资产名称"},
+                "wrong_result": {"type": "string", "description": "错误的分析结果"},
+                "correct_result": {"type": "string", "description": "正确的分析结果"},
+                "reason": {"type": "string", "description": "纠正原因（可选）"},
+                "face_count": {"type": "integer", "description": "面数（可选）"},
+                "material_name": {"type": "string", "description": "材质名（可选）"},
             },
-            "required": ["asset_name", "wrong_result", "correct_result"]
-        }
-    }
+            "required": ["asset_name", "wrong_result", "correct_result"],
+        },
+    },
 }
 
 GET_MEMORY_STATS_DEF = {
     "type": "function",
     "function": {
         "name": "get_memory_stats",
-        "description": "查看当前记忆系统的状态，包括项目画像、规则数量、纠正记录等。",
-        "parameters": {
-            "type": "object",
-            "properties": {},
-            "required": []
-        }
-    }
+        "description": "查看记忆：index/facts 字符数、L1/L2 统计、index_preview 与 facts_preview。写入后核对，勿声称 preview 中不存在的内容。",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    },
 }
 
 APPEND_PROFILE_FACT_DEF = {
     "type": "function",
     "function": {
         "name": "append_profile_fact",
-        "description": "向 L0 长期记忆追加一条用户环境事实（如 Blender 路径、常用命令）。优先于 update_project_profile，避免覆盖已有记忆。",
+        "description": "向 facts 长期记忆追加/更新一条事实（工具路径、习惯偏好等）。section 如「工具路径」「习惯偏好」。同键（如 Blender:）会覆盖旧行。不确定是否该记时先问用户。",
         "parameters": {
             "type": "object",
             "properties": {
-                "fact": {
-                    "type": "string",
-                    "description": "要记住的事实，建议一行，如「Blender: ~/AppData/.../blender.exe」",
-                },
-                "section": {
-                    "type": "string",
-                    "description": "可选分组标题，如「工具路径」「习惯偏好」",
-                },
+                "fact": {"type": "string", "description": "一行事实，如 Blender: ~/bin/blender"},
+                "section": {"type": "string", "description": "分组，如 工具路径、习惯偏好、项目约定"},
             },
             "required": ["fact"],
+        },
+    },
+}
+
+MEMORY_READ_FACTS_DEF = {
+    "type": "function",
+    "function": {
+        "name": "memory_read_facts",
+        "description": "读取 facts 长期记忆。需要具体路径或偏好时调用；section 为空则返回全文。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "section": {
+                    "type": "string",
+                    "description": "可选，如 工具路径、习惯偏好；留空读全文",
+                },
+            },
+            "required": [],
+        },
+    },
+}
+
+MEMORY_READ_SOP_DEF = {
+    "type": "function",
+    "function": {
+        "name": "memory_read_sop",
+        "description": "读取 sops/ 下开发者写的操作说明书（不含 .md 后缀）。复杂流程执行前先读。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "SOP 文件名，如 tagent_memory_sop"},
+            },
+            "required": ["name"],
         },
     },
 }
@@ -237,16 +240,16 @@ UPDATE_PROJECT_PROFILE_DEF = {
     "type": "function",
     "function": {
         "name": "update_project_profile",
-        "description": "更新 L0 长期记忆（项目画像/用户环境）。TA：命名规范、质量阈值等；通用：Blender/UE 等工具路径、常用命令、技术栈偏好。须合并保留已有条目，勿整段覆盖。",
+        "description": "合并更新 facts 全文（非 index）。大批量整理时用；须保留已有条目。",
         "parameters": {
             "type": "object",
             "properties": {
                 "profile_content": {
                     "type": "string",
-                    "description": "合并后的完整 L0 文本（简洁，建议不超过 500 tokens）。包含旧内容 + 新增事实。"
-                }
+                    "description": "合并后的 facts 正文",
+                },
             },
-            "required": ["profile_content"]
-        }
-    }
+            "required": ["profile_content"],
+        },
+    },
 }

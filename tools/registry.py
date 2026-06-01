@@ -30,6 +30,8 @@ from tools.core.memory_llm_tools import (
     get_memory_stats,
     update_project_profile,
     append_profile_fact,
+    memory_read_facts,
+    memory_read_sop,
 )
 from tools.core.renderer import render_asset_preview
 from tools.core.review import get_pending_reviews, get_review_detail, submit_review, batch_approve
@@ -88,6 +90,8 @@ from tools.core.memory_llm_tools import (
     GET_MEMORY_STATS_DEF,
     UPDATE_PROJECT_PROFILE_DEF,
     APPEND_PROFILE_FACT_DEF,
+    MEMORY_READ_FACTS_DEF,
+    MEMORY_READ_SOP_DEF,
 )
 from tools.core.renderer import SCHEMA as RENDERER_SCHEMA
 
@@ -123,6 +127,8 @@ GENERAL_CORE_TOOL_NAMES = frozenset({
     "get_memory_stats",
     "update_project_profile",
     "append_profile_fact",
+    "memory_read_facts",
+    "memory_read_sop",
     "discover_conventions",
     "load_conventions",
     "mcp_list_servers",
@@ -161,6 +167,8 @@ TOOLS = [
     GET_MEMORY_STATS_DEF,
     UPDATE_PROJECT_PROFILE_DEF,
     APPEND_PROFILE_FACT_DEF,
+    MEMORY_READ_FACTS_DEF,
+    MEMORY_READ_SOP_DEF,
     RENDERER_SCHEMA,
     GET_PENDING_REVIEWS_DEF,
     GET_REVIEW_DETAIL_DEF,
@@ -258,6 +266,8 @@ TOOL_FUNCTIONS = {
     "get_memory_stats":       get_memory_stats,
     "update_project_profile": update_project_profile,
     "append_profile_fact":    append_profile_fact,
+    "memory_read_facts":      memory_read_facts,
+    "memory_read_sop":        memory_read_sop,
     "render_asset_preview":   render_asset_preview,
     "get_pending_reviews":    get_pending_reviews,
     "get_review_detail":      get_review_detail,

@@ -16,6 +16,7 @@ from tags.schema import AssetTags, MeshInfo, TextureSet, BoundingBox
 from tags.extractor import TagExtractor
 from tags.store import TagStore
 from tags.inferrer import infer_batch
+from tags.naming_utils import asset_base_name
 
 # 导入现有工具的底层逻辑
 from tools.core.file_info import scan_directory
@@ -225,7 +226,7 @@ class AssetIdentityAnalyzer:
                 texture_results.append(tex_result)
 
                 # 按基础名称分组（去掉前缀和贴图后缀）
-                stem = self._asset_base_name(tex_file["filename"])
+                stem = asset_base_name(tex_file["filename"])
                 texture_by_stem.setdefault(stem, []).append(tex_result)
 
             # 存 checkpoint（序列化 texture_by_stem）
@@ -265,7 +266,7 @@ class AssetIdentityAnalyzer:
                     fbx_path=fbx_path,
                     naming_config=naming_config,
                     texture_results=texture_by_stem.get(
-                        self._asset_base_name(fbx_file["filename"]), []
+                        asset_base_name(fbx_file["filename"]), []
                     ),
                     render_preview=render_previews,
                 )
@@ -281,11 +282,8 @@ class AssetIdentityAnalyzer:
             })
             self._save_checkpoint(dir_path, "fbx", cp_data)
 
-        # 5. 分析没有 FBX 的贴图（可能是独立贴图资产）
-        matched_stems = {self._asset_base_name(f["filename"]) for f in fbx_files}
-        orphan_stems = set(texture_by_stem.keys()) - matched_stems
-        for stem in orphan_stems:
-            tex_group = texture_by_stem[stem]
+        # 5. 为目录下每组贴图创建独立资产（始终入库，不与 FBX 合并为一条）
+        for stem, tex_group in texture_by_stem.items():
             tags = self._analyze_texture_only_asset(stem, tex_group, dir_path)
             all_tags.append(tags)
 
@@ -551,6 +549,7 @@ class AssetIdentityAnalyzer:
         )
         # asset_name 用原始文件名（去掉扩展名），保留 T_ 前缀
         tags.asset_name = os.path.splitext(texture_results[0]["file"])[0]
+        tags.asset_type = "texture"
 
         return tags
 
@@ -561,55 +560,11 @@ class AssetIdentityAnalyzer:
                 if i == j:
                     continue
                 # 同一目录下，基础名称相同的是关联资产
-                base_a = self._asset_base_name(tag_a.asset_name)
-                base_b = self._asset_base_name(tag_b.asset_name)
+                base_a = asset_base_name(tag_a.asset_name)
+                base_b = asset_base_name(tag_b.asset_name)
                 if base_a == base_b and tag_a.asset_id not in tag_b.spatial.related_assets:
                     tag_a.spatial.related_assets.append(tag_b.asset_id)
                     tag_b.spatial.related_assets.append(tag_a.asset_id)
-
-    def _asset_base_name(self, name: str) -> str:
-        """
-        提取资产的基础名称，去掉类型前缀和贴图后缀。
-
-        例:
-          M_C5_Body_1   → C5_Body_1    (去 M_ 前缀)
-          SK_C5_Body_1  → C5_Body_1    (去 SK_ 前缀)
-          P_C5_Body_1   → C5_Body_1    (去 P_ 前缀)
-          T_Building_01_D → Building_01 (去 T_ 前缀和 _D 后缀)
-          SM_Sword_01   → Sword_01     (去 SM_ 前缀)
-        """
-        import re
-        base = os.path.splitext(name)[0]
-
-        # 去掉贴图后缀 (_D, _N, _R, _O, _E, _AO, _ORM, _MT, _NM, _DM)
-        tex_match = re.match(r"^(.+?)_(D|N|R|M|O|E|AO|ORM|MT|NM|DM)$", base, re.IGNORECASE)
-        if tex_match:
-            base = tex_match.group(1)
-
-        # 去掉资产类型前缀
-        prefixes = ["SM_", "SK_", "T_", "M_", "MI_", "AN_", "BP_", "S_", "FX_", "P_"]
-        for prefix in prefixes:
-            if base.upper().startswith(prefix):
-                base = base[len(prefix):]
-                break
-        # 去掉动画前缀 @
-        if base.startswith("@"):
-            base = base[1:]
-
-        return base
-
-    def _texture_stem(self, name: str) -> str:
-        """
-        提取贴图的主干名称（去掉 _D, _N, _R, _O 等后缀）
-        例: T_Building_01_D → T_Building_01
-        """
-        import re
-        base = os.path.splitext(name)[0]
-        # 常见贴图后缀模式
-        match = re.match(r"^(.+?)_(D|N|R|M|O|E|AO|ORM|MT|NM|DM)$", base, re.IGNORECASE)
-        if match:
-            return match.group(1)
-        return base
 
     def _generate_texture_thumbnail(self, src_path: str, dst_path: str) -> bool:
         """生成贴图缩略图（256px PNG）"""

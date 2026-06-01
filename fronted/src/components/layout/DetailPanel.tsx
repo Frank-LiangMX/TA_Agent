@@ -5,10 +5,11 @@
  * 特殊区块（材质详情、关联资产、色板）保留自定义渲染。
  */
 
-import React from 'react'
-import { X, Package, Loader2, Camera, CheckCircle2, AlertTriangle, Box } from 'lucide-react'
+import React, { useEffect, useState } from 'react'
+import { X, Package, Loader2, Camera, CheckCircle2, AlertTriangle, Box, Link2 } from 'lucide-react'
 import { getDataSource } from '@/lib/cache'
 import { API_BASE } from '@/lib/api'
+import { formatAssetTypeLabel } from '@/services/intake'
 import { FbxViewerModal, FbxViewerInline } from '@/components/viewer'
 import type { FieldConfig } from './detailFields'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -20,10 +21,34 @@ import {
 interface DetailPanelProps {
   asset: Record<string, unknown> | null
   onClose: () => void
+  onOpenAsset?: (assetId: string) => void
 }
 
-export function DetailPanel({ asset, onClose }: DetailPanelProps) {
-  if (!asset) {
+interface MatchedAssetBrief {
+  asset_id: string
+  asset_name: string
+  file_path?: string
+  asset_type?: string
+  status?: string
+  texture_maps?: number
+}
+
+export function DetailPanel({ asset, onClose, onOpenAsset }: DetailPanelProps) {
+  const [detail, setDetail] = useState<Record<string, unknown> | null>(asset)
+
+  useEffect(() => {
+    setDetail(asset)
+    const assetId = asset?.asset_id as string | undefined
+    if (!assetId) return
+    fetch(`${API_BASE}/api/assets/${assetId}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (!data.error) setDetail(data)
+      })
+      .catch(() => {})
+  }, [asset?.asset_id])
+
+  if (!detail) {
     return (
       <div className="w-full h-full flex items-center justify-center text-muted-foreground text-sm">
         选择一个资产查看详情
@@ -31,15 +56,18 @@ export function DetailPanel({ asset, onClose }: DetailPanelProps) {
     )
   }
 
-  const name = String(asset.asset_name || asset.filename || '未知')
-  const filePath = String(asset.file_path || '')
-  const assetType = String(asset.asset_type || '')
-  const status = String(asset.meta?.status || asset.status || 'pending')
+  const name = String(detail.asset_name || detail.filename || '未知')
+  const filePath = String(detail.file_path || '')
+  const assetType = String(detail.asset_type || '')
+  const status = String(detail.meta?.status || detail.status || 'pending')
+  const matchedTextures = (detail.matched_textures || []) as MatchedAssetBrief[]
+  const matchedMeshes = (detail.matched_meshes || []) as MatchedAssetBrief[]
+  const assetBaseName = String(detail.asset_base_name || '')
 
   // 根据资产类型选择字段配置
   const getMeshFields = () => {
     if (assetType === 'animation') return ANIMATION_FIELDS
-    if (assetType === 'texture') return []
+    if (assetType === 'texture') return TEXTURE_FIELDS
     return MESH_FIELDS
   }
 
@@ -64,36 +92,60 @@ export function DetailPanel({ asset, onClose }: DetailPanelProps) {
       <div className="flex-1 overflow-y-auto scrollbar-thin p-4 space-y-4">
         {/* 预览区 */}
         <PreviewImage
-          assetId={String(asset.asset_id || '')}
+          assetId={String(detail.asset_id || '')}
           assetName={name}
           assetType={assetType}
           filePath={filePath}
-          triCount={asset.mesh?.tri_count}
+          triCount={detail.mesh?.tri_count}
         />
 
         {/* 基本信息 */}
         <Section title="基本信息">
           <InfoRow label="资产名" value={name} />
-          <InfoRow label="类型" value={assetType} />
+          <InfoRow label="类型" value={formatAssetTypeLabel(assetType)} />
           <InfoRow label="状态" value={status} />
+          {assetBaseName && assetType !== 'texture' && (
+            <InfoRow label="命名套" value={assetBaseName} />
+          )}
           {filePath && <InfoRow label="路径" value={filePath} />}
         </Section>
 
-        {/* 几何/动画信息（配置驱动） */}
-        {asset.mesh && (
-          <FieldSection title="几何信息" fields={getMeshFields()} data={asset.mesh} />
+        {/* 几何/动画/贴图字段（配置驱动） */}
+        {assetType === 'texture' && detail.textures && (
+          <FieldSection title="贴图信息" fields={TEXTURE_FIELDS} data={detail.textures} />
+        )}
+        {asset.mesh && assetType !== 'texture' && (
+          <FieldSection title="几何信息" fields={getMeshFields()} data={detail.mesh} />
         )}
 
-        {/* 贴图信息（配置驱动） */}
-        {asset.textures && asset.textures.count > 0 && (
-          <FieldSection title="贴图信息" fields={TEXTURE_FIELDS} data={asset.textures} />
+        {/* 模型 ↔ 贴图：命名套匹配（独立资产） */}
+        {assetType !== 'texture' && matchedTextures.length > 0 && (
+          <MatchedAssetsSection
+            title="可能匹配的贴图"
+            hint={assetBaseName ? `与命名套「${assetBaseName}」相同` : '按命名规则匹配'}
+            items={matchedTextures}
+            onOpenAsset={onOpenAsset}
+          />
+        )}
+        {assetType === 'texture' && matchedMeshes.length > 0 && (
+          <MatchedAssetsSection
+            title="可能匹配的模型"
+            hint={assetBaseName ? `与命名套「${assetBaseName}」相同` : '按命名规则匹配'}
+            items={matchedMeshes}
+            onOpenAsset={onOpenAsset}
+          />
+        )}
+
+        {/* 同目录命名匹配的贴图质检汇总（挂在模型记录上，非独立资产） */}
+        {assetType !== 'texture' && detail.textures && detail.textures.count > 0 && (
+          <FieldSection title="同套贴图质检汇总" fields={TEXTURE_FIELDS} data={detail.textures} />
         )}
 
         {/* 材质详情（自定义渲染） */}
-        {asset.mesh?.material_names?.length > 0 && (
+        {detail.mesh?.material_names?.length > 0 && (
           <Section title="材质详情">
-            {asset.mesh.material_names.map((matName: string, i: number) => {
-              const textures = asset.mesh.material_textures?.[matName] || []
+            {detail.mesh.material_names.map((matName: string, i: number) => {
+              const textures = detail.mesh.material_textures?.[matName] || []
               return (
                 <div key={i} className="mb-2">
                   <div className="text-xs font-medium text-foreground">{matName || `(空槽位 ${i + 1})`}</div>
@@ -113,33 +165,35 @@ export function DetailPanel({ asset, onClose }: DetailPanelProps) {
         )}
 
         {/* 关联资产 */}
-        {asset.spatial?.related_assets?.length > 0 && (
-          <Section title={`关联资产 (${asset.spatial.related_assets.length})`}>
+        {detail.spatial?.related_assets?.length > 0
+          && matchedTextures.length === 0
+          && matchedMeshes.length === 0 && (
+          <Section title={`关联资产 (${detail.spatial.related_assets.length})`}>
             <div className="space-y-1">
-              {asset.spatial.related_assets.slice(0, 10).map((relatedId: string, i: number) => (
+              {detail.spatial.related_assets.slice(0, 10).map((relatedId: string, i: number) => (
                 <div key={i} className="text-xs text-muted-foreground truncate">{relatedId}</div>
               ))}
-              {asset.spatial.related_assets.length > 10 && (
-                <div className="text-xs text-muted-foreground/50">... 还有 {asset.spatial.related_assets.length - 10} 个</div>
+              {detail.spatial.related_assets.length > 10 && (
+                <div className="text-xs text-muted-foreground/50">... 还有 {detail.spatial.related_assets.length - 10} 个</div>
               )}
             </div>
           </Section>
         )}
 
         {/* AI 分类（配置驱动） */}
-        {asset.category && (
-          <FieldSection title="AI 分类" fields={CATEGORY_FIELDS} data={asset.category} />
+        {detail.category && (
+          <FieldSection title="AI 分类" fields={CATEGORY_FIELDS} data={detail.category} />
         )}
 
         {/* 视觉属性（配置驱动 + 色板自定义） */}
-        {asset.visual && (
+        {detail.visual && (
           <>
-            <FieldSection title="视觉属性" fields={VISUAL_FIELDS} data={asset.visual} />
-            {asset.visual.color_palette?.length > 0 && (
+            <FieldSection title="视觉属性" fields={VISUAL_FIELDS} data={detail.visual} />
+            {detail.visual.color_palette?.length > 0 && (
               <div className="flex items-center gap-2 mt-1">
                 <span className="text-xs text-muted-foreground w-16">色板</span>
                 <div className="flex gap-1">
-                  {asset.visual.color_palette.slice(0, 6).map((color: string, i: number) => (
+                  {detail.visual.color_palette.slice(0, 6).map((color: string, i: number) => (
                     <div
                       key={i}
                       className="w-5 h-5 rounded border border-border/50"
@@ -153,39 +207,38 @@ export function DetailPanel({ asset, onClose }: DetailPanelProps) {
         )}
 
         {/* 材质结构 */}
-        {asset.material_structure && (
+        {detail.material_structure && (
           <Section title="材质">
-            <InfoRow label="主材质" value={(asset.material_structure.primary || []).join(', ') || '-'} />
-            <InfoRow label="辅材质" value={(asset.material_structure.secondary || []).join(', ') || '-'} />
+            <InfoRow label="主材质" value={(detail.material_structure.primary || []).join(', ') || '-'} />
+            <InfoRow label="辅材质" value={(detail.material_structure.secondary || []).join(', ') || '-'} />
           </Section>
         )}
 
-        {/* 元信息（配置驱动 + 命名合规自定义） */}
-        {asset.meta && (
+        {detail.meta && (
           <Section title="元信息">
-            {asset.meta.naming_compliant != null && (
-              <div className={`flex items-center gap-1.5 text-xs ${asset.meta.naming_compliant ? 'text-success' : 'text-warning'}`}>
-                {asset.meta.naming_compliant ? (
+            {detail.meta.naming_compliant != null && (
+              <div className={`flex items-center gap-1.5 text-xs ${detail.meta.naming_compliant ? 'text-success' : 'text-warning'}`}>
+                {detail.meta.naming_compliant ? (
                   <><CheckCircle2 size={12} /> 命名合规</>
                 ) : (
                   <><AlertTriangle size={12} /> 命名不合规</>
                 )}
               </div>
             )}
-            {!asset.meta.naming_compliant && asset.meta.naming_suggestion && (
+            {!detail.meta.naming_compliant && detail.meta.naming_suggestion && (
               <p className="text-xs text-muted-foreground">
-                建议: <span className="font-mono">{asset.meta.naming_suggestion}</span>
+                建议: <span className="font-mono">{detail.meta.naming_suggestion}</span>
               </p>
             )}
-            {asset.meta.naming_issues?.length > 0 && (
+            {detail.meta.naming_issues?.length > 0 && (
               <ul className="text-xs text-destructive space-y-0.5">
-                {asset.meta.naming_issues.map((issue: string, i: number) => (
+                {detail.meta.naming_issues.map((issue: string, i: number) => (
                   <li key={i}>• {issue}</li>
                 ))}
               </ul>
             )}
-            {asset.meta.engine_path && (
-              <InfoRow label="引擎路径" value={asset.meta.engine_path} />
+            {detail.meta.engine_path && (
+              <InfoRow label="引擎路径" value={detail.meta.engine_path} />
             )}
           </Section>
         )}
@@ -195,6 +248,45 @@ export function DetailPanel({ asset, onClose }: DetailPanelProps) {
 }
 
 // ===== 配置驱动的字段区块 =====
+
+function MatchedAssetsSection({
+  title,
+  hint,
+  items,
+  onOpenAsset,
+}: {
+  title: string
+  hint?: string
+  items: MatchedAssetBrief[]
+  onOpenAsset?: (assetId: string) => void
+}) {
+  return (
+    <Section title={`${title} (${items.length})`}>
+      {hint ? <p className="text-[11px] text-muted-foreground mb-2">{hint}</p> : null}
+      <div className="space-y-1.5">
+        {items.map((item) => (
+          <button
+            key={item.asset_id}
+            type="button"
+            disabled={!onOpenAsset}
+            onClick={() => onOpenAsset?.(item.asset_id)}
+            className="w-full flex items-start gap-2 rounded-lg border border-border/40 px-2.5 py-2 text-left hover:bg-muted/40 disabled:cursor-default disabled:hover:bg-transparent transition-colors"
+          >
+            <Link2 size={14} className="text-primary shrink-0 mt-0.5" />
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-medium truncate">{item.asset_name}</div>
+              <div className="text-[11px] text-muted-foreground truncate">
+                {formatAssetTypeLabel(item.asset_type || '')}
+                {item.texture_maps ? ` · ${item.texture_maps} 张图` : ''}
+                {item.status ? ` · ${item.status}` : ''}
+              </div>
+            </div>
+          </button>
+        ))}
+      </div>
+    </Section>
+  )
+}
 
 function FieldSection({ title, fields, data }: { title: string; fields: FieldConfig[]; data: Record<string, unknown> }) {
   if (!data || fields.length === 0) return null

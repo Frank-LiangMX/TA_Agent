@@ -28,8 +28,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openFile: () => ipcRenderer.invoke('dialog-open-file'),
   openFolder: () => ipcRenderer.invoke('dialog-open-folder'),
 
-  onUpdateAvailable: (callback) => ipcRenderer.on('update-available', callback),
-  onUpdateDownloaded: (callback) => ipcRenderer.on('update-downloaded', callback),
+  // 更新器 API
+  updater: {
+    checkForUpdates: () => ipcRenderer.invoke('updater:check'),
+    quitAndInstall: () => ipcRenderer.invoke('updater:quit-install'),
+    getStatus: () => ipcRenderer.invoke('updater:get-status'),
+    onStatusChanged: (callback) => ipcRenderer.on('updater:status-changed', (_event, status) => callback(status)),
+  },
 
   // 微信 Bridge API
   wechat: {

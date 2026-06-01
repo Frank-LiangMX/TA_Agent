@@ -16,9 +16,12 @@ import { WorkflowView } from './components/workflow/WorkflowView'
 import { SettingsView } from './components/settings/SettingsView'
 import { GeneralWorkspaceView } from './components/general/GeneralWorkspaceView'
 import { GeneralHistoryView } from './components/general/GeneralHistoryView'
+import { IntakeWizard } from './components/intake/IntakeWizard'
 import { TourGuide } from './components/onboarding/TourGuide'
+import { UpdateDialog } from './components/ui/UpdateDialog'
 import { ModeSelect, LoginView, LocalConfigView } from './components/auth'
 import { ElectronChrome } from './components/layout/ElectronChrome'
+import { API_BASE } from '@/lib/api'
 
 type AppState = 'loading' | 'mode-select' | 'login' | 'local-config' | 'ready'
 
@@ -42,6 +45,8 @@ export default function App() {
   const [assetLibraryNavKey, setAssetLibraryNavKey] = useState(0)
   const [reviewInitialTab, setReviewInitialTab] = useState<'high' | 'low' | undefined>()
   const [reviewNavKey, setReviewNavKey] = useState(0)
+  const [intakeInitialAssetIds, setIntakeInitialAssetIds] = useState<string[] | undefined>()
+  const [intakeNavKey, setIntakeNavKey] = useState(0)
   const sidebarRef = useRef<HTMLDivElement>(null)
   const detailRef = useRef<HTMLDivElement>(null)
   const wsConnectGenRef = useRef(0)
@@ -96,15 +101,15 @@ export default function App() {
         }
       }
 
-      try {
-        const sessions = await listSessions(false)
-        if (!cancelled && connectGen === wsConnectGenRef.current && sessions.length > 0) {
-          await tagentClient.connect(sessions[0].sessionId)
-          return
-        }
-      } catch {}
-
       if (!cancelled && connectGen === wsConnectGenRef.current) {
+        try {
+          const sessions = await listSessions(false)
+          if (sessions.length > 0) {
+            await tagentClient.connect(sessions[0].sessionId)
+            return
+          }
+        } catch {}
+        // 真正无历史会话时才新建
         await tagentClient.connect()
       }
     }
@@ -165,9 +170,16 @@ export default function App() {
     handleViewChange(view)
   }
 
+  const handleStartIntake = (assetIds?: string[]) => {
+    setIntakeInitialAssetIds(assetIds)
+    setIntakeNavKey((k) => k + 1)
+    handleViewChange('intake')
+  }
+
   const handleSidebarViewChange = (view: ViewType) => {
     if (view === 'assets') setAssetFilterHints(undefined)
     if (view === 'review') setReviewInitialTab(undefined)
+    if (view === 'intake') setIntakeInitialAssetIds(undefined)
     handleViewChange(view)
   }
 
@@ -203,9 +215,14 @@ export default function App() {
         tagentClient.disconnect()
         try {
           if (storedActiveId) {
-            await tagentClient.connect(storedActiveId)
+            await tagentClient.reconnectWithSession(storedActiveId)
           } else {
-            await tagentClient.connect()
+            const sessions = await listSessions(false)
+            if (sessions.length > 0) {
+              await tagentClient.connect(sessions[0].sessionId)
+            } else {
+              await tagentClient.connect()
+            }
           }
         } catch (err) {
           console.error('[App] 模式切换后重连失败:', err)
@@ -316,20 +333,46 @@ export default function App() {
                 />
               </div>
               <div className={`flex-1 flex flex-col min-w-0 h-full ${agentMode === 'ta' && activeView === 'review' ? '' : 'hidden'}`}>
-                <ReviewQueue key={`review-${reviewNavKey}`} initialTab={reviewInitialTab} />
+                <ReviewQueue
+                  key={`review-${reviewNavKey}`}
+                  initialTab={reviewInitialTab}
+                  onStartIntake={() => handleStartIntake()}
+                />
+              </div>
+              <div className={`flex-1 flex flex-col min-w-0 h-full ${agentMode === 'ta' && activeView === 'intake' ? '' : 'hidden'}`}>
+                <IntakeWizard
+                  key={`intake-${intakeNavKey}`}
+                  initialAssetIds={intakeInitialAssetIds}
+                  onGoReview={() => handleViewChange('review')}
+                />
               </div>
               <div className={`flex-1 flex flex-col min-w-0 h-full ${agentMode === 'ta' && activeView === 'search' ? '' : 'hidden'}`}>
                 <SearchView onAssetSelect={handleAssetSelect} />
               </div>
               <div className={`flex-1 flex flex-col min-w-0 h-full ${agentMode === 'ta' && activeView === 'workflow' ? '' : 'hidden'}`}>
-                <WorkflowView onNavigate={(view) => handleViewChange(view as ViewType)} />
+                <WorkflowView
+                  onNavigate={(view) => {
+                    if (view === 'intake') handleStartIntake()
+                    else handleViewChange(view as ViewType)
+                  }}
+                />
               </div>
 
               {detailOpen && (
                 <>
                   <ResizeHandle targetRef={detailRef} side="right" minWidth={250} maxWidth={500} />
                   <div ref={detailRef} className="border-l border-border/40 bg-card flex flex-col shrink-0 overflow-hidden" style={{ width: detailWidth }}>
-                    <DetailPanel asset={selectedAsset} onClose={() => setDetailOpen(false)} />
+                    <DetailPanel
+                      asset={selectedAsset}
+                      onClose={() => setDetailOpen(false)}
+                      onOpenAsset={async (assetId) => {
+                        try {
+                          const res = await fetch(`${API_BASE}/api/assets/${assetId}`)
+                          const data = await res.json()
+                          if (!data.error) handleAssetSelect(data)
+                        } catch {}
+                      }}
+                    />
                   </div>
                 </>
               )}
@@ -346,6 +389,7 @@ export default function App() {
         </span>
       </div>
       <TourGuide />
+      <UpdateDialog />
     </div>
   )
 }
@@ -412,7 +456,7 @@ function StatusBar() {
           )}
         </span>
       </div>
-      <span>TAgent v0.27</span>
+      <span>TAgent v0.28</span>
     </div>
   )
 }

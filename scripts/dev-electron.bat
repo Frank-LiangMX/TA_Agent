@@ -2,7 +2,8 @@
 chcp 65001 >nul 2>&1
 setlocal
 
-set "ROOT=%~dp0"
+set "ROOT=%~dp0..\"
+set "SCRIPTS_DIR=%~dp0"
 set "ELECTRON_DIR=%ROOT%electron"
 
 echo ========================================
@@ -13,7 +14,7 @@ echo [信息] Electron 模式会启动/复用 Web 后端服务，但不会打开
 echo.
 
 set "TAGENT_OPEN_BROWSER=0"
-call "%ROOT%dev-web.bat" --no-pause --no-open
+call "%SCRIPTS_DIR%dev-web.bat" --no-pause --no-open
 
 echo.
 echo [信息] 等待 Web 前端端口 5175 就绪...

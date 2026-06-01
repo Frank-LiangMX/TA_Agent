@@ -15,6 +15,9 @@ const http = require('http')
 // 微信 Bridge（延迟加载）
 let wechatBridge = null
 
+// 自动更新
+const { initUpdater, checkForUpdates, quitAndInstall, getStatus } = require('./updater')
+
 const SERVER_HOST = '127.0.0.1'
 const SERVER_PORT = 8080
 const SERVER_URL = `http://${SERVER_HOST}:${SERVER_PORT}`
@@ -115,6 +118,11 @@ function registerIpcHandlers() {
   })
   ipcMain.on('window-close', () => mainWindow?.close())
   ipcMain.handle('window-is-maximized', () => mainWindow?.isMaximized() ?? false)
+
+  // 更新器
+  ipcMain.handle('updater:check', () => { checkForUpdates() })
+  ipcMain.handle('updater:quit-install', () => { quitAndInstall() })
+  ipcMain.handle('updater:get-status', () => getStatus())
 
   ipcMain.handle('open-backend-log', async () => {
     const logPath = getBackendLogPath()
@@ -458,6 +466,13 @@ async function startApp() {
     console.log('[Electron] 后端已就绪')
     createWindow()
     createTray()
+
+    // 初始化自动更新（仅打包模式）
+    if (app.isPackaged) {
+      initUpdater(mainWindow)
+      setTimeout(() => checkForUpdates(), 10000)  // 启动 10 秒后首次检查
+      setInterval(() => checkForUpdates(), 4 * 60 * 60 * 1000)  // 每 4 小时
+    }
   } else {
     console.error('[Electron] 后端启动超时')
     app.quit()

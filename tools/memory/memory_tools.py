@@ -32,10 +32,17 @@ def build_memory_context(
     """
     parts = []
 
-    # L0: Project profile
-    profile = memory.get_project_profile()
-    if profile:
-        parts.append(f"[项目画像]\n{profile}")
+    if hasattr(memory, "get_memory_index"):
+        index = memory.get_memory_index()
+        facts = memory.get_memory_facts() if hasattr(memory, "get_memory_facts") else None
+        if index:
+            parts.append(f"[记忆索引]\n{index}")
+        if facts:
+            parts.append(f"[项目事实]\n{facts[:2500]}")
+    else:
+        profile = memory.get_project_profile()
+        if profile:
+            parts.append(f"[项目画像]\n{profile}")
 
     # L1: Relevant rules
     rules = memory.get_relevant_rules(asset_features, limit=max_rules)

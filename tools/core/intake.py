@@ -311,8 +311,8 @@ def intake_batch(
             )
             script_path = _generate_import_script(manifest_path, store_dir)
 
-    # 截断详细结果，避免上下文过大
-    MAX_RESULTS = 10
+    # 截断详细结果，避免上下文过大（试运行返回全部供向导预览）
+    MAX_RESULTS = len(results) if dry_run else 10
     return {
         "total": len(asset_ids),
         "success": success_count,

@@ -13,7 +13,7 @@ import { AttachmentPreview, type Attachment } from './AttachmentPreview'
 import { SessionTabBar } from '../session/SessionTabBar'
 import { ThinkingDots, SkeletonBlock } from '../animations'
 import { tagentClient, type ConnectionStatus } from '@/services/websocket'
-import { getSessionMessages, getSession, updateSession } from '@/services/sessions'
+import { getSessionMessages, getSession, updateSession, createSession, listSessions } from '@/services/sessions'
 import { fetchPipelineRunsForSession, type PipelineRun } from '@/services/pipeline'
 import type { ChatMessage as ChatMessageType, ToolCall } from '@/types'
 import {
@@ -117,6 +117,29 @@ export function MainPanel({ onAssetSelect, agentMode = 'ta' }: MainPanelProps) {
   activeTabIdRef.current = activeTabId
   const tabMessagesRef = useRef(tabMessages)
   tabMessagesRef.current = tabMessages
+  const pendingNewTabRef = useRef(false)
+
+  // 启动时清理已删除会话的标签，避免 localStorage 堆积
+  useEffect(() => {
+    listSessions(false)
+      .then((sessions) => {
+        const valid = new Set(sessions.map((s) => s.sessionId))
+        setOpenTabIds((prev) => {
+          const next = prev.filter((id) => valid.has(id))
+          if (next.length === prev.length) return prev
+          return next
+        })
+        setActiveTabId((current) => {
+          if (current && !valid.has(current)) {
+            const stored = localStorage.getItem('tagent-active-tab')
+            if (stored && valid.has(stored)) return stored
+            return null
+          }
+          return current
+        })
+      })
+      .catch(() => {})
+  }, [])
 
   // 当前标签的消息（activeTabId 为 null 时显示空数组）
   const messages = activeTabId ? (tabMessages[activeTabId] || []) : []
@@ -387,24 +410,35 @@ const loadTabHistory = useCallback(async (tabId: string) => {
     await _openTab(tabId, true)
   }, [_openTab, activeTabId])
 
-  // 新建标签
-  const handleNewTab = useCallback(() => {
+  // 新建标签：先 REST 创建会话，再切换 WS，避免无 sessionId 连接误建空会话
+  const handleNewTab = useCallback(async () => {
     setContextCutoff(null)
     setIsStreaming(false)
-    tagentClient.disconnect()
-    tagentClient.connect()
-    // WebSocket 连接后会分配 sessionId，在 onopen/onmessage 里处理
+    pendingNewTabRef.current = true
+    try {
+      const meta = await createSession('新会话')
+      setOpenTabIds((prev) => (prev.includes(meta.sessionId) ? prev : [...prev, meta.sessionId]))
+      setActiveTabId(meta.sessionId)
+      setTabTitles((prev) => ({ ...prev, [meta.sessionId]: meta.title || '新会话' }))
+      await tagentClient.reconnectWithSession(meta.sessionId)
+      setSessionRefreshKey((k) => k + 1)
+    } catch (e) {
+      pendingNewTabRef.current = false
+      console.error('[Session] 新建会话失败:', e)
+    }
   }, [])
 
 // 关闭标签
   const handleTabClose = useCallback((tabId: string) => {
     setOpenTabIds(prev => {
       const next = prev.filter(id => id !== tabId)
-      // 如果关的是当前标签，切到相邻或设为 null（空白状态）
       if (tabId === activeTabId) {
         const idx = prev.indexOf(tabId)
         const switchTo = next[Math.min(idx, next.length - 1)] || null
         setActiveTabId(switchTo)
+        if (switchTo) {
+          tagentClient.reconnectWithSession(switchTo).catch(() => {})
+        }
       }
       return next
     })
@@ -476,13 +510,30 @@ const loadTabHistory = useCallback(async (tabId: string) => {
     const unsubConnected = tagentClient.on('connected', (payload: any) => {
       if (!payload?.sessionId) return
       const newSessionId = payload.sessionId as string
-      const isRestore =
-        newSessionId === activeTabIdRef.current ||
-        newSessionId === localStorage.getItem('tagent-active-tab') ||
-        openTabIdsRef.current.includes(newSessionId)
+      const storedActive = localStorage.getItem('tagent-active-tab')
+      const isKnownTab = openTabIdsRef.current.includes(newSessionId)
+      const isExplicitNew = pendingNewTabRef.current
+      pendingNewTabRef.current = false
 
-      setOpenTabIds(prev => (prev.includes(newSessionId) ? prev : [...prev, newSessionId]))
-      if (!activeTabIdRef.current || !isRestore) {
+      const shouldTrackTab =
+        isExplicitNew ||
+        isKnownTab ||
+        newSessionId === storedActive ||
+        newSessionId === activeTabIdRef.current ||
+        (openTabIdsRef.current.length === 0 && !storedActive && !activeTabIdRef.current)
+
+      if (!shouldTrackTab) {
+        // 意外的新会话（如误触 connect 无 sessionId）：切回已有标签，不新增
+        console.warn('[Session] 忽略意外新会话:', newSessionId)
+        const fallbackId = storedActive || activeTabIdRef.current || openTabIdsRef.current[0]
+        if (fallbackId && fallbackId !== newSessionId) {
+          tagentClient.reconnectWithSession(fallbackId).catch(() => {})
+        }
+        return
+      }
+
+      setOpenTabIds((prev) => (prev.includes(newSessionId) ? prev : [...prev, newSessionId]))
+      if (!activeTabIdRef.current || isExplicitNew || newSessionId === storedActive) {
         setActiveTabId(newSessionId)
       }
 

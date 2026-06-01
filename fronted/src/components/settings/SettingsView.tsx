@@ -28,6 +28,7 @@ import { HelpGuide } from './HelpGuide'
 import { McpSettings } from './McpSettings'
 import { ModeSettings } from './ModeSettings'
 import { WeChatSettings } from './WeChatSettings'
+import { AboutSettings } from './AboutSettings'
 import { PageHeader } from '@/components/layout/PageHeader'
 
 type TabId = string
@@ -82,6 +83,7 @@ const NAV_GROUPS: NavGroup[] = [
       { id: 'shortcuts', label: '快捷键', icon: <Keyboard size={16} />, component: ShortcutSettings },
       { id: 'permissions', label: '权限管理', icon: <Shield size={16} />, component: PermissionSettings },
       { id: 'usage', label: '用量统计', icon: <BarChart3 size={16} />, component: UsageSettings },
+      { id: 'about', label: '关于', icon: <HelpCircle size={16} />, component: AboutSettings },
       { id: 'help', label: '使用指南', icon: <HelpCircle size={16} />, component: HelpGuide },
     ],
   },

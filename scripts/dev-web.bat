@@ -2,7 +2,7 @@
 chcp 65001 >nul 2>&1
 setlocal
 
-set "ROOT=%~dp0"
+set "ROOT=%~dp0..\"
 set "FRONTEND_DIR=%ROOT%fronted"
 set "SERVER_DIR=%FRONTEND_DIR%\server"
 set "OPEN_BROWSER=1"

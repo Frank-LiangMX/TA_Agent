@@ -1465,7 +1465,7 @@ async def clear_memory():
     memory_dir = os.path.join(MEMORY_DIR, namespace)
     os.makedirs(memory_dir, exist_ok=True)
     cleared = []
-    for fname in ["corrections.jsonl", "rules.json", "profile.md"]:
+    for fname in ["corrections.jsonl", "rules.json", "profile.md", "index.md", "facts.md"]:
         fpath = os.path.join(memory_dir, fname)
         if os.path.exists(fpath):
             os.remove(fpath)
@@ -1995,6 +1995,47 @@ def _get_tag_store():
     return TagStore(TAG_STORE_DIR)
 
 
+def _asset_brief(tags) -> dict:
+    """资产列表项摘要（用于匹配结果）"""
+    from tags.type_utils import infer_asset_type
+    resolved = infer_asset_type(tags.asset_name, tags.file_path, tags.asset_type)
+    return {
+        "asset_id": tags.asset_id,
+        "asset_name": tags.asset_name,
+        "file_path": tags.file_path,
+        "asset_type": resolved,
+        "status": tags.meta.status,
+        "texture_maps": tags.textures.count if tags.textures else 0,
+    }
+
+
+def _find_matched_assets(tags, store, *, want_texture: bool) -> list[dict]:
+    """按 asset_base_name 查找可能匹配的贴图或模型。"""
+    from tags.naming_utils import asset_base_name
+    from tags.type_utils import infer_asset_type
+
+    base = asset_base_name(tags.asset_name)
+    if not base:
+        return []
+
+    matched: list[dict] = []
+    for candidate in store.search({}):
+        if candidate.asset_id == tags.asset_id:
+            continue
+        ctype = infer_asset_type(candidate.asset_name, candidate.file_path, candidate.asset_type)
+        if want_texture:
+            if ctype != "texture":
+                continue
+        elif ctype == "texture":
+            continue
+        if asset_base_name(candidate.asset_name) != base:
+            continue
+        matched.append(_asset_brief(candidate))
+
+    matched.sort(key=lambda item: item["asset_name"].lower())
+    return matched
+
+
 @app.get("/api/assets")
 async def list_assets():
     """获取所有资产列表"""
@@ -2010,11 +2051,25 @@ async def list_assets():
 async def get_asset_detail(asset_id: str):
     """获取单个资产详情"""
     try:
+        from tags.naming_utils import asset_base_name
+        from tags.type_utils import infer_asset_type
+
         store = _get_tag_store()
         tags = store.load(asset_id)
         if tags is None:
             return {"error": f"未找到资产: {asset_id}"}
-        return tags.to_dict()
+
+        data = tags.to_dict()
+        data["asset_base_name"] = asset_base_name(tags.asset_name)
+        resolved_type = infer_asset_type(tags.asset_name, tags.file_path, tags.asset_type)
+        data["asset_type"] = resolved_type or data.get("asset_type", "")
+
+        if resolved_type == "texture":
+            data["matched_meshes"] = _find_matched_assets(tags, store, want_texture=False)
+        else:
+            data["matched_textures"] = _find_matched_assets(tags, store, want_texture=True)
+
+        return data
     except Exception as e:
         return {"error": str(e)}
 
@@ -2047,6 +2102,99 @@ async def get_pending_reviews(limit: int = 100):
         from tools.core.review import get_pending_reviews as _get_reviews
         result = _get_reviews(confidence_threshold=0.9, include_animation=False)
         return result
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"error": str(e)}
+
+
+@app.get("/api/intake/approved")
+async def list_approved_for_intake():
+    """获取已审核通过、可入库的资产列表"""
+    try:
+        from tags.type_utils import infer_asset_type
+        store = _get_tag_store()
+        assets = store.search({"status": "approved"})
+        items = []
+        for tags in assets:
+            meta = tags.meta
+            resolved_type = infer_asset_type(
+                asset_name=tags.asset_name,
+                file_path=tags.file_path,
+                asset_type=tags.asset_type,
+            )
+            items.append({
+                "asset_id": tags.asset_id,
+                "asset_name": tags.asset_name,
+                "file_path": tags.file_path,
+                "asset_type": resolved_type,
+                "category": tags.category.category if tags.category else "",
+                "tri_count": tags.mesh.tri_count if tags.mesh else 0,
+                "target_engine_path": getattr(meta, "target_engine_path", "") or "",
+            })
+        return {"count": len(items), "assets": items}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"count": 0, "assets": [], "error": str(e)}
+
+
+@app.get("/api/intake/project-configs")
+async def list_intake_project_configs():
+    """列出可用的项目配置（入库命名/路径规则）"""
+    try:
+        from core.project_config import list_project_configs
+        return {"configs": list_project_configs()}
+    except Exception as e:
+        return {"configs": [], "error": str(e)}
+
+
+@app.post("/api/intake/preview")
+async def preview_intake(payload: dict = Body(...)):
+    """试运行入库：预览规范名称与目标路径，不写库"""
+    asset_ids = payload.get("asset_ids") or []
+    target_engine_dir = (payload.get("target_engine_dir") or "").strip()
+    project_config_name = payload.get("project_config_name") or None
+
+    if not asset_ids:
+        return {"error": "请选择至少一个资产"}
+    if not target_engine_dir:
+        return {"error": "请填写 UE Content 目录"}
+
+    try:
+        from tools.core.intake import intake_batch
+        return intake_batch(
+            asset_ids=asset_ids,
+            target_engine_dir=target_engine_dir,
+            project_config_name=project_config_name,
+            dry_run=True,
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"error": str(e)}
+
+
+@app.post("/api/intake/run")
+async def run_intake(payload: dict = Body(...)):
+    """执行入库：更新资产记录并生成 UE 导入清单"""
+    asset_ids = payload.get("asset_ids") or []
+    target_engine_dir = (payload.get("target_engine_dir") or "").strip()
+    project_config_name = payload.get("project_config_name") or None
+
+    if not asset_ids:
+        return {"error": "请选择至少一个资产"}
+    if not target_engine_dir:
+        return {"error": "请填写 UE Content 目录"}
+
+    try:
+        from tools.core.intake import intake_batch
+        return intake_batch(
+            asset_ids=asset_ids,
+            target_engine_dir=target_engine_dir,
+            project_config_name=project_config_name,
+            dry_run=False,
+        )
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -2133,22 +2281,43 @@ async def get_memory_stats():
 
 @app.get("/api/memory/profile")
 async def get_memory_profile():
-    """获取当前模式 L0 画像全文（设置页预览）"""
+    """获取当前模式 index / facts（设置页预览）"""
     try:
         from config import get_agent_runtime_mode, get_memory_namespace
         from tools.core.memory_llm_tools import get_memory_provider
 
         memory = get_memory_provider()
+        ns = get_memory_namespace()
         if not memory:
-            return {"error": "记忆系统未初始化", "content": "", "namespace": get_memory_namespace()}
-        content = memory.get_project_profile() or ""
+            return {
+                "error": "记忆系统未初始化",
+                "index": "",
+                "facts": "",
+                "content": "",
+                "namespace": ns,
+            }
+
+        index = ""
+        facts = ""
+        if hasattr(memory, "get_memory_index"):
+            index = memory.get_memory_index() or ""
+        if hasattr(memory, "get_memory_facts"):
+            facts = memory.get_memory_facts() or ""
+        if not index and not facts:
+            legacy = memory.get_project_profile() or ""
+            if legacy and not hasattr(memory, "get_memory_facts"):
+                facts = legacy
+
         return {
-            "content": content,
-            "namespace": get_memory_namespace(),
+            "index": index,
+            "facts": facts,
+            "content": facts,
+            "namespace": ns,
             "agentMode": get_agent_runtime_mode(),
+            "layout_version": 1,
         }
     except Exception as e:
-        return {"error": str(e), "content": ""}
+        return {"error": str(e), "index": "", "facts": "", "content": ""}
 
 
 # ===== 资产预览图 =====

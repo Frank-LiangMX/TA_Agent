@@ -17,9 +17,10 @@ import {
   GitBranch,
   FolderOpen,
   Clock3,
+  Import,
 } from 'lucide-react'
 
-export type ViewType = 'chat' | 'workspace' | 'history' | 'assets' | 'analysis' | 'review' | 'search' | 'workflow' | 'settings'
+export type ViewType = 'chat' | 'workspace' | 'history' | 'assets' | 'analysis' | 'review' | 'intake' | 'search' | 'workflow' | 'settings'
 
 interface SidebarProps {
   activeView: ViewType
@@ -44,6 +45,7 @@ export function Sidebar({
   onViewChange,
 }: SidebarProps) {
   const [reviewCount, setReviewCount] = useState(0)
+  const [intakeCount, setIntakeCount] = useState(0)
 
   // 定期刷新待审核数量
   useEffect(() => {
@@ -54,11 +56,17 @@ export function Sidebar({
     const fetchCount = async () => {
       try {
         const dataSource = await getDataSource()
-        const res = await fetch(`${dataSource}/api/reviews/pending`)
-        const data = await res.json()
-        setReviewCount(data.total_pending || 0)
+        const reviewRes = await fetch(`${dataSource}/api/reviews/pending`)
+        const reviewData = await reviewRes.json()
+        setReviewCount(reviewData.total_pending || 0)
+
+        // 入库角标：始终读本地 TagStore 统计（与入库向导一致）
+        const statsRes = await fetch(`${API_BASE}/api/stats`)
+        const statsData = await statsRes.json()
+        setIntakeCount(statsData.by_status?.approved || 0)
       } catch {
         setReviewCount(0)
+        setIntakeCount(0)
       }
     }
     fetchCount()
@@ -89,6 +97,7 @@ export function Sidebar({
         { id: 'assets' as ViewType, label: '资产库', icon: <Package size={18} /> },
         { id: 'analysis' as ViewType, label: '分析', icon: <BarChart3 size={18} /> },
         { id: 'review' as ViewType, label: '审核', icon: <FileCheck size={18} />, badge: reviewCount },
+        { id: 'intake' as ViewType, label: '入库', icon: <Import size={18} />, badge: intakeCount },
         { id: 'search' as ViewType, label: '搜索', icon: <Search size={18} /> },
         { id: 'workflow' as ViewType, label: '流水线', icon: <GitBranch size={18} /> },
       ]

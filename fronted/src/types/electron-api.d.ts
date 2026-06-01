@@ -50,7 +50,15 @@ declare global {
       openFile?: () => Promise<unknown>
       openFolder?: () => Promise<unknown>
 
-      // 事件监听
+      // 更新器
+      updater?: {
+        checkForUpdates: () => Promise<void>
+        quitAndInstall: () => Promise<void>
+        getStatus: () => Promise<{ state: string; version?: string; error?: string }>
+        onStatusChanged: (callback: (status: { state: string; version?: string; progress?: unknown; error?: string }) => void) => void
+      }
+
+      // 事件监听（保留兼容）
       onUpdateAvailable?: (callback: (...args: unknown[]) => void) => void
       onUpdateDownloaded?: (callback: (...args: unknown[]) => void) => void
     }

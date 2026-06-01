@@ -8,7 +8,7 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import {
   FileCheck, RefreshCw, CheckCircle2, XCircle,
-  AlertTriangle, ChevronDown, ChevronRight, ChevronLeft, Send, Loader2,
+  AlertTriangle, ChevronDown, ChevronRight, ChevronLeft, Send, Loader2, Import,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -43,9 +43,10 @@ const PAGE_SIZE = 20
 interface ReviewQueueProps {
   /** 从分析页等入口指定初始 Tab（挂载时生效） */
   initialTab?: TabType
+  onStartIntake?: () => void
 }
 
-export function ReviewQueue({ initialTab }: ReviewQueueProps) {
+export function ReviewQueue({ initialTab, onStartIntake }: ReviewQueueProps) {
   const { confirm, ConfirmUI } = useConfirm()
   const { data, loading, refresh } = useReviews()
   const [activeTab, setActiveTab] = useState<TabType>(initialTab ?? 'high')
@@ -269,6 +270,16 @@ export function ReviewQueue({ initialTab }: ReviewQueueProps) {
       <PageHeader
         actions={
           <div className="flex items-center gap-2">
+            {onStartIntake && (
+              <button
+                type="button"
+                onClick={onStartIntake}
+                className="inline-flex items-center gap-1.5 text-xs bg-primary text-primary-foreground px-3 py-1.5 rounded-lg hover:opacity-90 transition-opacity"
+              >
+                <Import size={14} />
+                入库向导
+              </button>
+            )}
             {selected.size > 0 && (
               <>
                 <button onClick={batchApprove} disabled={actionLoading === 'batch'} className="text-xs bg-success text-white px-3 py-1.5 rounded-lg hover:bg-success/80 transition-colors">

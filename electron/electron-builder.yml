@@ -1,0 +1,36 @@
+appId: com.tagent.desktop
+productName: TAgent
+directories:
+  output: ../dist/electron-build
+files:
+  - main.js
+  - preload.js
+  - updater.js
+  - dist/**/*
+extraResources:
+  - from: ../build/TAgent
+    to: backend
+    filter:
+      - "**/*"
+win:
+  target:
+    - target: nsis
+    - target: dir
+  icon: assets/icon.ico
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: TAgent
+  installerIcon: assets/icon.ico
+  uninstallerIcon: assets/icon.ico
+  installerHeaderIcon: assets/icon.ico
+  installerLanguages:
+    - SimpChinese
+  language: 2052
+  unicode: true
+publish:
+  provider: github
+  owner: Frank-LiangMX
+  repo: TA_Agent

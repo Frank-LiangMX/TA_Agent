@@ -76,7 +76,13 @@ export class TAgentClient {
       this.ws = null
     }
 
-    this._sessionId = sessionId || null
+    // 未指定时优先恢复已有会话，避免无 sessionId 连接在后端创建空会话
+    const restored =
+      sessionId ||
+      this._sessionId ||
+      (typeof localStorage !== 'undefined' ? localStorage.getItem('tagent-active-tab') : null) ||
+      undefined
+    this._sessionId = restored || null
     this.setStatus('connecting')
     await this._doConnect()
   }
@@ -142,8 +148,8 @@ export class TAgentClient {
     }
   }
 
-  /** 断开连接 */
-  disconnect(): void {
+  /** 断开连接（默认保留 sessionId，供自动重连/模式切换恢复） */
+  disconnect(clearSession = false): void {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
@@ -154,8 +160,10 @@ export class TAgentClient {
       this.ws.close()
     }
     this.ws = null
-    this._sessionId = null
-    this._connectedPayload = null  // 清除缓存
+    if (clearSession) {
+      this._sessionId = null
+      this._connectedPayload = null
+    }
     this.reconnectAttempts = 0
     this.setStatus('disconnected')
   }

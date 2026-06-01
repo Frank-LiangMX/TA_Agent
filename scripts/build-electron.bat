@@ -2,10 +2,10 @@
 chcp 65001 >nul 2>&1
 setlocal
 
-set "ROOT=%~dp0"
+set "ROOT=%~dp0..\"
 set "FRONTEND_DIR=%ROOT%fronted"
 set "ELECTRON_DIR=%ROOT%electron"
-set "OUTPUT_DIR=%ROOT%dist\electron-release"
+set "OUTPUT_DIR=%ROOT%dist\electron-build"
 
 echo ========================================
 echo   TAgent Build - Electron
@@ -31,7 +31,7 @@ xcopy /E /I /Y "%ROOT%dist\frontend" "%FRONTEND_DIR%\dist" >nul
 if errorlevel 1 goto fail
 
 echo [3/5] 打包 Python 后端...
-pyinstaller TAgent.spec --clean --noconfirm
+pyinstaller "%ROOT%TAgent.spec" --clean --noconfirm
 if errorlevel 1 goto fail
 
 echo [4/5] 同步前端到 Electron...
@@ -58,7 +58,7 @@ if exist "%FRONTEND_DIR%\dist" rmdir /s /q "%FRONTEND_DIR%\dist"
 echo.
 echo ========================================
 echo   打包完成
-echo   输出目录: dist\electron-release\
+echo   输出目录: dist\electron-build\
 echo     - TAgent Setup x.x.x.exe（安装包）
 echo     - win-unpacked\（免安装版）
 echo ========================================

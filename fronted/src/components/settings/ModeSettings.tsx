@@ -81,10 +81,17 @@ export function ModeSettings({ onModeChange }: ModeSettingsProps) {
       await saveConfig(config)
       setConfig({ ...config })
 
-      // 4. 重新连接 WebSocket（不等待完成，避免阻塞）
-      tagentClient.connect().catch(err => {
-        console.error('[ModeSettings] WebSocket 连接失败:', err)
-      })
+      // 4. 重新连接 WebSocket（恢复当前会话，避免无 sessionId 误建新会话）
+      const storedActiveId = localStorage.getItem('tagent-active-tab')
+      if (storedActiveId) {
+        tagentClient.reconnectWithSession(storedActiveId).catch(err => {
+          console.error('[ModeSettings] WebSocket 连接失败:', err)
+        })
+      } else {
+        tagentClient.connect().catch(err => {
+          console.error('[ModeSettings] WebSocket 连接失败:', err)
+        })
+      }
 
       // 5. 检查服务器连接（联机模式）
       if (mode === 'online' && serverHost) {
