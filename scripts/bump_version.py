@@ -14,16 +14,16 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 
 # 版本号来源文件和匹配模式
 VERSION_FILES = [
-    ("electron/package.json", r'"version":\s*"[^"]*"', '"version": "{version}"'),
-    ("electron/package-lock.json", None, None),  # 特殊处理
-    ("agent.py", r"v\d+\.\d+", "v{major_minor}"),
+    ("apps/desktop/package.json", r'"version":\s*"[^"]*"', '"version": "{version}"'),
+    ("apps/desktop/package-lock.json", None, None),  # 特殊处理
+    ("backend/agent_main.py", r"v\d+\.\d+", "v{major_minor}"),
     ("fronted/src/App.tsx", r"v\d+\.\d+", "v{major_minor}"),
 ]
 
 
 def get_current_version():
     """从 electron/package.json 读取当前版本号"""
-    path = os.path.join(ROOT, "electron", "package.json")
+    path = os.path.join(ROOT, "apps", "desktop", "package.json")
     with open(path, "r", encoding="utf-8") as f:
         content = f.read()
     match = re.search(r'"version":\s*"([^"]*)"', content)
@@ -45,7 +45,7 @@ def set_version(new_version):
         with open(full_path, "r", encoding="utf-8") as f:
             content = f.read()
 
-        if filepath == "electron/package-lock.json":
+        if filepath == "apps/desktop/package-lock.json":
             # package-lock.json: 替换所有版本号
             content = re.sub(
                 r'"version":\s*"[\d.]+"',

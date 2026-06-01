@@ -4,7 +4,7 @@ setlocal
 
 set "ROOT=%~dp0..\"
 set "SCRIPTS_DIR=%~dp0"
-set "ELECTRON_DIR=%ROOT%electron"
+set "ELECTRON_DIR=%ROOT%apps\desktop"
 
 echo ========================================
 echo   TAgent Dev - Electron

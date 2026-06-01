@@ -4,7 +4,7 @@ setlocal
 
 set "ROOT=%~dp0..\"
 set "FRONTEND_DIR=%ROOT%fronted"
-set "ELECTRON_DIR=%ROOT%electron"
+set "ELECTRON_DIR=%ROOT%apps\desktop"
 set "RELEASE_DIR=%ROOT%release"
 
 echo ========================================

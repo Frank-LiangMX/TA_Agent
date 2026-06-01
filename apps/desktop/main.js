@@ -55,7 +55,7 @@ function getConfigPath() {
 function getAgentDataDir() {
   // 开发模式：使用项目内的 .ta_agent 目录（与 Python 后端一致）
   if (!app.isPackaged) {
-    return path.join(__dirname, '..', '.ta_agent')
+    return path.join(__dirname, '..', '..', '.ta_agent')
   }
   // 打包模式：使用 AppData 目录
   return path.join(app.getPath('userData'), 'agent-running-data')
@@ -238,7 +238,7 @@ function getPythonExePath() {
   if (app.isPackaged) {
     return path.join(process.resourcesPath, 'backend', 'TAgent.exe')
   }
-  return path.join(__dirname, '..', 'launcher.py')
+  return path.join(__dirname, '..', '..', 'launcher.py')
 }
 
 function checkServerReady() {
