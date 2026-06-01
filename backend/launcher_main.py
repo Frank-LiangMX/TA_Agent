@@ -42,11 +42,11 @@ if os.path.isdir(DATA_DIR):
     if os.path.isdir(backend_dir) and backend_dir not in sys.path:
         sys.path.insert(0, backend_dir)
     # 确保 tools 目录可被导入
-    tools_dir = os.path.join(DATA_DIR, "tools")
+    tools_dir = os.path.join(DATA_DIR, "packages", "tools")
     if os.path.isdir(tools_dir) and tools_dir not in sys.path:
         sys.path.insert(0, tools_dir)
     # 确保 fronted/server 目录可被导入
-    server_dir = os.path.join(DATA_DIR, "fronted", "server")
+    server_dir = os.path.join(DATA_DIR, "apps", "web", "server")
     if os.path.isdir(server_dir) and server_dir not in sys.path:
         sys.path.insert(0, server_dir)
 
@@ -63,10 +63,10 @@ BROWSER_URL = f"http://{SERVER_HOST}:{SERVER_PORT}"
 def find_frontend_dir():
     """查找前端静态文件目录"""
     candidates = [
-        os.path.join(DATA_DIR, "fronted", "dist"),
-        os.path.join(DATA_DIR, "fronted", "build"),
-        os.path.join(BASE_DIR, "fronted", "dist"),
-        os.path.join(BASE_DIR, "fronted", "build"),
+        os.path.join(DATA_DIR, "release", "frontend"),
+        os.path.join(DATA_DIR, "apps", "web", "dist"),
+        os.path.join(BASE_DIR, "release", "frontend"),
+        os.path.join(BASE_DIR, "apps", "web", "dist"),
         os.path.join(BASE_DIR, "dist"),
     ]
     for d in candidates:
@@ -79,9 +79,9 @@ def start_server():
     """启动 FastAPI 服务器"""
     try:
         # 导入 server 模块
-        server_dir = os.path.join(DATA_DIR, "fronted", "server")
+        server_dir = os.path.join(DATA_DIR, "apps", "web", "server")
         if not os.path.isdir(server_dir):
-            server_dir = os.path.join(BASE_DIR, "fronted", "server")
+            server_dir = os.path.join(BASE_DIR, "apps", "web", "server")
         if server_dir not in sys.path:
             sys.path.insert(0, server_dir)
 

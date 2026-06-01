@@ -28,7 +28,7 @@ _server_status: dict[str, dict] = {}
 
 # MCP 配置文件路径
 def _config_path() -> str:
-    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "mcp.json")
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "mcp.json")
 
 
 def _read_config() -> dict:

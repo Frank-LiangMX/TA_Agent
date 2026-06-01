@@ -45,7 +45,7 @@ def _get_blender_path() -> str:
     # 1. 从 config 读取
     try:
         tools_dir = os.path.dirname(os.path.abspath(__file__))
-        project_root = os.path.dirname(tools_dir)
+        project_root = os.path.dirname(os.path.dirname(tools_dir))
         if project_root not in sys.path:
             sys.path.insert(0, project_root)
         from config import BLENDER_PATH

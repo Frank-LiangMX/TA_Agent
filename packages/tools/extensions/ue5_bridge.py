@@ -350,7 +350,7 @@ PLUGIN_FILES = [
 ]
 
 # Agent 自带的插件源目录
-_AGENT_PLUGIN_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "Plugins", PLUGIN_DIR_NAME)
+_AGENT_PLUGIN_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "Plugins", PLUGIN_DIR_NAME)
 
 
 def check_plugin_installed(project_path: str) -> dict:
