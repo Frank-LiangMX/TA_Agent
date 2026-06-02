@@ -433,6 +433,10 @@ def _get_runtime_dir() -> str:
     if override:
         return override
 
+    electron_user_data = os.environ.get("ELECTRON_USER_DATA")
+    if electron_user_data:
+        return electron_user_data
+
     # 打包模式：使用用户目录，确保用户数据在更新后保留
     if getattr(sys, 'frozen', False):
         appdata = os.environ.get(

@@ -14,51 +14,58 @@ echo.
 
 cd /d "%ROOT%"
 
-echo [1/4] 构建 Web 前端...
+echo [0/4] Cleaning previous intermediate artifacts...
+if exist "%ELECTRON_DIR%\dist" rmdir /s /q "%ELECTRON_DIR%\dist" 2>nul
+if exist "%RELEASE_DIR%\frontend" rmdir /s /q "%RELEASE_DIR%\frontend" 2>nul
+if exist "%RELEASE_DIR%\pyinstaller" rmdir /s /q "%RELEASE_DIR%\pyinstaller" 2>nul
+if exist "%RELEASE_DIR%\pyinstaller-build" rmdir /s /q "%RELEASE_DIR%\pyinstaller-build" 2>nul
+
+echo [1/4] Building Web frontend...
 cd /d "%FRONTEND_DIR%"
 if not exist "node_modules" (
-  echo [信息] 安装前端依赖...
+  echo [info] Installing frontend dependencies...
   call npm install
   if errorlevel 1 goto fail
 )
 call npm run build
 if errorlevel 1 goto fail
 
-echo [2/4] 打包 Python 后端...
+echo [2/4] Packaging Python backend...
 cd /d "%ROOT%"
 pyinstaller "%ROOT%TAgent.spec" --clean --noconfirm --distpath "%RELEASE_DIR%\pyinstaller" --workpath "%RELEASE_DIR%\pyinstaller-build"
 if errorlevel 1 goto fail
 
-echo [3/4] 打包 Electron 安装包...
-if exist "%ELECTRON_DIR%\dist" rmdir /s /q "%ELECTRON_DIR%\dist"
+echo [3/4] Building Electron package...
+if exist "%ELECTRON_DIR%\dist" rmdir /s /q "%ELECTRON_DIR%\dist" 2>nul
 xcopy /E /I /Y "%RELEASE_DIR%\frontend" "%ELECTRON_DIR%\dist" >nul
 cd /d "%ELECTRON_DIR%"
 if not exist "node_modules" (
-  echo [信息] 安装 Electron 依赖...
+  echo [info] Installing Electron dependencies...
   call npm install
   if errorlevel 1 goto fail
 )
 call npm run build:win
 if errorlevel 1 goto fail
 
-echo [4/4] 清理中间产物...
-if exist "%ELECTRON_DIR%\dist" rmdir /s /q "%ELECTRON_DIR%\dist"
-if exist "%RELEASE_DIR%\pyinstaller" rmdir /s /q "%RELEASE_DIR%\pyinstaller"
-if exist "%RELEASE_DIR%\pyinstaller-build" rmdir /s /q "%RELEASE_DIR%\pyinstaller-build"
-if exist "%RELEASE_DIR%\frontend" rmdir /s /q "%RELEASE_DIR%\frontend"
+echo [4/4] Cleaning intermediate artifacts...
+cd /d "%ROOT%"
+if exist "%ELECTRON_DIR%\dist" rmdir /s /q "%ELECTRON_DIR%\dist" 2>nul
+if exist "%RELEASE_DIR%\frontend" rmdir /s /q "%RELEASE_DIR%\frontend" 2>nul
+if exist "%RELEASE_DIR%\pyinstaller" rmdir /s /q "%RELEASE_DIR%\pyinstaller" 2>nul
+if exist "%RELEASE_DIR%\pyinstaller-build" rmdir /s /q "%RELEASE_DIR%\pyinstaller-build" 2>nul
 
 echo.
 echo ========================================
-echo   打包完成
-echo   输出目录: release\electron\
-echo     - TAgent Setup x.x.x.exe（安装包）
-echo     - win-unpacked\（免安装版）
+echo   Build complete
+echo   Output: release\electron\
+echo     - TAgent Setup x.x.x.exe
+echo     - win-unpacked\
 echo ========================================
 endlocal
 exit /b 0
 
 :fail
 echo.
-echo [错误] 打包失败，请查看上方日志。
+echo [error] Build failed. Intermediate artifacts are kept for troubleshooting.
 endlocal
 exit /b 1

@@ -349,6 +349,7 @@ function startPythonBackend() {
       PYTHONIOENCODING: 'utf-8',
       TAGENT_RUNTIME_HOST: SERVER_HOST,
       TAGENT_RUNTIME_PORT: String(runtimePort),
+      TAGENT_RUNTIME_DIR: agentDataDir,
       ELECTRON_USER_DATA: agentDataDir  // 传给 Python 后端
     }
   })
