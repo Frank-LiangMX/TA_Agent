@@ -15,6 +15,19 @@ echo.
 
 set "TAGENT_OPEN_BROWSER=0"
 call "%SCRIPTS_DIR%dev-web.bat" --no-pause --no-open
+if errorlevel 1 (
+  endlocal
+  exit /b 1
+)
+
+echo.
+echo [信息] 等待 TAgent 后端 /health 就绪...
+call :wait_health 8080 30
+if errorlevel 1 (
+  echo [错误] TAgent 后端启动超时，请检查 TAgent Backend 窗口
+  endlocal
+  exit /b 1
+)
 
 echo.
 echo [信息] 等待 Web 前端端口 5175 就绪...
@@ -58,3 +71,14 @@ set /a TRIES-=1
 if %TRIES% LEQ 0 exit /b 1
 timeout /t 1 /nobreak >nul
 goto wait_loop
+
+:wait_health
+set "PORT=%~1"
+set "TRIES=%~2"
+:wait_health_loop
+powershell -NoProfile -Command "try { $h = Invoke-RestMethod -Uri ('http://127.0.0.1:{0}/health' -f %PORT%) -TimeoutSec 2; if ($h.status -eq 'ok' -and $h.app -eq 'TAgentLocalRuntime') { exit 0 } else { exit 1 } } catch { exit 1 }" >nul 2>&1
+if not errorlevel 1 exit /b 0
+set /a TRIES-=1
+if %TRIES% LEQ 0 exit /b 1
+timeout /t 1 /nobreak >nul
+goto wait_health_loop

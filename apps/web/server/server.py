@@ -910,7 +910,13 @@ async def websocket_endpoint(ws: WebSocket):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "ws_sessions": len(sessions)}
+    return {
+        "status": "ok",
+        "app": "TAgentLocalRuntime",
+        "version": "0.1.0",
+        "runtime": "local",
+        "ws_sessions": len(sessions),
+    }
 
 
 # ===== REST 端点（会话管理） =====

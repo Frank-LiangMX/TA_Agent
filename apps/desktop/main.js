@@ -243,8 +243,22 @@ function getPythonExePath() {
 
 function checkServerReady() {
   return new Promise((resolve) => {
-    const req = http.get(SERVER_URL, (res) => {
-      resolve(res.statusCode === 200)
+    const req = http.get(`${SERVER_URL}/health`, (res) => {
+      let body = ''
+      res.setEncoding('utf8')
+      res.on('data', (chunk) => { body += chunk })
+      res.on('end', () => {
+        if (res.statusCode !== 200) {
+          resolve(false)
+          return
+        }
+        try {
+          const health = JSON.parse(body)
+          resolve(health.status === 'ok' && health.app === 'TAgentLocalRuntime')
+        } catch {
+          resolve(false)
+        }
+      })
     })
     req.on('error', () => resolve(false))
     req.setTimeout(1000, () => {

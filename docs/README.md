@@ -50,6 +50,7 @@ docs/
 | 双模式记忆设计草案 | `experiments/backend/2026-06-01-dual-mode-memory-design.md` |
 | DeepSeek 缓存优化分析 | `experiments/backend/2026-06-02-deepseek-cache-optimization.md` |
 | 本地 Runtime 与中心服务器架构评估 | `experiments/backend/2026-06-02-local-runtime-cloud-server-architecture.md` |
+| 本地 Runtime 健康检查实施记录 | `experiments/backend/2026-06-02-local-runtime-health-check-implementation.md` |
 | **工作台双模式（TA/通用）实施台账** | `experiments/backend/2026-06-01-workbench-dual-mode-roadmap.md` |
 
 ## 写入规则
@@ -66,3 +67,4 @@ docs/
 - 2026-06-01：新增工作台双模式（TA/通用）实施台账，与记忆设计稿区分
 - 2026-06-02：新增 DeepSeek 前缀缓存命中率优化分析
 - 2026-06-02：新增本地 Runtime 与中心服务器架构评估
+- 2026-06-02：新增本地 Runtime 健康检查实施记录

@@ -24,8 +24,15 @@ echo   Backend : ws://localhost:8080/ws
 echo ========================================
 echo.
 
-call :ensure_port 8080
+call :ensure_health 8080
 if errorlevel 1 (
+  call :ensure_port 8080
+  if not errorlevel 1 (
+    echo [错误] 端口 8080 已被占用，但不是 TAgent 后端。
+    call :print_port_info 8080 "Port 8080"
+    endlocal
+    exit /b 1
+  )
   echo [1/2] 启动 WebSocket 后端...
   start "TAgent Backend :8080" cmd /k "title TAgent Backend :8080 && chcp 65001 >nul 2>&1 && cd /d ""%SERVER_DIR%"" && echo [TAgent Backend] ws://localhost:8080/ws && echo [TAgent Backend] http://localhost:8080/health && echo. && python -m pip install -q -r requirements.txt && python server.py"
 ) else (
@@ -58,6 +65,10 @@ exit /b 0
 
 :ensure_port
 powershell -NoProfile -Command "if (Get-NetTCPConnection -State Listen -LocalPort %1 -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }" >nul 2>&1
+exit /b %errorlevel%
+
+:ensure_health
+powershell -NoProfile -Command "try { $h = Invoke-RestMethod -Uri ('http://127.0.0.1:{0}/health' -f %1) -TimeoutSec 2; if ($h.status -eq 'ok' -and $h.app -eq 'TAgentLocalRuntime') { exit 0 } else { exit 1 } } catch { exit 1 }" >nul 2>&1
 exit /b %errorlevel%
 
 :print_port_info
