@@ -41,10 +41,10 @@ if os.path.isdir(DATA_DIR):
     backend_dir = os.path.join(DATA_DIR, "backend")
     if os.path.isdir(backend_dir) and backend_dir not in sys.path:
         sys.path.insert(0, backend_dir)
-    # 确保 tools 目录可被导入
-    tools_dir = os.path.join(DATA_DIR, "packages", "tools")
-    if os.path.isdir(tools_dir) and tools_dir not in sys.path:
-        sys.path.insert(0, tools_dir)
+    # 确保 packages 目录可被导入（tools/tags/conventions/core）
+    packages_dir = os.path.join(DATA_DIR, "packages")
+    if os.path.isdir(packages_dir) and packages_dir not in sys.path:
+        sys.path.insert(0, packages_dir)
     # 确保 fronted/server 目录可被导入
     server_dir = os.path.join(DATA_DIR, "apps", "web", "server")
     if os.path.isdir(server_dir) and server_dir not in sys.path:
