@@ -814,10 +814,11 @@ const loadTabHistory = useCallback(async (tabId: string) => {
 
   const handleSend = useCallback(async () => {
     const targetTabId = activeTabIdRef.current
+    const isTargetStreaming = targetTabId ? streamingTabs.has(targetTabId) : false
     console.log('[handleSend] called', { input: input.trim(), targetTabId, streamingTabs: Array.from(streamingTabs) })
 
-    if (!input.trim() || !targetTabId || streamingTabs.has(targetTabId)) {
-      console.log('[handleSend] blocked', { hasInput: !!input.trim(), hasTab: !!targetTabId, isStreaming: streamingTabs.has(targetTabId) })
+    if (!input.trim() || !targetTabId || isTargetStreaming) {
+      console.log('[handleSend] blocked', { hasInput: !!input.trim(), hasTab: !!targetTabId, isStreaming: isTargetStreaming })
       return
     }
 

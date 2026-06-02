@@ -400,7 +400,8 @@ function ToolCallsSection({
   const isRunning = toolStatus === 'running'
   const results = toolResults || {}
   const isGrouped = toolCalls.length > 1
-  const toolName = toolCalls[0].name
+  const firstToolCall = toolCalls[0]
+  const toolName = firstToolCall?.name || 'tool'
 
   return (
     <div className={nested ? '' : 'mb-2'}>
@@ -423,8 +424,8 @@ function ToolCallsSection({
           </span>
         )}
         {!isGrouped && (
-          <span className="text-muted-foreground text-xs truncate">
-            {formatArgs(toolCalls[0].arguments)}
+            <span className="text-muted-foreground text-xs truncate">
+            {formatArgs(firstToolCall?.arguments || {})}
           </span>
         )}
         <span className="ml-auto">
@@ -444,10 +445,10 @@ function ToolCallsSection({
             ))
           ) : (
             <>
-              {results[toolCalls[0].id] || toolResult ? (
+              {firstToolCall && (results[firstToolCall.id] || toolResult) ? (
                 <ToolResultRenderer
                   toolName={toolName}
-                  result={results[toolCalls[0].id] || toolResult}
+                  result={results[firstToolCall.id] || toolResult || ''}
                 />
               ) : (
                 <div className="text-xs text-muted-foreground bg-muted/50 rounded-lg p-3">
@@ -463,7 +464,7 @@ function ToolCallsSection({
               </button>
               {showArgs && (
                 <pre className="mt-1 bg-muted/50 rounded-lg p-3 text-xs overflow-x-auto">
-                  {JSON.stringify(toolCalls[0].arguments, null, 2)}
+                  {JSON.stringify(firstToolCall?.arguments || {}, null, 2)}
                 </pre>
               )}
             </>

@@ -9,12 +9,14 @@ import { healthCheck } from '../../services/api'
 import { tagentClient } from '../../services/websocket'
 import { clearCache } from '../../lib/cache'
 import { SettingsSection, SettingsCard, SettingsRow } from './primitives'
+import { useConfirm } from '@/hooks/useConfirm'
 
 interface ModeSettingsProps {
   onModeChange?: () => void
 }
 
 export function ModeSettings({ onModeChange }: ModeSettingsProps) {
+  const { confirm, ConfirmUI } = useConfirm()
   const [config, setConfig] = useState<AppConfig | null>(null)
   const [loading, setLoading] = useState(true)
   const [switching, setSwitching] = useState(false)
@@ -145,8 +147,13 @@ export function ModeSettings({ onModeChange }: ModeSettingsProps) {
   const handleSwitchAgentMode = async (mode: 'ta' | 'general') => {
     if (switching || agentMode === mode) return
     const modeLabel = mode === 'general' ? '通用模式' : 'TA 模式'
-    const confirmed = window.confirm(
-      `确认切换到${modeLabel}？\n\n将切换工作台界面，不会删除另一个模式的会话与记忆。`
+    const confirmed = await confirm(
+      '将切换工作台界面，不会删除另一个模式的会话与记忆。',
+      {
+        title: `确认切换到${modeLabel}？`,
+        confirmText: '切换',
+        cancelText: '取消',
+      },
     )
     if (!confirmed) return
     setSwitching(true)
@@ -394,6 +401,7 @@ export function ModeSettings({ onModeChange }: ModeSettingsProps) {
         <p>• 联机模式下，新的分析结果会同步到服务器</p>
         <p>• 本地模式下，所有数据存储在本地</p>
       </div>
+      {ConfirmUI}
     </div>
   )
 }

@@ -18,6 +18,7 @@ interface McpServerStatus {
   enabled: boolean
   connected: boolean
   tools: number
+  tool_names?: string[]
   error?: string | null
 }
 
@@ -391,11 +392,11 @@ export function McpSettings() {
                       <span>{status.tools} 个</span>
                     </div>
                   )}
-                  {status.tool_names?.length > 0 && (
+                  {(status.tool_names ?? []).length > 0 && (
                     <div className="pt-1">
                       <div className="text-muted-foreground mb-1.5">Agent 可用工具（mcp__ 前缀）</div>
                       <div className="flex flex-wrap gap-1 max-h-40 overflow-y-auto">
-                        {status.tool_names.map((t: string) => (
+                        {(status.tool_names ?? []).map((t: string) => (
                           <code key={t} className="text-[11px] bg-muted px-1.5 py-0.5 rounded font-mono">
                             {t}
                           </code>

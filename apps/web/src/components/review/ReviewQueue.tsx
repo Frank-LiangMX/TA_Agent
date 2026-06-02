@@ -35,6 +35,14 @@ interface ReviewAsset {
   review_determined: Record<string, { value: unknown; label: string }>
 }
 
+interface ReviewData {
+  high_confidence?: ReviewAsset[]
+  low_confidence?: ReviewAsset[]
+  total_pending: number
+  high_confidence_count: number
+  low_confidence_count: number
+}
+
 type ReviewDecision = 'approve' | 'reject' | 'modify'
 type TabType = 'high' | 'low'
 
@@ -48,7 +56,8 @@ interface ReviewQueueProps {
 
 export function ReviewQueue({ initialTab, onStartIntake }: ReviewQueueProps) {
   const { confirm, ConfirmUI } = useConfirm()
-  const { data, loading, refresh } = useReviews()
+  const { data: rawData, loading, error, refresh } = useReviews()
+  const data = rawData as ReviewData | null
   const [activeTab, setActiveTab] = useState<TabType>(initialTab ?? 'high')
   const skipAutoTabRef = useRef(!!initialTab)
   const [highPage, setHighPage] = useState(1)
@@ -82,7 +91,7 @@ export function ReviewQueue({ initialTab, onStartIntake }: ReviewQueueProps) {
     else if (!hasLow && !hasHigh) setActiveTab('high') // 都空时保持默认
   }, [data])
 
-  const currentList = activeTab === 'high' ? (data?.high_confidence || []) : (data?.low_confidence || [])
+  const currentList: ReviewAsset[] = activeTab === 'high' ? (data?.high_confidence || []) : (data?.low_confidence || [])
   const currentPage = activeTab === 'high' ? highPage : lowPage
   const setCurrentPage = activeTab === 'high' ? setHighPage : setLowPage
   const totalPages = Math.max(1, Math.ceil(currentList.length / PAGE_SIZE))

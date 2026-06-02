@@ -149,7 +149,8 @@ export function appendToolResult(
     if (!s.toolCalls.some((tc) => tc.id === toolCallId)) return s
     const results = { ...s.results, [toolCallId]: result }
     const allDone = s.toolCalls.every((tc) => results[tc.id])
-    return { ...s, results, status: allDone ? 'done' : 'running' }
+    const status: 'running' | 'done' = allDone ? 'done' : 'running'
+    return { ...s, results, status }
   })
   return syncTurnDerivedFields({ ...msg, segments })
 }

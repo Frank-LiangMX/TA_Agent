@@ -157,19 +157,36 @@ sessions: dict[str, Session] = {}
 
 async def send_event(ws: WebSocket, event: str, payload: dict):
     """发送事件到客户端"""
-    await ws.send_json({
-        "type": "event",
-        "event": event,
-        "payload": payload,
-    })
+    try:
+        await ws.send_json({
+            "type": "event",
+            "event": event,
+            "payload": payload,
+        })
+    except Exception:
+        pass  # 客户端已断开，忽略
 
 
 async def send_response(ws: WebSocket, request_id: str, result: dict):
     """发送 RPC 响应"""
-    await ws.send_json({
-        "id": request_id,
-        "result": result,
-    })
+    try:
+        await ws.send_json({
+            "id": request_id,
+            "result": result,
+        })
+    except Exception:
+        pass
+
+
+async def send_error(ws: WebSocket, request_id: str, error: str):
+    """发送 RPC 错误"""
+    try:
+        await ws.send_json({
+            "id": request_id,
+            "error": error,
+        })
+    except Exception:
+        pass
 
 
 def _extract_reasoning_delta(delta) -> str:
@@ -190,14 +207,6 @@ def _extract_reasoning_delta(delta) -> str:
         except Exception:
             pass
     return "".join(parts)
-
-
-async def send_error(ws: WebSocket, request_id: str, error: str):
-    """发送错误响应"""
-    await ws.send_json({
-        "id": request_id,
-        "error": error,
-    })
 
 
 # ===== Agent 核心逻辑（事件化版本） =====

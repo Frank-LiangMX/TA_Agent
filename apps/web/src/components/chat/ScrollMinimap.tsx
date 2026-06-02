@@ -134,7 +134,7 @@ export function ScrollMinimap({ messages, scrollContainerRef, onJumpTo }: Scroll
           ref={stripRef}
           className="pointer-events-auto flex w-3 shrink-0 flex-col items-center gap-1.5"
         >
-          <Tooltip content="展开消息导航" side="left">
+          <Tooltip content="展开消息导航" side="top">
             <button
               type="button"
               onClick={() => setIsExpanded((v) => !v)}

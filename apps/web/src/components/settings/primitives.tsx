@@ -69,7 +69,7 @@ export function SettingsCard({ children, divided = true, className = '' }: Setti
 // ===== SettingsRow =====
 
 interface SettingsRowProps {
-  label: string
+  label: React.ReactNode
   description?: string
   icon?: React.ReactNode
   children?: React.ReactNode

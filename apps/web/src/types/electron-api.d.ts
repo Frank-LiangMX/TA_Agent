@@ -6,6 +6,33 @@ interface ElectronActionResult {
   path: string
 }
 
+type PlatformName = 'aix' | 'darwin' | 'freebsd' | 'linux' | 'openbsd' | 'sunos' | 'win32' | string
+
+interface DialogOpenResult {
+  canceled?: boolean
+  filePaths?: string[]
+  path?: string
+}
+
+interface UpdaterStatus {
+  state: string
+  version?: string
+  progress?: unknown
+  error?: string
+}
+
+type WeChatBridgeState = 'idle' | 'scanning' | 'connected' | 'disconnected'
+
+interface WeChatStatus {
+  state: WeChatBridgeState
+  uin?: string | null
+}
+
+interface WeChatConfig {
+  enabled: boolean
+  hasCredentials: boolean
+}
+
 interface AppConfig {
   mode: 'local' | 'online'
   agent_mode?: 'ta' | 'general'
@@ -27,7 +54,7 @@ interface AppConfig {
 declare global {
   interface Window {
     electronAPI?: {
-      platform: string
+      platform: PlatformName
       isElectron: boolean
       getAppVersion?: () => Promise<string>
       getBackendLogPath?: () => Promise<string>
@@ -47,15 +74,27 @@ declare global {
       isMaximized?: () => Promise<boolean>
 
       // 文件对话框
-      openFile?: () => Promise<unknown>
-      openFolder?: () => Promise<unknown>
+      openFile?: () => Promise<DialogOpenResult>
+      openFolder?: () => Promise<DialogOpenResult>
 
       // 更新器
       updater?: {
         checkForUpdates: () => Promise<void>
         quitAndInstall: () => Promise<void>
-        getStatus: () => Promise<{ state: string; version?: string; error?: string }>
-        onStatusChanged: (callback: (status: { state: string; version?: string; progress?: unknown; error?: string }) => void) => void
+        getStatus: () => Promise<UpdaterStatus>
+        onStatusChanged: (callback: (status: UpdaterStatus) => void) => void
+      }
+
+      // 微信 Bridge
+      wechat?: {
+        getConfig: () => Promise<WeChatConfig>
+        startLogin: () => Promise<{ qrDataUrl?: string }>
+        logout: () => Promise<{ success: boolean }>
+        startBridge: () => Promise<{ success: boolean }>
+        stopBridge: () => Promise<{ success: boolean }>
+        getStatus: () => Promise<WeChatStatus>
+        setupListener: () => Promise<void>
+        onStatusChanged: (callback: (state: WeChatStatus) => void) => void
       }
 
       // 事件监听（保留兼容）

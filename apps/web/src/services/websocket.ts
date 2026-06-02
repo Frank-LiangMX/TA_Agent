@@ -14,7 +14,7 @@ type CleanupFn = () => void
 
 interface PendingRequest {
   resolve: (result: unknown) => void
-  reject: (error: string) => void
+  reject: (error: Error) => void
 }
 
 /** 连接状态 */
@@ -287,17 +287,18 @@ export class TAgentClient {
   }
 
   /** 订阅事件 */
-  on(event: string, callback: EventCallback): CleanupFn {
+  on<T = unknown>(event: string, callback: (payload: T) => void): CleanupFn {
     if (!this.listeners.has(event)) {
       this.listeners.set(event, new Set())
     }
-    this.listeners.get(event)!.add(callback)
+    const eventCallback = callback as EventCallback
+    this.listeners.get(event)!.add(eventCallback)
     // 如果是 connected 事件且有缓存，立即触发
     if (event === 'connected' && this._connectedPayload) {
       try { callback(this._connectedPayload) } catch (e) { console.error('[TAgent] 事件处理错误:', e) }
     }
     return () => {
-      this.listeners.get(event)?.delete(callback)
+      this.listeners.get(event)?.delete(eventCallback)
     }
   }
 

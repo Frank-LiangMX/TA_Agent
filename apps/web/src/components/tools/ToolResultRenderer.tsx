@@ -85,14 +85,14 @@ export function ToolResultRenderer({ toolName, result }: ToolResultRendererProps
     case 'load_conventions':
       return <StatusResult text={String(d.message || (d.success ? '操作成功' : JSON.stringify(d)))} status={d.error ? 'error' : 'success'} />
     case 'update_asset_type':
-      return <StatusResult text={d.message || `已更新 ${d.updated} 个资产`} status="success" />
+      return <StatusResult text={String(d.message || `已更新 ${d.updated} 个资产`)} status="success" />
     case 'intake_asset':
     case 'intake_batch':
     case 'intake_approved':
       return <JsonResult data={d} title="入库结果" />
     case 'submit_review':
     case 'batch_approve':
-      return <StatusResult text={d.message || `已处理`} status={d.error ? 'error' : 'success'} />
+      return <StatusResult text={String(d.message || `已处理`)} status={d.error ? 'error' : 'success'} />
     default:
       return <JsonResult data={d} title={toolName} />
   }

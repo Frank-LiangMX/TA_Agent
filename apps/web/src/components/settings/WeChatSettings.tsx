@@ -23,23 +23,6 @@ const STATE_LABELS: Record<BridgeState, { label: string; color: string; icon: Re
   disconnected: { label: '已断开', color: 'text-destructive', icon: <AlertCircle size={14} /> },
 }
 
-declare global {
-  interface Window {
-    electronAPI?: {
-      wechat: {
-        getConfig: () => Promise<{ enabled: boolean; hasCredentials: boolean }>
-        startLogin: () => Promise<{ qrDataUrl?: string }>
-        logout: () => Promise<{ success: boolean }>
-        startBridge: () => Promise<{ success: boolean }>
-        stopBridge: () => Promise<{ success: boolean }>
-        getStatus: () => Promise<WeChatStatus>
-        setupListener: () => Promise<void>
-        onStatusChanged: (callback: (state: WeChatStatus) => void) => void
-      }
-    }
-  }
-}
-
 export function WeChatSettings() {
   const { confirm, ConfirmUI } = useConfirm()
   const [status, setStatus] = useState<WeChatStatus>({ state: 'idle' })

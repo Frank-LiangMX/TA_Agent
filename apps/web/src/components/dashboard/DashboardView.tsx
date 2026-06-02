@@ -390,7 +390,7 @@ export function DashboardView({ onNavigate, onAssetSelect }: DashboardViewProps)
                   </button>
                 </div>
                 <ul className="space-y-0.5">
-                  {recentItems.map((item: Record<string, string>, i) => (
+                  {recentItems.map((item: Record<string, string>, i: number) => (
                     <li key={item.asset_id || `${item.asset_name}-${i}`}>
                       <button
                         type="button"

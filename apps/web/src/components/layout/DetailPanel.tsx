@@ -33,11 +33,67 @@ interface MatchedAssetBrief {
   texture_maps?: number
 }
 
+type DetailRecord = Record<string, unknown>
+
+interface MeshDetail extends DetailRecord {
+  tri_count?: number
+  material_names?: string[]
+  material_textures?: Record<string, string[]>
+}
+
+interface TextureDetail extends DetailRecord {
+  count?: number
+}
+
+interface SpatialDetail extends DetailRecord {
+  related_assets?: string[]
+}
+
+interface VisualDetail extends DetailRecord {
+  color_palette?: string[]
+}
+
+interface MaterialStructureDetail {
+  primary?: string[]
+  secondary?: string[]
+}
+
+interface MetaDetail extends DetailRecord {
+  status?: string
+  naming_compliant?: boolean
+  naming_suggestion?: string
+  naming_issues?: string[]
+  engine_path?: string
+}
+
+interface AssetDetail extends DetailRecord {
+  asset_id?: string
+  asset_name?: string
+  filename?: string
+  file_path?: string
+  asset_type?: string
+  asset_base_name?: string
+  status?: string
+  mesh?: MeshDetail
+  textures?: TextureDetail
+  spatial?: SpatialDetail
+  category?: DetailRecord
+  visual?: VisualDetail
+  material_structure?: MaterialStructureDetail
+  meta?: MetaDetail
+  matched_textures?: MatchedAssetBrief[]
+  matched_meshes?: MatchedAssetBrief[]
+}
+
+function toAssetDetail(value: Record<string, unknown> | null): AssetDetail | null {
+  return value as AssetDetail | null
+}
+
 export function DetailPanel({ asset, onClose, onOpenAsset }: DetailPanelProps) {
-  const [detail, setDetail] = useState<Record<string, unknown> | null>(asset)
+  const [detail, setDetail] = useState<AssetDetail | null>(toAssetDetail(asset))
 
   useEffect(() => {
-    setDetail(asset)
+    setDetail(toAssetDetail(asset))
     const assetId = asset?.asset_id as string | undefined
     if (!assetId) return
     fetch(`${API_BASE}/api/assets/${assetId}`)
@@ -60,9 +116,15 @@ export function DetailPanel({ asset, onClose, onOpenAsset }: DetailPanelProps) {
   const filePath = String(detail.file_path || '')
   const assetType = String(detail.asset_type || '')
   const status = String(detail.meta?.status || detail.status || 'pending')
-  const matchedTextures = (detail.matched_textures || []) as MatchedAssetBrief[]
-  const matchedMeshes = (detail.matched_meshes || []) as MatchedAssetBrief[]
+  const matchedTextures = Array.isArray(detail.matched_textures) ? detail.matched_textures : []
+  const matchedMeshes = Array.isArray(detail.matched_meshes) ? detail.matched_meshes : []
   const assetBaseName = String(detail.asset_base_name || '')
+  const textureCount = detail.textures?.count ?? 0
+  const materialNames = detail.mesh?.material_names ?? []
+  const materialTextures = detail.mesh?.material_textures ?? {}
+  const relatedAssets = detail.spatial?.related_assets ?? []
+  const colorPalette = detail.visual?.color_palette ?? []
+  const namingIssues = detail.meta?.naming_issues ?? []
 
   // 根据资产类型选择字段配置
   const getMeshFields = () => {
@@ -116,7 +178,7 @@ export function DetailPanel({ asset, onClose, onOpenAsset }: DetailPanelProps) {
         {assetType === 'texture' && detail.textures && (
           <FieldSection title="贴图信息" fields={TEXTURE_FIELDS} data={detail.textures} />
         )}
-        {asset.mesh && assetType !== 'texture' && (
+        {detail.mesh && assetType !== 'texture' && (
           <FieldSection title="几何信息" fields={getMeshFields()} data={detail.mesh} />
         )}
 
@@ -139,15 +201,15 @@ export function DetailPanel({ asset, onClose, onOpenAsset }: DetailPanelProps) {
         )}
 
         {/* 同目录命名匹配的贴图质检汇总（挂在模型记录上，非独立资产） */}
-        {assetType !== 'texture' && detail.textures && detail.textures.count > 0 && (
+        {assetType !== 'texture' && detail.textures && textureCount > 0 && (
           <FieldSection title="同套贴图质检汇总" fields={TEXTURE_FIELDS} data={detail.textures} />
         )}
 
         {/* 材质详情（自定义渲染） */}
-        {detail.mesh?.material_names?.length > 0 && (
+        {materialNames.length > 0 && (
           <Section title="材质详情">
-            {detail.mesh.material_names.map((matName: string, i: number) => {
-              const textures = detail.mesh.material_textures?.[matName] || []
+            {materialNames.map((matName: string, i: number) => {
+              const textures = materialTextures[matName] || []
               return (
                 <div key={i} className="mb-2">
                   <div className="text-xs font-medium text-foreground">{matName || `(空槽位 ${i + 1})`}</div>
@@ -167,16 +229,16 @@ export function DetailPanel({ asset, onClose, onOpenAsset }: DetailPanelProps) {
         )}
 
         {/* 关联资产 */}
-        {detail.spatial?.related_assets?.length > 0
+        {relatedAssets.length > 0
           && matchedTextures.length === 0
           && matchedMeshes.length === 0 && (
-          <Section title={`关联资产 (${detail.spatial.related_assets.length})`}>
+          <Section title={`关联资产 (${relatedAssets.length})`}>
             <div className="space-y-1">
-              {detail.spatial.related_assets.slice(0, 10).map((relatedId: string, i: number) => (
+              {relatedAssets.slice(0, 10).map((relatedId: string, i: number) => (
                 <div key={i} className="text-xs text-muted-foreground truncate">{relatedId}</div>
               ))}
-              {detail.spatial.related_assets.length > 10 && (
-                <div className="text-xs text-muted-foreground/50">... 还有 {detail.spatial.related_assets.length - 10} 个</div>
+              {relatedAssets.length > 10 && (
+                <div className="text-xs text-muted-foreground/50">... 还有 {relatedAssets.length - 10} 个</div>
               )}
             </div>
           </Section>
@@ -191,11 +253,11 @@ export function DetailPanel({ asset, onClose, onOpenAsset }: DetailPanelProps) {
         {detail.visual && (
           <>
             <FieldSection title="视觉属性" fields={VISUAL_FIELDS} data={detail.visual} />
-            {detail.visual.color_palette?.length > 0 && (
+            {colorPalette.length > 0 && (
               <div className="flex items-center gap-2 mt-1">
                 <span className="text-xs text-muted-foreground w-16">色板</span>
                 <div className="flex gap-1">
-                  {detail.visual.color_palette.slice(0, 6).map((color: string, i: number) => (
+                  {colorPalette.slice(0, 6).map((color: string, i: number) => (
                     <div
                       key={i}
                       className="w-5 h-5 rounded border border-border/50"
@@ -232,9 +294,9 @@ export function DetailPanel({ asset, onClose, onOpenAsset }: DetailPanelProps) {
                 建议: <span className="font-mono">{detail.meta.naming_suggestion}</span>
               </p>
             )}
-            {detail.meta.naming_issues?.length > 0 && (
+            {namingIssues.length > 0 && (
               <ul className="text-xs text-destructive space-y-0.5">
-                {detail.meta.naming_issues.map((issue: string, i: number) => (
+                {namingIssues.map((issue: string, i: number) => (
                   <li key={i}>• {issue}</li>
                 ))}
               </ul>

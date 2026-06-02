@@ -61,7 +61,7 @@ export function useAssets() {
         setError(data.error)
       } else {
         cache.assets = data.assets || []
-        setAssets(cache.assets)
+        setAssets(cache.assets ?? [])
       }
     } catch {
       setError('无法连接后端')

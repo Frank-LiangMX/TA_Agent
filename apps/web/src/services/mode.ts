@@ -60,6 +60,7 @@ export async function submitReviewIfOnline(review: {
   asset_id: string
   action: 'approve' | 'reject' | 'modify'
   comment?: string
+  reviewer_id?: string
 }): Promise<boolean> {
   if (!(await isOnlineMode())) return false
 
