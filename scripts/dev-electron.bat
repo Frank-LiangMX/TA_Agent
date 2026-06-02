@@ -1,50 +1,57 @@
 @echo off
 chcp 65001 >nul 2>&1
-setlocal
+setlocal enabledelayedexpansion
 
-set "ROOT=%~dp0..\"
+set "ROOT=%~dp0.."
 set "SCRIPTS_DIR=%~dp0"
-set "ELECTRON_DIR=%ROOT%apps\desktop"
+set "ELECTRON_DIR=%ROOT%\apps\desktop"
 
 echo ========================================
 echo   TAgent Dev - Electron
 echo ========================================
 echo.
-echo [信息] Electron 模式会启动/复用 Web 后端服务，但不会打开浏览器。
+echo [info] Electron dev mode starts or reuses the local backend and web frontend.
 echo.
 
-set "TAGENT_OPEN_BROWSER=0"
-call "%SCRIPTS_DIR%dev-web.bat" --no-pause --no-open
-if errorlevel 1 (
-  endlocal
-  exit /b 1
+echo [1/3] Checking TAgent backend...
+call :check_health 8080
+if not errorlevel 1 (
+  echo [1/3] TAgent backend is already running.
+) else (
+  echo [1/3] Starting TAgent backend...
+  start "TAgent Backend :8080" cmd /k call "%SCRIPTS_DIR%run-backend.bat"
+  call :wait_health 8080 30
+  if errorlevel 1 (
+    echo [error] TAgent backend startup timed out.
+    endlocal
+    exit /b 1
+  )
 )
 
 echo.
-echo [信息] 等待 TAgent 后端 /health 就绪...
-call :wait_health 8080 30
-if errorlevel 1 (
-  echo [错误] TAgent 后端启动超时，请检查 TAgent Backend 窗口
-  endlocal
-  exit /b 1
+echo [2/3] Checking Web frontend...
+call :check_port 5175
+if not errorlevel 1 (
+  echo [2/3] Web frontend is already running.
+) else (
+  echo [2/3] Starting Web frontend...
+  start "TAgent Web UI :5175" cmd /k call "%SCRIPTS_DIR%run-frontend.bat"
+  call :wait_port 5175 30
+  if errorlevel 1 (
+    echo [error] Web frontend startup timed out.
+    endlocal
+    exit /b 1
+  )
 )
 
 echo.
-echo [信息] 等待 Web 前端端口 5175 就绪...
-call :wait_port 5175 30
-if errorlevel 1 (
-  echo [错误] Web 前端启动超时，请检查 TAgent Web UI 窗口
-  endlocal
-  exit /b 1
-)
-
-echo [3/3] 启动 Electron 桌面壳...
+echo [3/3] Starting Electron shell...
 cd /d "%ELECTRON_DIR%"
 if not exist "node_modules" (
-  echo [信息] 首次运行，安装 Electron 依赖...
+  echo [info] Installing Electron dependencies...
   call npm install
   if errorlevel 1 (
-    echo [错误] Electron 依赖安装失败
+    echo [error] Electron dependency install failed.
     endlocal
     exit /b 1
   )
@@ -52,33 +59,35 @@ if not exist "node_modules" (
 
 call npm start
 if errorlevel 1 (
-  echo.
-  echo [错误] Electron 启动失败
+  echo [error] Electron startup failed.
 )
+
 echo.
-echo 按任意键关闭此启动器窗口。
+echo Press any key to close this launcher window.
 pause >nul
 endlocal
 exit /b 0
 
-:wait_port
-set "PORT=%~1"
-set "TRIES=%~2"
-:wait_loop
-powershell -NoProfile -Command "if (Get-NetTCPConnection -State Listen -LocalPort %PORT% -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }" >nul 2>&1
-if not errorlevel 1 exit /b 0
-set /a TRIES-=1
-if %TRIES% LEQ 0 exit /b 1
-timeout /t 1 /nobreak >nul
-goto wait_loop
+:check_health
+powershell -NoProfile -Command "try { $h = Invoke-RestMethod -Uri ('http://127.0.0.1:{0}/health' -f %~1) -TimeoutSec 2; if ($h.status -eq 'ok' -and $h.app -eq 'TAgentLocalRuntime') { exit 0 } else { exit 1 } } catch { exit 1 }" >nul 2>&1
+exit /b %errorlevel%
+
+:check_port
+powershell -NoProfile -Command "if (Get-NetTCPConnection -State Listen -LocalPort %~1 -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }" >nul 2>&1
+exit /b %errorlevel%
 
 :wait_health
-set "PORT=%~1"
-set "TRIES=%~2"
-:wait_health_loop
-powershell -NoProfile -Command "try { $h = Invoke-RestMethod -Uri ('http://127.0.0.1:{0}/health' -f %PORT%) -TimeoutSec 2; if ($h.status -eq 'ok' -and $h.app -eq 'TAgentLocalRuntime') { exit 0 } else { exit 1 } } catch { exit 1 }" >nul 2>&1
-if not errorlevel 1 exit /b 0
-set /a TRIES-=1
-if %TRIES% LEQ 0 exit /b 1
-timeout /t 1 /nobreak >nul
-goto wait_health_loop
+for /l %%i in (1,1,%~2) do (
+  call :check_health %~1
+  if !errorlevel! equ 0 exit /b 0
+  timeout /t 1 /nobreak >nul
+)
+exit /b 1
+
+:wait_port
+for /l %%i in (1,1,%~2) do (
+  call :check_port %~1
+  if !errorlevel! equ 0 exit /b 0
+  timeout /t 1 /nobreak >nul
+)
+exit /b 1

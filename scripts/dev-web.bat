@@ -34,7 +34,8 @@ if errorlevel 1 (
     exit /b 1
   )
   echo [1/2] Starting WebSocket backend...
-  start "TAgent Backend :8080" cmd /k "title TAgent Backend :8080 && chcp 65001 >nul 2>&1 && cd /d ""%SERVER_DIR%"" && echo [TAgent Backend] ws://localhost:8080/ws && echo [TAgent Backend] http://localhost:8080/health && echo. && python -m pip install -q -r requirements.txt && python server.py"
+  set "BACKEND_SCRIPT=%~dp0run-backend.bat"
+  start "TAgent Backend :8080" cmd /k call "%BACKEND_SCRIPT%"
 ) else (
   echo [1/2] TAgent backend is already running on port 8080.
   call :print_port_info 8080 "Backend"
@@ -43,7 +44,8 @@ if errorlevel 1 (
 call :ensure_port 5175
 if errorlevel 1 (
   echo [2/2] Starting Web frontend...
-  start "TAgent Web UI :5175" cmd /k "title TAgent Web UI :5175 && chcp 65001 >nul 2>&1 && cd /d ""%FRONTEND_DIR%"" && echo [TAgent Web UI] http://localhost:5175 && echo. && npm run dev -- --host 127.0.0.1"
+  set "FRONTEND_SCRIPT=%~dp0run-frontend.bat"
+  start "TAgent Web UI :5175" cmd /k call "%FRONTEND_SCRIPT%"
 ) else (
   echo [2/2] Web frontend is already running on port 5175.
   call :print_port_info 5175 "Web UI"
