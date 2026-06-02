@@ -28,36 +28,36 @@ call :ensure_health 8080
 if errorlevel 1 (
   call :ensure_port 8080
   if not errorlevel 1 (
-    echo [错误] 端口 8080 已被占用，但不是 TAgent 后端。
+    echo [error] Port 8080 is already in use, but it is not TAgent backend.
     call :print_port_info 8080 "Port 8080"
     endlocal
     exit /b 1
   )
-  echo [1/2] 启动 WebSocket 后端...
+  echo [1/2] Starting WebSocket backend...
   start "TAgent Backend :8080" cmd /k "title TAgent Backend :8080 && chcp 65001 >nul 2>&1 && cd /d ""%SERVER_DIR%"" && echo [TAgent Backend] ws://localhost:8080/ws && echo [TAgent Backend] http://localhost:8080/health && echo. && python -m pip install -q -r requirements.txt && python server.py"
 ) else (
-  echo [1/2] WebSocket 后端已在端口 8080 运行
+  echo [1/2] TAgent backend is already running on port 8080.
   call :print_port_info 8080 "Backend"
 )
 
 call :ensure_port 5175
 if errorlevel 1 (
-  echo [2/2] 启动 Web 前端...
+  echo [2/2] Starting Web frontend...
   start "TAgent Web UI :5175" cmd /k "title TAgent Web UI :5175 && chcp 65001 >nul 2>&1 && cd /d ""%FRONTEND_DIR%"" && echo [TAgent Web UI] http://localhost:5175 && echo. && npm run dev -- --host 127.0.0.1"
 ) else (
-  echo [2/2] Web 前端已在端口 5175 运行
+  echo [2/2] Web frontend is already running on port 5175.
   call :print_port_info 5175 "Web UI"
 )
 
 echo.
-echo Web UI 模式已就绪。停止服务可运行 stop-web.bat，或关闭对应窗口。
+echo Web UI dev mode is ready. Close the spawned windows or run stop-web.bat to stop services.
 if "%OPEN_BROWSER%"=="1" (
-  echo [信息] 打开 Web UI: http://localhost:5175
+  echo [info] Opening Web UI: http://localhost:5175
   start "" "http://localhost:5175"
 )
 if "%NO_PAUSE%"=="0" (
   echo.
-  echo 按任意键关闭此启动器窗口，Web UI 和后端服务窗口会继续运行。
+  echo Press any key to close this launcher window. Backend and Web UI windows will keep running.
   pause >nul
 )
 endlocal
