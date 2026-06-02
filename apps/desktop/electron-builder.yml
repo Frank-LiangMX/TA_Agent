@@ -27,7 +27,7 @@ nsis:
   uninstallerIcon: assets/icon.ico
   installerHeaderIcon: assets/icon.ico
   installerLanguages:
-    - SimpChinese
+    - zh_CN
   language: 2052
   unicode: true
 publish:

@@ -316,12 +316,32 @@ export default function App() {
                   }}
                 />
               </div>
-              <div className={`flex-1 flex flex-col min-w-0 h-full ${agentMode === 'ta' && activeView === 'assets' ? '' : 'hidden'}`}>
-                <AssetLibrary
-                  key={`assets-${assetLibraryNavKey}`}
-                  filterHints={assetFilterHints}
-                  onAssetSelect={handleAssetSelect}
-                />
+              <div className={`flex-1 flex min-w-0 h-full ${agentMode === 'ta' && activeView === 'assets' ? '' : 'hidden'}`}>
+                <div className="flex-1 flex flex-col min-w-0 h-full">
+                  <AssetLibrary
+                    key={`assets-${assetLibraryNavKey}`}
+                    filterHints={assetFilterHints}
+                    onAssetSelect={handleAssetSelect}
+                  />
+                </div>
+                {detailOpen && (
+                  <>
+                    <ResizeHandle targetRef={detailRef} side="right" minWidth={250} maxWidth={500} />
+                    <div ref={detailRef} className="border-l border-border/40 bg-card flex flex-col shrink-0 overflow-hidden" style={{ width: detailWidth }}>
+                      <DetailPanel
+                        asset={selectedAsset}
+                        onClose={() => setDetailOpen(false)}
+                        onOpenAsset={async (assetId) => {
+                          try {
+                            const res = await fetch(`${API_BASE}/api/assets/${assetId}`)
+                            const data = await res.json()
+                            if (!data.error) handleAssetSelect(data)
+                          } catch {}
+                        }}
+                      />
+                    </div>
+                  </>
+                )}
               </div>
               <div className={`flex-1 flex flex-col min-w-0 h-full ${agentMode === 'ta' && activeView === 'analysis' ? '' : 'hidden'}`}>
                 <DashboardView
@@ -346,8 +366,28 @@ export default function App() {
                   onGoReview={() => handleViewChange('review')}
                 />
               </div>
-              <div className={`flex-1 flex flex-col min-w-0 h-full ${agentMode === 'ta' && activeView === 'search' ? '' : 'hidden'}`}>
-                <SearchView onAssetSelect={handleAssetSelect} />
+              <div className={`flex-1 flex min-w-0 h-full ${agentMode === 'ta' && activeView === 'search' ? '' : 'hidden'}`}>
+                <div className="flex-1 flex flex-col min-w-0 h-full">
+                  <SearchView onAssetSelect={handleAssetSelect} />
+                </div>
+                {detailOpen && (
+                  <>
+                    <ResizeHandle targetRef={detailRef} side="right" minWidth={250} maxWidth={500} />
+                    <div ref={detailRef} className="border-l border-border/40 bg-card flex flex-col shrink-0 overflow-hidden" style={{ width: detailWidth }}>
+                      <DetailPanel
+                        asset={selectedAsset}
+                        onClose={() => setDetailOpen(false)}
+                        onOpenAsset={async (assetId) => {
+                          try {
+                            const res = await fetch(`${API_BASE}/api/assets/${assetId}`)
+                            const data = await res.json()
+                            if (!data.error) handleAssetSelect(data)
+                          } catch {}
+                        }}
+                      />
+                    </div>
+                  </>
+                )}
               </div>
               <div className={`flex-1 flex flex-col min-w-0 h-full ${agentMode === 'ta' && activeView === 'workflow' ? '' : 'hidden'}`}>
                 <WorkflowView
@@ -358,24 +398,7 @@ export default function App() {
                 />
               </div>
 
-              {detailOpen && (
-                <>
-                  <ResizeHandle targetRef={detailRef} side="right" minWidth={250} maxWidth={500} />
-                  <div ref={detailRef} className="border-l border-border/40 bg-card flex flex-col shrink-0 overflow-hidden" style={{ width: detailWidth }}>
-                    <DetailPanel
-                      asset={selectedAsset}
-                      onClose={() => setDetailOpen(false)}
-                      onOpenAsset={async (assetId) => {
-                        try {
-                          const res = await fetch(`${API_BASE}/api/assets/${assetId}`)
-                          const data = await res.json()
-                          if (!data.error) handleAssetSelect(data)
-                        } catch {}
-                      }}
-                    />
-                  </div>
-                </>
-              )}
+
             </div>
             </div>
           </div>

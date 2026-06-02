@@ -27,7 +27,7 @@ if errorlevel 1 goto fail
 
 echo [2/3] 打包 Python 后端...
 cd /d "%ROOT%"
-pyinstaller "%ROOT%TAgent.spec" --clean --noconfirm --distpath "%RELEASE_DIR%\pyinstaller" --workpath "%RELEASE_DIR%\pyinstaller-build" --specpath "%ROOT%"
+pyinstaller "%ROOT%TAgent.spec" --clean --noconfirm --distpath "%RELEASE_DIR%\pyinstaller" --workpath "%RELEASE_DIR%\pyinstaller-build"
 if errorlevel 1 goto fail
 :: 输出到 release/pyinstaller/TAgent/
 
