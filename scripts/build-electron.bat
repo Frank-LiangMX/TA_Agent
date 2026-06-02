@@ -14,7 +14,7 @@ echo.
 
 cd /d "%ROOT%"
 
-echo [1/3] 构建 Web 前端...
+echo [1/4] 构建 Web 前端...
 cd /d "%FRONTEND_DIR%"
 if not exist "node_modules" (
   echo [信息] 安装前端依赖...
@@ -23,16 +23,13 @@ if not exist "node_modules" (
 )
 call npm run build
 if errorlevel 1 goto fail
-:: Vite 输出到 release/frontend/
 
-echo [2/3] 打包 Python 后端...
+echo [2/4] 打包 Python 后端...
 cd /d "%ROOT%"
 pyinstaller "%ROOT%TAgent.spec" --clean --noconfirm --distpath "%RELEASE_DIR%\pyinstaller" --workpath "%RELEASE_DIR%\pyinstaller-build"
 if errorlevel 1 goto fail
-:: 输出到 release/pyinstaller/TAgent/
 
-echo [3/3] 打包 Electron 安装包...
-:: Electron-builder 需要 electron/dist/ 存放前端文件
+echo [3/4] 打包 Electron 安装包...
 if exist "%ELECTRON_DIR%\dist" rmdir /s /q "%ELECTRON_DIR%\dist"
 xcopy /E /I /Y "%RELEASE_DIR%\frontend" "%ELECTRON_DIR%\dist" >nul
 cd /d "%ELECTRON_DIR%"
@@ -43,11 +40,12 @@ if not exist "node_modules" (
 )
 call npm run build:win
 if errorlevel 1 goto fail
-:: 输出到 release/electron/
 
-echo [清理] 删除中间产物...
+echo [4/4] 清理中间产物...
 if exist "%ELECTRON_DIR%\dist" rmdir /s /q "%ELECTRON_DIR%\dist"
+if exist "%RELEASE_DIR%\pyinstaller" rmdir /s /q "%RELEASE_DIR%\pyinstaller"
 if exist "%RELEASE_DIR%\pyinstaller-build" rmdir /s /q "%RELEASE_DIR%\pyinstaller-build"
+if exist "%RELEASE_DIR%\frontend" rmdir /s /q "%RELEASE_DIR%\frontend"
 
 echo.
 echo ========================================
@@ -55,7 +53,6 @@ echo   打包完成
 echo   输出目录: release\electron\
 echo     - TAgent Setup x.x.x.exe（安装包）
 echo     - win-unpacked\（免安装版）
-echo   后端目录: release\pyinstaller\TAgent\
 echo ========================================
 endlocal
 exit /b 0
