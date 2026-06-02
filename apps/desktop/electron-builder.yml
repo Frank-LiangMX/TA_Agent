@@ -1,0 +1,38 @@
+appId: com.tagent.desktop
+productName: TAgent
+directories:
+  output: ../../release/electron
+files:
+  - main.js
+  - preload.js
+  - updater.js
+  - wechat/**/*
+  - assets/**/*
+  - dist/**/*
+extraResources:
+  - from: ../../release/pyinstaller/TAgent
+    to: backend
+    filter:
+      - "**/*"
+win:
+  target:
+    - target: nsis
+    - target: dir
+  icon: assets/icon.ico
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: TAgent
+  installerIcon: assets/icon.ico
+  uninstallerIcon: assets/icon.ico
+  installerHeaderIcon: assets/icon.ico
+  installerLanguages:
+    - zh_CN
+  language: 2052
+  unicode: true
+publish:
+  provider: github
+  owner: Frank-LiangMX
+  repo: TA_Agent

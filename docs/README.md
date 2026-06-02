@@ -17,7 +17,8 @@ docs/
 │   └── distributed-architecture.md # 分布式架构设计
 ├── experiments/              # 实验/试错——过程记录 (追加，成功/失败都保留)
 │   ├── backend/
-│   │   └── 2026-05-27-hidden-bugs-audit.md  # 隐藏问题排查报告
+│   │   ├── 2026-05-27-hidden-bugs-audit.md  # 隐藏问题排查报告
+│   │   └── 2026-06-02-deepseek-cache-optimization.md  # DeepSeek 前缀缓存命中率优化分析
 │   └── frontend/
 │       ├── 2026-05-21-prompt-suggestion.md  # 提示建议功能实验
 │       └── 2026-05-22-bug-report.md         # Bug 排查报告
@@ -47,6 +48,8 @@ docs/
 | Bug 排查记录 | `experiments/frontend/2026-05-22-bug-report.md` |
 | 隐藏问题排查 | `experiments/backend/2026-05-27-hidden-bugs-audit.md` |
 | 双模式记忆设计草案 | `experiments/backend/2026-06-01-dual-mode-memory-design.md` |
+| DeepSeek 缓存优化分析 | `experiments/backend/2026-06-02-deepseek-cache-optimization.md` |
+| 本地 Runtime 与中心服务器架构评估 | `experiments/backend/2026-06-02-local-runtime-cloud-server-architecture.md` |
 | **工作台双模式（TA/通用）实施台账** | `experiments/backend/2026-06-01-workbench-dual-mode-roadmap.md` |
 
 ## 写入规则
@@ -61,3 +64,5 @@ docs/
 - 2026-05-26：添加联机模式、中心服务器、权限管理相关文档
 - 2026-05-29：新增 Electron 架构文档，开始微信 Bridge 模块
 - 2026-06-01：新增工作台双模式（TA/通用）实施台账，与记忆设计稿区分
+- 2026-06-02：新增 DeepSeek 前缀缓存命中率优化分析
+- 2026-06-02：新增本地 Runtime 与中心服务器架构评估
