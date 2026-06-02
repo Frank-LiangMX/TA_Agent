@@ -22,8 +22,10 @@ import traceback
 from typing import Optional
 
 # 将 ta_agent 加入 Python 路径（动态计算项目根目录）
-TA_AGENT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+TA_AGENT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.insert(0, TA_AGENT_DIR)
+sys.path.insert(0, os.path.join(TA_AGENT_DIR, "backend"))
+sys.path.insert(0, os.path.join(TA_AGENT_DIR, "packages"))
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Body
 from fastapi.middleware.cors import CORSMiddleware
