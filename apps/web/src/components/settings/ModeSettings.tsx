@@ -159,22 +159,11 @@ export function ModeSettings({ onModeChange }: ModeSettingsProps) {
     setSwitching(true)
     setError('')
     try {
-      tagentClient.disconnect()
+      tagentClient.disconnect(true)
       clearCache()
       await setAgentMode(mode)
       setAgentModeState(mode)
       onModeChange?.()
-
-      const storedActiveId = localStorage.getItem('tagent-active-tab')
-      if (storedActiveId) {
-        tagentClient.reconnectWithSession(storedActiveId).catch(err => {
-          console.error('[ModeSettings] WebSocket 连接失败:', err)
-        })
-      } else {
-        tagentClient.connect().catch(err => {
-          console.error('[ModeSettings] WebSocket 连接失败:', err)
-        })
-      }
     } catch (err) {
       setError('切换工作台失败: ' + (err instanceof Error ? err.message : String(err)))
     } finally {

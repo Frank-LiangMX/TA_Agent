@@ -7,6 +7,7 @@
 
 import { WS_URL } from '@/lib/api'
 import { getUserQueryParams } from '@/lib/user-config'
+import { loadStoredActiveTab } from '@/lib/session-storage'
 import { getConfig } from './config'
 
 type EventCallback = (payload: unknown) => void
@@ -77,10 +78,15 @@ export class TAgentClient {
     }
 
     // 未指定时优先恢复已有会话，避免无 sessionId 连接在后端创建空会话
+    let storedActive: string | null = null
+    try {
+      const config = await getConfig()
+      storedActive = loadStoredActiveTab(config.agent_mode === 'general' ? 'general' : 'ta')
+    } catch {}
     const restored =
       sessionId ||
       this._sessionId ||
-      (typeof localStorage !== 'undefined' ? localStorage.getItem('tagent-active-tab') : null) ||
+      storedActive ||
       undefined
     this._sessionId = restored || null
     this.setStatus('connecting')

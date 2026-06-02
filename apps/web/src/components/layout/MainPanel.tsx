@@ -30,6 +30,7 @@ import {
 import { Tooltip } from '@/components/ui/Tooltip'
 import { AppTitleBar } from '@/components/layout/AppTitleBar'
 import { PAGE_TITLE_BAR_STYLE } from '@/components/layout/PageHeader'
+import { loadStoredActiveTab, loadStoredOpenTabs, saveStoredActiveTab, saveStoredOpenTabs } from '@/lib/session-storage'
 
 interface ProgressEvent {
   phase: string
@@ -85,10 +86,10 @@ export function MainPanel({ onAssetSelect, agentMode = 'ta' }: MainPanelProps) {
 
   // ===== 多标签会话管理 =====
   const [openTabIds, setOpenTabIds] = useState<string[]>(() => {
-    try { return JSON.parse(localStorage.getItem('tagent-open-tabs') || '[]') } catch { return [] }
+    return loadStoredOpenTabs(agentMode)
   })
   const [activeTabId, setActiveTabId] = useState<string | null>(
-    tagentClient.sessionId || localStorage.getItem('tagent-active-tab') || openTabIds[0] || null
+    tagentClient.sessionId || loadStoredActiveTab(agentMode) || openTabIds[0] || null
   )
   const [tabMessages, setTabMessages] = useState<Record<string, ChatMessageType[]>>({})
   const [tabTitles, setTabTitles] = useState<Record<string, string>>({})
@@ -119,6 +120,20 @@ export function MainPanel({ onAssetSelect, agentMode = 'ta' }: MainPanelProps) {
   tabMessagesRef.current = tabMessages
   const pendingNewTabRef = useRef(false)
 
+  useEffect(() => {
+    const nextOpenTabs = loadStoredOpenTabs(agentMode)
+    const nextActiveTab = loadStoredActiveTab(agentMode) || nextOpenTabs[0] || null
+    setOpenTabIds(nextOpenTabs)
+    setActiveTabId(nextActiveTab)
+    setTabMessages({})
+    setTabTitles({})
+    setWorkspaceInfo(null)
+    setContextCutoff(null)
+    setIsStreaming(false)
+    setActiveTools(new Map())
+    setProgress(null)
+  }, [agentMode])
+
   // 启动时清理已删除会话的标签，避免 localStorage 堆积
   useEffect(() => {
     listSessions(false)
@@ -131,7 +146,7 @@ export function MainPanel({ onAssetSelect, agentMode = 'ta' }: MainPanelProps) {
         })
         setActiveTabId((current) => {
           if (current && !valid.has(current)) {
-            const stored = localStorage.getItem('tagent-active-tab')
+            const stored = loadStoredActiveTab(agentMode)
             if (stored && valid.has(stored)) return stored
             return null
           }
@@ -139,7 +154,7 @@ export function MainPanel({ onAssetSelect, agentMode = 'ta' }: MainPanelProps) {
         })
       })
       .catch(() => {})
-  }, [])
+  }, [agentMode])
 
   // 当前标签的消息（activeTabId 为 null 时显示空数组）
   const messages = activeTabId ? (tabMessages[activeTabId] || []) : []
@@ -161,13 +176,13 @@ export function MainPanel({ onAssetSelect, agentMode = 'ta' }: MainPanelProps) {
 
   // 持久化 openTabs
   useEffect(() => {
-    localStorage.setItem('tagent-open-tabs', JSON.stringify(openTabIds))
-  }, [openTabIds])
+    saveStoredOpenTabs(agentMode, openTabIds)
+  }, [agentMode, openTabIds])
 
   // 持久化 activeTab
   useEffect(() => {
-    if (activeTabId) localStorage.setItem('tagent-active-tab', activeTabId)
-  }, [activeTabId])
+    if (activeTabId) saveStoredActiveTab(agentMode, activeTabId)
+  }, [agentMode, activeTabId])
 
   const handleSetActiveWorkspace = useCallback(async () => {
     const targetTabId = activeTabIdRef.current
@@ -510,7 +525,7 @@ const loadTabHistory = useCallback(async (tabId: string) => {
     const unsubConnected = tagentClient.on('connected', (payload: any) => {
       if (!payload?.sessionId) return
       const newSessionId = payload.sessionId as string
-      const storedActive = localStorage.getItem('tagent-active-tab')
+      const storedActive = loadStoredActiveTab(agentMode)
       const isKnownTab = openTabIdsRef.current.includes(newSessionId)
       const isExplicitNew = pendingNewTabRef.current
       pendingNewTabRef.current = false
@@ -789,7 +804,7 @@ const loadTabHistory = useCallback(async (tabId: string) => {
       unsubError()
       // 不断开 WebSocket，由 App 层管理连接
     }
-  }, [loadTabHistory, setMessagesForTab])
+  }, [agentMode, loadTabHistory, setMessagesForTab])
 
   const handleFilesSelected = useCallback((files: FileList | null) => {
     if (!files) return

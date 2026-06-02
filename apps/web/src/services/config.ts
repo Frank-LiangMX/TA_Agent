@@ -1,3 +1,5 @@
+import { API_BASE as LOCAL_API_BASE } from '@/lib/api'
+
 export interface LocalConfig {
   llm_provider: string
   llm_api_key: string
@@ -45,14 +47,6 @@ const getElectronAPI = () => {
   return window.electronAPI?.isElectron ? window.electronAPI : undefined
 }
 
-const API_BASE = () => {
-  // 开发模式用当前主机名 + 8080
-  if (import.meta.env.DEV) {
-    return `http://${window.location.hostname}:8080`
-  }
-  return `http://${window.location.hostname}:8080`
-}
-
 export async function getConfig(): Promise<AppConfig> {
   const electronAPI = getElectronAPI()
   if (electronAPI?.getConfig) {
@@ -61,7 +55,7 @@ export async function getConfig(): Promise<AppConfig> {
 
   // dev-web 模式：从后端 API 获取
   try {
-    const res = await fetch(`${API_BASE()}/api/config/app`)
+    const res = await fetch(`${LOCAL_API_BASE}/api/config/app`)
     if (res.ok) {
       const data = await res.json()
       if (data && Object.keys(data).length > 0) {
@@ -92,7 +86,7 @@ export async function saveConfig(config: AppConfig): Promise<void> {
 
   // dev-web 模式：保存到后端 API
   try {
-    const res = await fetch(`${API_BASE()}/api/config/app`, {
+    const res = await fetch(`${LOCAL_API_BASE}/api/config/app`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(config),

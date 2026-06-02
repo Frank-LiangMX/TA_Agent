@@ -19,6 +19,7 @@ import { TourGuide } from './components/onboarding/TourGuide'
 import { UpdateDialog } from './components/ui/UpdateDialog'
 import { ModeSelect, LoginView, LocalConfigView } from './components/auth'
 import { ElectronChrome } from './components/layout/ElectronChrome'
+import { loadStoredActiveTab } from './lib/session-storage'
 
 type AppState = 'loading' | 'mode-select' | 'login' | 'local-config' | 'ready'
 
@@ -85,7 +86,7 @@ export default function App() {
     let cancelled = false
 
     const connectInitialSession = async () => {
-      const storedActiveId = localStorage.getItem('tagent-active-tab')
+      const storedActiveId = loadStoredActiveTab(agentMode)
       if (storedActiveId) {
         try {
           await tagentClient.connect(storedActiveId)
@@ -118,7 +119,7 @@ export default function App() {
         tagentClient.disconnect()
       }
     }
-  }, [appState])
+  }, [appState, agentMode])
 
   const handleViewChange = (view: ViewType) => {
     if (!isViewAllowed(view, agentMode)) {
@@ -195,12 +196,16 @@ export default function App() {
     getConfig()
       .then(async (cfg) => {
         const nextMode = cfg.agent_mode === 'general' ? 'general' : 'ta'
+        const agentModeChanged = nextMode !== agentMode
+        tagentClient.disconnect(true)
         setAgentMode(nextMode)
         if (!isViewAllowed(activeView, nextMode)) {
           setActiveView('chat')
         }
-        const storedActiveId = localStorage.getItem('tagent-active-tab')
-        tagentClient.disconnect()
+        if (agentModeChanged) {
+          return
+        }
+        const storedActiveId = loadStoredActiveTab(nextMode)
         try {
           if (storedActiveId) {
             await tagentClient.reconnectWithSession(storedActiveId)
