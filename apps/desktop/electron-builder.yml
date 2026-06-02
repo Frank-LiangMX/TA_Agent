@@ -6,6 +6,8 @@ files:
   - main.js
   - preload.js
   - updater.js
+  - wechat/**/*
+  - assets/**/*
   - dist/**/*
 extraResources:
   - from: ../../release/pyinstaller/TAgent

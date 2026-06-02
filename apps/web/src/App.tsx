@@ -5,12 +5,10 @@ import { listSessions } from './services/sessions'
 import { getConfig, type AppConfig } from './services/config'
 import { healthCheck } from './services/api'
 import { Sidebar, type ViewType } from './components/layout/Sidebar'
-import { ResizeHandle } from './components/layout/ResizeHandle'
 import { MainPanel } from './components/layout/MainPanel'
 import { AssetLibrary, type AssetLibraryFilterHints } from './components/asset/AssetLibrary'
 import { ReviewQueue } from './components/review/ReviewQueue'
 import { SearchView } from './components/search/SearchView'
-import { DetailPanel } from './components/layout/DetailPanel'
 import { DashboardView } from './components/dashboard/DashboardView'
 import { WorkflowView } from './components/workflow/WorkflowView'
 import { SettingsView } from './components/settings/SettingsView'
@@ -21,7 +19,6 @@ import { TourGuide } from './components/onboarding/TourGuide'
 import { UpdateDialog } from './components/ui/UpdateDialog'
 import { ModeSelect, LoginView, LocalConfigView } from './components/auth'
 import { ElectronChrome } from './components/layout/ElectronChrome'
-import { API_BASE } from '@/lib/api'
 
 type AppState = 'loading' | 'mode-select' | 'login' | 'local-config' | 'ready'
 
@@ -38,17 +35,15 @@ export default function App() {
   const [agentMode, setAgentMode] = useState<'ta' | 'general'>('ta')
   const [activeView, setActiveView] = useState<ViewType>('chat')
   const [previousView, setPreviousView] = useState<ViewType>('chat')
-  const [detailWidth, setDetailWidth] = useState(320)
   const [selectedAsset, setSelectedAsset] = useState<Record<string, unknown> | null>(null)
-  const [detailOpen, setDetailOpen] = useState(false)
   const [assetFilterHints, setAssetFilterHints] = useState<AssetLibraryFilterHints | undefined>()
   const [assetLibraryNavKey, setAssetLibraryNavKey] = useState(0)
+  const [detailNavKey, setDetailNavKey] = useState(0)
   const [reviewInitialTab, setReviewInitialTab] = useState<'high' | 'low' | undefined>()
   const [reviewNavKey, setReviewNavKey] = useState(0)
   const [intakeInitialAssetIds, setIntakeInitialAssetIds] = useState<string[] | undefined>()
   const [intakeNavKey, setIntakeNavKey] = useState(0)
   const sidebarRef = useRef<HTMLDivElement>(null)
-  const detailRef = useRef<HTMLDivElement>(null)
   const wsConnectGenRef = useRef(0)
 
   useEffect(() => {
@@ -125,12 +120,6 @@ export default function App() {
     }
   }, [appState])
 
-  useEffect(() => {
-    if (activeView !== 'assets' && activeView !== 'search') {
-      setDetailOpen(false)
-    }
-  }, [activeView])
-
   const handleViewChange = (view: ViewType) => {
     if (!isViewAllowed(view, agentMode)) {
       setActiveView('chat')
@@ -148,7 +137,6 @@ export default function App() {
 
   const handleAssetSelect = (asset: Record<string, unknown>) => {
     setSelectedAsset(asset)
-    setDetailOpen(true)
   }
 
   const handleDashboardNavigate = (
@@ -316,38 +304,21 @@ export default function App() {
                   }}
                 />
               </div>
-              <div className={`flex-1 flex min-w-0 h-full ${agentMode === 'ta' && activeView === 'assets' ? '' : 'hidden'}`}>
-                <div className="flex-1 flex flex-col min-w-0 h-full">
-                  <AssetLibrary
-                    key={`assets-${assetLibraryNavKey}`}
-                    filterHints={assetFilterHints}
-                    onAssetSelect={handleAssetSelect}
-                  />
-                </div>
-                {detailOpen && (
-                  <>
-                    <ResizeHandle targetRef={detailRef} side="right" minWidth={250} maxWidth={500} />
-                    <div ref={detailRef} className="border-l border-border/40 bg-card flex flex-col shrink-0 overflow-hidden" style={{ width: detailWidth }}>
-                      <DetailPanel
-                        asset={selectedAsset}
-                        onClose={() => setDetailOpen(false)}
-                        onOpenAsset={async (assetId) => {
-                          try {
-                            const res = await fetch(`${API_BASE}/api/assets/${assetId}`)
-                            const data = await res.json()
-                            if (!data.error) handleAssetSelect(data)
-                          } catch {}
-                        }}
-                      />
-                    </div>
-                  </>
-                )}
+              <div className={`flex-1 flex flex-col min-w-0 h-full ${agentMode === 'ta' && activeView === 'assets' ? '' : 'hidden'}`}>
+                <AssetLibrary
+                  key={`assets-${assetLibraryNavKey}`}
+                  filterHints={assetFilterHints}
+                  onAssetSelect={handleAssetSelect}
+                  initialDetailAsset={selectedAsset}
+                  detailNavKey={detailNavKey}
+                />
               </div>
               <div className={`flex-1 flex flex-col min-w-0 h-full ${agentMode === 'ta' && activeView === 'analysis' ? '' : 'hidden'}`}>
                 <DashboardView
                   onNavigate={handleDashboardNavigate}
                   onAssetSelect={(asset) => {
                     handleAssetSelect(asset)
+                    setDetailNavKey((k) => k + 1)
                     handleViewChange('assets')
                   }}
                 />
@@ -366,28 +337,8 @@ export default function App() {
                   onGoReview={() => handleViewChange('review')}
                 />
               </div>
-              <div className={`flex-1 flex min-w-0 h-full ${agentMode === 'ta' && activeView === 'search' ? '' : 'hidden'}`}>
-                <div className="flex-1 flex flex-col min-w-0 h-full">
-                  <SearchView onAssetSelect={handleAssetSelect} />
-                </div>
-                {detailOpen && (
-                  <>
-                    <ResizeHandle targetRef={detailRef} side="right" minWidth={250} maxWidth={500} />
-                    <div ref={detailRef} className="border-l border-border/40 bg-card flex flex-col shrink-0 overflow-hidden" style={{ width: detailWidth }}>
-                      <DetailPanel
-                        asset={selectedAsset}
-                        onClose={() => setDetailOpen(false)}
-                        onOpenAsset={async (assetId) => {
-                          try {
-                            const res = await fetch(`${API_BASE}/api/assets/${assetId}`)
-                            const data = await res.json()
-                            if (!data.error) handleAssetSelect(data)
-                          } catch {}
-                        }}
-                      />
-                    </div>
-                  </>
-                )}
+              <div className={`flex-1 flex flex-col min-w-0 h-full ${agentMode === 'ta' && activeView === 'search' ? '' : 'hidden'}`}>
+                <SearchView onAssetSelect={handleAssetSelect} />
               </div>
               <div className={`flex-1 flex flex-col min-w-0 h-full ${agentMode === 'ta' && activeView === 'workflow' ? '' : 'hidden'}`}>
                 <WorkflowView

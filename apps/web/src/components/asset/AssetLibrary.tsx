@@ -5,13 +5,15 @@
  * 分页模式，每页 20 条，数字分页按钮。
  */
 
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { Search, Package, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react'
 import { tagentClient } from '@/services/websocket'
 import { useAssets, getDataSource } from '@/lib/cache'
 import { API_BASE } from '@/lib/api'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { DetailPanel } from '@/components/layout/DetailPanel'
+import { ResizeHandle } from '@/components/layout/ResizeHandle'
 
 interface AssetItem {
   asset_id: string
@@ -33,6 +35,10 @@ export interface AssetLibraryFilterHints {
 interface AssetLibraryProps {
   onAssetSelect: (asset: Record<string, unknown>) => void
   filterHints?: AssetLibraryFilterHints
+  /** 从外部导航过来时传入，组件内部用它触发详情面板 */
+  initialDetailAsset?: Record<string, unknown> | null
+  /** 每次导航时递增，用于重新触发 initialDetailAsset */
+  detailNavKey?: number
 }
 
 const PAGE_SIZE = 20
@@ -66,7 +72,7 @@ const typeColors: Record<string, string> = {
   effect: 'bg-yellow-500/20 text-yellow-400',
 }
 
-export function AssetLibrary({ onAssetSelect, filterHints }: AssetLibraryProps) {
+export function AssetLibrary({ onAssetSelect, filterHints, initialDetailAsset, detailNavKey }: AssetLibraryProps) {
   const { assets, loading, error, refresh } = useAssets()
   const [searchQuery, setSearchQuery] = useState('')
   const [filterCategory, setFilterCategory] = useState<string>('all')
@@ -75,6 +81,18 @@ export function AssetLibrary({ onAssetSelect, filterHints }: AssetLibraryProps) 
   const [sortBy, setSortBy] = useState<'name' | 'type' | 'tri_count'>(filterHints?.sortBy ?? 'name')
   const [currentPage, setCurrentPage] = useState(1)
   const [dataSource, setDataSource] = useState(API_BASE)
+
+  // 内部：选中的资产详情
+  const [detailAsset, setDetailAsset] = useState<Record<string, unknown> | null>(null)
+  const [detailWidth, setDetailWidth] = useState(320)
+  const detailRef = useRef<HTMLDivElement>(null)
+
+  // 从外部导航（如 Dashboard → 资产库）时打开详情
+  useEffect(() => {
+    if (initialDetailAsset) {
+      setDetailAsset(initialDetailAsset)
+    }
+  }, [detailNavKey, initialDetailAsset])
 
   // 获取数据源
   useEffect(() => {
@@ -92,8 +110,15 @@ export function AssetLibrary({ onAssetSelect, filterHints }: AssetLibraryProps) 
     try {
       const res = await fetch(`${dataSource}/api/assets/${assetId}`)
       const data = await res.json()
-      if (!data.error) onAssetSelect(data)
+      if (!data.error) {
+        setDetailAsset(data)
+        onAssetSelect(data)
+      }
     } catch {}
+  }
+
+  const handleCloseDetail = () => {
+    setDetailAsset(null)
   }
 
   // 筛选和搜索
@@ -165,188 +190,207 @@ export function AssetLibrary({ onAssetSelect, filterHints }: AssetLibraryProps) 
         <span className="text-xs text-muted-foreground">{filteredAssets.length} 个资产</span>
       </PageHeader>
 
-      {/* 搜索和筛选 */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-border/50 shrink-0">
-        <select
-          value={filterType}
-          onChange={(e) => setFilterType(e.target.value)}
-          className="text-xs bg-muted border border-border rounded px-2 py-1.5 outline-none"
-        >
-          <option value="all">全部类型</option>
-          {types.map((t) => (
-            <option key={t} value={t}>{typeLabels[t] || t}</option>
-          ))}
-        </select>
-        <select
-          value={filterCategory}
-          onChange={(e) => setFilterCategory(e.target.value)}
-          className="text-xs bg-muted border border-border rounded px-2 py-1.5 outline-none"
-        >
-          <option value="all">全部分类</option>
-          {categories.map((c) => (
-            <option key={c} value={c}>{c}</option>
-          ))}
-        </select>
-        <select
-          value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value)}
-          className="text-xs bg-muted border border-border rounded px-2 py-1.5 outline-none"
-        >
-          <option value="all">全部状态</option>
-          <option value="approved">已通过</option>
-          <option value="pending">待审核</option>
-          <option value="rejected">已拒绝</option>
-          <option value="imported">已入库</option>
-        </select>
-        <select
-          value={sortBy}
-          onChange={(e) => setSortBy(e.target.value as 'name' | 'type' | 'tri_count')}
-          className="text-xs bg-muted border border-border rounded px-2 py-1.5 outline-none"
-        >
-          <option value="name">按名称</option>
-          <option value="type">按类型</option>
-          <option value="tri_count">按面数</option>
-        </select>
-        <div className="flex-1 relative">
-          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="搜索资产名称..."
-            className="w-full pl-8 pr-3 py-1.5 text-xs bg-muted rounded-lg outline-none focus:ring-1 focus:ring-primary"
-          />
-        </div>
-      </div>
-
-      {/* 内容区 */}
-      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin">
-        {error && (
-          <div className="m-4 p-3 bg-destructive/10 border border-destructive/30 rounded-lg text-sm text-destructive">
-            {error}
-          </div>
-        )}
-
-        {!loading && assets.length === 0 && !error && (
-          <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-            <Package size={48} className="mb-4 opacity-30" />
-            <p className="text-sm">暂无资产数据</p>
-            <p className="text-xs mt-1">请先在对话中分析一个目录</p>
-          </div>
-        )}
-
-        {loading && (
-          <div className="flex items-center justify-center h-full text-muted-foreground">
-            <RefreshCw size={24} className="animate-spin mr-2" />
-            <span className="text-sm">加载中...</span>
-          </div>
-        )}
-
-        {pageItems.length > 0 && (
-          <div className="divide-y divide-border">
-            {pageItems.map((asset) => {
-              const st = statusStyles[asset.status] || statusStyles.pending
-              return (
-                <button
-                  key={asset.asset_id}
-                  onClick={() => handleAssetClick(asset.asset_id)}
-                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-accent/50 transition-colors text-left"
-                >
-                  <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center shrink-0 overflow-hidden">
-                    <img
-                      src={`${dataSource}/api/preview/${asset.asset_id}`}
-                      alt=""
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = 'none'
-                        const parent = (e.target as HTMLImageElement).parentElement
-                        if (parent && !parent.querySelector('.fallback-icon')) {
-                          const icon = document.createElement('div')
-                          icon.className = 'fallback-icon flex items-center justify-center w-full h-full'
-                          icon.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-muted-foreground"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>'
-                          parent.appendChild(icon)
-                        }
-                      }}
-                    />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium truncate">{asset.asset_name}</span>
-                      {asset.file_path && (
-                        <span className="text-[10px] font-mono text-muted-foreground/60 shrink-0 uppercase">
-                          .{asset.file_path.split('.').pop()}
-                        </span>
-                      )}
-                      <span className={`text-xs px-1.5 py-0.5 rounded shrink-0 ${typeColors[asset.asset_type] || 'bg-muted text-muted-foreground'}`}>
-                        {typeLabels[asset.asset_type] || asset.asset_type}
-                      </span>
-                    </div>
-                    <div className="text-xs text-muted-foreground truncate mt-0.5">
-                      {asset.category || '未分类'}{asset.subcategory ? `/${asset.subcategory}` : ''}
-                    </div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <div className="text-xs font-mono">
-                      {asset.asset_type === 'animation' ? null :
-                       (asset.asset_type === 'static_mesh' || asset.asset_type === 'skeletal_mesh') && asset.tri_count > 0
-                        ? `${asset.tri_count.toLocaleString()} 面`
-                        : asset.asset_type === 'texture' || asset.asset_type === 'material'
-                          ? (asset.file_path?.split('.').pop()?.toUpperCase() || null)
-                          : null
-                      }
-                    </div>
-                  </div>
-                  <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${st.bg} ${st.color}`}>
-                    {st.label}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* 分页 — 固定底部 */}
-      {totalPages > 1 && (
-        <div className="px-4 py-3 border-t border-border/50 flex items-center justify-between shrink-0">
-          <span className="text-xs text-muted-foreground">
-            第 {currentPage}/{totalPages} 页 · 共 {filteredAssets.length} 个资产
-          </span>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-              disabled={currentPage === 1}
-              className="p-1.5 rounded hover:bg-accent disabled:opacity-30 transition-colors"
+      {/* 主体：列表 + 详情面板 flex 并排 */}
+      <div className="flex-1 flex min-w-0 overflow-hidden">
+        {/* 左侧：搜索 + 列表 + 分页 */}
+        <div className="flex-1 flex flex-col min-w-0">
+          {/* 搜索和筛选 */}
+          <div className="flex items-center gap-2 px-4 py-2 border-b border-border/50 shrink-0">
+            <select
+              value={filterType}
+              onChange={(e) => setFilterType(e.target.value)}
+              className="text-xs bg-muted border border-border rounded px-2 py-1.5 outline-none"
             >
-              <ChevronLeft size={16} />
-            </button>
-            {pageNumbers.map((p, i) =>
-              p === -1 ? (
-                <span key={`e${i}`} className="px-1 text-xs text-muted-foreground">...</span>
-              ) : (
-                <button
-                  key={p}
-                  onClick={() => setCurrentPage(p)}
-                  className={`min-w-[28px] h-7 text-xs rounded transition-colors ${
-                    p === currentPage
-                      ? 'bg-primary text-primary-foreground'
-                      : 'hover:bg-accent text-muted-foreground'
-                  }`}
-                >
-                  {p}
-                </button>
-              )
+              <option value="all">全部类型</option>
+              {types.map((t) => (
+                <option key={t} value={t}>{typeLabels[t] || t}</option>
+              ))}
+            </select>
+            <select
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+              className="text-xs bg-muted border border-border rounded px-2 py-1.5 outline-none"
+            >
+              <option value="all">全部分类</option>
+              {categories.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="text-xs bg-muted border border-border rounded px-2 py-1.5 outline-none"
+            >
+              <option value="all">全部状态</option>
+              <option value="approved">已通过</option>
+              <option value="pending">待审核</option>
+              <option value="rejected">已拒绝</option>
+              <option value="imported">已入库</option>
+            </select>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as 'name' | 'type' | 'tri_count')}
+              className="text-xs bg-muted border border-border rounded px-2 py-1.5 outline-none"
+            >
+              <option value="name">按名称</option>
+              <option value="type">按类型</option>
+              <option value="tri_count">按面数</option>
+            </select>
+            <div className="flex-1 relative">
+              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="搜索资产名称..."
+                className="w-full pl-8 pr-3 py-1.5 text-xs bg-muted rounded-lg outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+          </div>
+
+          {/* 内容区 */}
+          <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin">
+            {error && (
+              <div className="m-4 p-3 bg-destructive/10 border border-destructive/30 rounded-lg text-sm text-destructive">
+                {error}
+              </div>
             )}
-            <button
-              onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-              disabled={currentPage === totalPages}
-              className="p-1.5 rounded hover:bg-accent disabled:opacity-30 transition-colors"
-            >
-              <ChevronRight size={16} />
-            </button>
+
+            {!loading && assets.length === 0 && !error && (
+              <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+                <Package size={48} className="mb-4 opacity-30" />
+                <p className="text-sm">暂无资产数据</p>
+                <p className="text-xs mt-1">请先在对话中分析一个目录</p>
+              </div>
+            )}
+
+            {loading && (
+              <div className="flex items-center justify-center h-full text-muted-foreground">
+                <RefreshCw size={24} className="animate-spin mr-2" />
+                <span className="text-sm">加载中...</span>
+              </div>
+            )}
+
+            {pageItems.length > 0 && (
+              <div className="divide-y divide-border">
+                {pageItems.map((asset) => {
+                  const st = statusStyles[asset.status] || statusStyles.pending
+                  return (
+                    <button
+                      key={asset.asset_id}
+                      onClick={() => handleAssetClick(asset.asset_id)}
+                      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-accent/50 transition-colors text-left"
+                    >
+                      <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center shrink-0 overflow-hidden">
+                        <img
+                          src={`${dataSource}/api/preview/${asset.asset_id}`}
+                          alt=""
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none'
+                            const parent = (e.target as HTMLImageElement).parentElement
+                            if (parent && !parent.querySelector('.fallback-icon')) {
+                              const icon = document.createElement('div')
+                              icon.className = 'fallback-icon flex items-center justify-center w-full h-full'
+                              icon.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-muted-foreground"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>'
+                              parent.appendChild(icon)
+                            }
+                          }}
+                        />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium truncate">{asset.asset_name}</span>
+                          {asset.file_path && (
+                            <span className="text-[10px] font-mono text-muted-foreground/60 shrink-0 uppercase">
+                              .{asset.file_path.split('.').pop()}
+                            </span>
+                          )}
+                          <span className={`text-xs px-1.5 py-0.5 rounded shrink-0 ${typeColors[asset.asset_type] || 'bg-muted text-muted-foreground'}`}>
+                            {typeLabels[asset.asset_type] || asset.asset_type}
+                          </span>
+                        </div>
+                        <div className="text-xs text-muted-foreground truncate mt-0.5">
+                          {asset.category || '未分类'}{asset.subcategory ? `/${asset.subcategory}` : ''}
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="text-xs font-mono">
+                          {asset.asset_type === 'animation' ? null :
+                           (asset.asset_type === 'static_mesh' || asset.asset_type === 'skeletal_mesh') && asset.tri_count > 0
+                            ? `${asset.tri_count.toLocaleString()} 面`
+                            : asset.asset_type === 'texture' || asset.asset_type === 'material'
+                              ? (asset.file_path?.split('.').pop()?.toUpperCase() || null)
+                              : null
+                          }
+                        </div>
+                      </div>
+                      <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${st.bg} ${st.color}`}>
+                        {st.label}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
           </div>
+
+          {/* 分页 — 固定底部 */}
+          {totalPages > 1 && (
+            <div className="px-4 py-3 border-t border-border/50 flex items-center justify-between shrink-0">
+              <span className="text-xs text-muted-foreground">
+                第 {currentPage}/{totalPages} 页 · 共 {filteredAssets.length} 个资产
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                  disabled={currentPage === 1}
+                  className="p-1.5 rounded hover:bg-accent disabled:opacity-30 transition-colors"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                {pageNumbers.map((p, i) =>
+                  p === -1 ? (
+                    <span key={`e${i}`} className="px-1 text-xs text-muted-foreground">...</span>
+                  ) : (
+                    <button
+                      key={p}
+                      onClick={() => setCurrentPage(p)}
+                      className={`min-w-[28px] h-7 text-xs rounded transition-colors ${
+                        p === currentPage
+                          ? 'bg-primary text-primary-foreground'
+                          : 'hover:bg-accent text-muted-foreground'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  )
+                )}
+                <button
+                  onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                  disabled={currentPage === totalPages}
+                  className="p-1.5 rounded hover:bg-accent disabled:opacity-30 transition-colors"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
-      )}
+
+        {/* 右侧：详情面板 */}
+        {detailAsset && (
+          <>
+            <ResizeHandle targetRef={detailRef} side="right" minWidth={250} maxWidth={500} onDragEnd={(w) => setDetailWidth(w)} />
+            <div ref={detailRef} className="border-l border-border/40 bg-card flex flex-col shrink-0 overflow-hidden" style={{ width: detailWidth }}>
+              <DetailPanel
+                asset={detailAsset}
+                onClose={handleCloseDetail}
+              />
+            </div>
+          </>
+        )}
+      </div>
     </div>
   )
 }

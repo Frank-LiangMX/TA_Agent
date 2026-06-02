@@ -88,9 +88,8 @@ export function DetailPanel({ asset, onClose, onOpenAsset }: DetailPanelProps) {
         <h3 className="text-sm font-medium truncate">{name}</h3>
       </PageHeader>
 
-      {/* 内容 */}
-      <div className="flex-1 overflow-y-auto scrollbar-thin p-4 space-y-4">
-        {/* 预览区 */}
+      {/* 预览区 — 固定在最顶端，不参与滚动 */}
+      <div className="shrink-0 p-4 pb-2">
         <PreviewImage
           assetId={String(detail.asset_id || '')}
           assetName={name}
@@ -98,7 +97,10 @@ export function DetailPanel({ asset, onClose, onOpenAsset }: DetailPanelProps) {
           filePath={filePath}
           triCount={detail.mesh?.tri_count}
         />
+      </div>
 
+      {/* 信息区 — 可滚动 */}
+      <div className="flex-1 overflow-y-auto scrollbar-thin px-4 pb-4 space-y-4">
         {/* 基本信息 */}
         <Section title="基本信息">
           <InfoRow label="资产名" value={name} />
