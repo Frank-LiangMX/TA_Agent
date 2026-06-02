@@ -5,10 +5,14 @@
  * 例：前端在 http://192.168.1.100:5175 → 后端在 http://192.168.1.100:8080
  */
 
-const BACKEND_PORT = 8080
+const ELECTRON_RUNTIME = typeof window !== 'undefined'
+  ? window.electronAPI?.runtimeEndpoint
+  : undefined
+
+const BACKEND_PORT = ELECTRON_RUNTIME?.port || 8080
 
 // 当前页面的主机名（localhost 或局域网 IP）
-const HOST = typeof window !== 'undefined' ? window.location.hostname : 'localhost'
+const HOST = ELECTRON_RUNTIME?.host || (typeof window !== 'undefined' ? window.location.hostname : 'localhost')
 
-export const API_BASE = `http://${HOST}:${BACKEND_PORT}`
-export const WS_URL = `ws://${HOST}:${BACKEND_PORT}/ws`
+export const API_BASE = ELECTRON_RUNTIME?.apiBase || `http://${HOST}:${BACKEND_PORT}`
+export const WS_URL = ELECTRON_RUNTIME?.wsUrl || `ws://${HOST}:${BACKEND_PORT}/ws`

@@ -6,11 +6,22 @@
 
 const { contextBridge, ipcRenderer } = require('electron')
 
+const runtimeHost = process.env.TAGENT_RUNTIME_HOST || '127.0.0.1'
+const runtimePort = Number(process.env.TAGENT_RUNTIME_PORT || 8080)
+const runtimeEndpoint = {
+  host: runtimeHost,
+  port: runtimePort,
+  apiBase: process.env.TAGENT_RUNTIME_URL || `http://${runtimeHost}:${runtimePort}`,
+  wsUrl: `ws://${runtimeHost}:${runtimePort}/ws`,
+}
+
 contextBridge.exposeInMainWorld('electronAPI', {
   platform: process.platform,
   isElectron: true,
+  runtimeEndpoint,
 
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  getRuntimeEndpoint: () => ipcRenderer.invoke('runtime-endpoint'),
   getBackendLogPath: () => ipcRenderer.invoke('backend-log-path'),
   openBackendLog: () => ipcRenderer.invoke('open-backend-log'),
   openUserDataDir: () => ipcRenderer.invoke('open-user-data-dir'),

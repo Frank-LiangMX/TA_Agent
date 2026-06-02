@@ -11,6 +11,7 @@ const { spawn, spawnSync } = require('child_process')
 const path = require('path')
 const fs = require('fs')
 const http = require('http')
+const net = require('net')
 
 // 微信 Bridge（延迟加载）
 let wechatBridge = null
@@ -19,8 +20,7 @@ let wechatBridge = null
 const { initUpdater, checkForUpdates, quitAndInstall, getStatus } = require('./updater')
 
 const SERVER_HOST = '127.0.0.1'
-const SERVER_PORT = 8080
-const SERVER_URL = `http://${SERVER_HOST}:${SERVER_PORT}`
+const DEFAULT_SERVER_PORT = 8080
 const DEV_FRONTEND_URL = 'http://localhost:5175'  // Vite 开发服务器
 const STARTUP_TIMEOUT = 30000
 
@@ -39,6 +39,40 @@ let mainWindow = null
 let pythonProcess = null
 let tray = null
 let isQuitting = false
+let runtimePort = DEFAULT_SERVER_PORT
+
+function getServerUrl() {
+  return `http://${SERVER_HOST}:${runtimePort}`
+}
+
+function getHealthUrl(port = runtimePort) {
+  return `http://${SERVER_HOST}:${port}/health`
+}
+
+function isPortAvailable(port) {
+  return new Promise((resolve) => {
+    const server = net.createServer()
+    server.once('error', () => resolve(false))
+    server.once('listening', () => {
+      server.close(() => resolve(true))
+    })
+    server.listen(port, SERVER_HOST)
+  })
+}
+
+async function findAvailablePort(preferredPort = DEFAULT_SERVER_PORT) {
+  if (await isPortAvailable(preferredPort)) return preferredPort
+  for (let port = 18080; port < 18180; port += 1) {
+    if (await isPortAvailable(port)) return port
+  }
+  throw new Error('No available runtime port found')
+}
+
+function publishRuntimeEnv() {
+  process.env.TAGENT_RUNTIME_HOST = SERVER_HOST
+  process.env.TAGENT_RUNTIME_PORT = String(runtimePort)
+  process.env.TAGENT_RUNTIME_URL = getServerUrl()
+}
 
 function getAppIconPath() {
   const icoPath = path.join(__dirname, 'assets', 'icon.ico')
@@ -109,6 +143,12 @@ function getBackendLogPath() {
 function registerIpcHandlers() {
   ipcMain.handle('get-app-version', () => app.getVersion())
   ipcMain.handle('backend-log-path', () => getBackendLogPath())
+  ipcMain.handle('runtime-endpoint', () => ({
+    host: SERVER_HOST,
+    port: runtimePort,
+    apiBase: getServerUrl(),
+    wsUrl: `ws://${SERVER_HOST}:${runtimePort}/ws`,
+  }))
 
   // 窗口控制
   ipcMain.on('window-minimize', () => mainWindow?.minimize())
@@ -190,7 +230,7 @@ function registerIpcHandlers() {
     wechatBridge.onMessage = async (msg) => {
       // 通过 HTTP 调用本地 Python 后端的 Agent
       try {
-        const res = await fetch(`http://127.0.0.1:8080/api/wechat/message`, {
+        const res = await fetch(`${getServerUrl()}/api/wechat/message`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(msg),
@@ -241,9 +281,9 @@ function getPythonExePath() {
   return path.join(__dirname, '..', '..', 'launcher.py')
 }
 
-function checkServerReady() {
+function checkServerReady(port = runtimePort) {
   return new Promise((resolve) => {
-    const req = http.get(`${SERVER_URL}/health`, (res) => {
+    const req = http.get(getHealthUrl(port), (res) => {
       let body = ''
       res.setEncoding('utf8')
       res.on('data', (chunk) => { body += chunk })
@@ -307,6 +347,8 @@ function startPythonBackend() {
     env: { 
       ...process.env, 
       PYTHONIOENCODING: 'utf-8',
+      TAGENT_RUNTIME_HOST: SERVER_HOST,
+      TAGENT_RUNTIME_PORT: String(runtimePort),
       ELECTRON_USER_DATA: agentDataDir  // 传给 Python 后端
     }
   })
@@ -366,7 +408,7 @@ function createWindow() {
   })
 
   // 开发模式：加载 Vite 开发服务器；打包模式：加载后端静态文件
-  const url = app.isPackaged ? SERVER_URL : DEV_FRONTEND_URL
+  const url = app.isPackaged ? getServerUrl() : DEV_FRONTEND_URL
   console.log(`[Electron] 加载: ${url}`)
   mainWindow.loadURL(url)
 
@@ -429,6 +471,7 @@ function quitApp() {
 async function startApp() {
   console.log('[Electron] 应用启动...')
   console.log(`[Electron] isPackaged: ${app.isPackaged}`)
+  publishRuntimeEnv()
 
   // 开发模式：检测前端开发服务器
   if (!app.isPackaged) {
@@ -461,11 +504,23 @@ async function startApp() {
     return
   }
 
-  // 打包模式：检测后端
-  if (await checkServerReady()) {
-    console.log('[Electron] 后端已运行')
+  // 打包模式：优先复用默认端口上的 TAgent，否则选择空闲动态端口
+  if (await checkServerReady(DEFAULT_SERVER_PORT)) {
+    runtimePort = DEFAULT_SERVER_PORT
+    publishRuntimeEnv()
+    console.log(`[Electron] 后端已运行: ${getServerUrl()}`)
     createWindow()
     createTray()
+    return
+  }
+
+  try {
+    runtimePort = await findAvailablePort(DEFAULT_SERVER_PORT)
+    publishRuntimeEnv()
+    console.log(`[Electron] 使用后端端口: ${runtimePort}`)
+  } catch (err) {
+    console.error('[Electron] 查找可用后端端口失败:', err)
+    app.quit()
     return
   }
 

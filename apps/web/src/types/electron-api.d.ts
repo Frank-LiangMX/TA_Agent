@@ -51,12 +51,21 @@ interface AppConfig {
   }
 }
 
+interface RuntimeEndpoint {
+  host: string
+  port: number
+  apiBase: string
+  wsUrl: string
+}
+
 declare global {
   interface Window {
     electronAPI?: {
       platform: PlatformName
       isElectron: boolean
+      runtimeEndpoint?: RuntimeEndpoint
       getAppVersion?: () => Promise<string>
+      getRuntimeEndpoint?: () => Promise<RuntimeEndpoint>
       getBackendLogPath?: () => Promise<string>
       openBackendLog?: () => Promise<ElectronActionResult>
       openUserDataDir?: () => Promise<ElectronActionResult>

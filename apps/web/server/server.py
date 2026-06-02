@@ -9,7 +9,7 @@ TAgent WebSocket 服务
   pip install -r requirements.txt
   python server.py
 
-前端连接：ws://localhost:8080/ws
+前端连接：默认 ws://localhost:8080/ws，可通过 TAGENT_RUNTIME_PORT 覆盖端口
 """
 
 import sys
@@ -2475,9 +2475,15 @@ async def render_asset_preview_api(asset_id: str):
 # ===== 启动 =====
 
 if __name__ == "__main__":
+    runtime_host = os.environ.get("TAGENT_RUNTIME_HOST", "0.0.0.0")
+    try:
+        runtime_port = int(os.environ.get("TAGENT_RUNTIME_PORT", "8080"))
+    except ValueError:
+        runtime_port = 8080
+
     print("=" * 50)
     print("  TAgent WebSocket Server")
-    print("  ws://localhost:8080/ws")
+    print(f"  ws://localhost:{runtime_port}/ws")
     print("=" * 50)
 
     # 初始化记忆系统（使用统一路径配置）
@@ -2500,4 +2506,4 @@ if __name__ == "__main__":
     from progress_hook import patch_analyzer_progress
     patch_analyzer_progress()
 
-    uvicorn.run(app, host="0.0.0.0", port=8080)
+    uvicorn.run(app, host=runtime_host, port=runtime_port)
