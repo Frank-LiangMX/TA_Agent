@@ -29,7 +29,10 @@ node_modules/
 release/
 dist/
 build/
+# 注: 不要忽略手写的 PyInstaller spec (TAgent.spec)，只忽略 build 时自动生成的
+# 用 !TAgent.spec 显式反忽略，避免匹配 *.spec
 *.spec
+!TAgent.spec
 
 # IDE
 .idea/

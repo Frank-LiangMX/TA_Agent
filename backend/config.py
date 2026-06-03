@@ -387,6 +387,12 @@ def set_model_enabled(provider_id: str, model_id: str, enabled: bool) -> dict:
         if p.get("id") == provider_id:
             for j, m in enumerate(p.get("models", [])):
                 if m.get("id") == model_id:
+                    if enabled:
+                        # 启用时：所有 provider 下的所有模型全部禁用，保证只有一个模型活跃
+                        for pi, pp in enumerate(providers):
+                            for pmi, pm in enumerate(pp.get("models", [])):
+                                if pm.get("id") != model_id:
+                                    providers[pi]["models"][pmi]["enabled"] = False
                     providers[i]["models"][j]["enabled"] = enabled
                     _save_providers(providers)
                     return {"success": True}
