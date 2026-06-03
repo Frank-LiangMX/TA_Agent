@@ -104,6 +104,17 @@ jobs:
           Write-Host "NSIS installer: $($nsis.FullName)"
           Write-Host "Unpacked exe:   $outDir\win-unpacked\TAgent.exe"
 
+      - name: Zip portable win-unpacked
+        shell: pwsh
+        run: |
+          $version = "${{ env.VERSION }}"
+          $src = "release\electron\${{ github.ref_name }}\win-unpacked"
+          $dst = "release\electron\${{ github.ref_name }}\TAgent-$version-portable.zip"
+          if (-not (Test-Path $src)) { Write-Error "Source not found: $src"; exit 1 }
+          Compress-Archive -Path "$src\*" -DestinationPath $dst -CompressionLevel Optimal
+          $size = (Get-Item $dst).Length
+          Write-Host "Portable zip: $dst ($([math]::Round($size/1MB,1)) MB)"
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -123,8 +134,15 @@ jobs:
 
             自动构建产物（Windows x64）。
 
-            ### 安装
-            - 下载 `TAgent Setup *.exe` 双击安装
+            ### 安装包（推荐）
+            - 下载 `TAgent.Setup.${{ env.VERSION }}.exe` 双击安装
+            - 自动创建开始菜单 / 桌面快捷方式
+            - 安装位置：`%LOCALAPPDATA%\Programs\TAgent\`
+
+            ### 绿色版
+            - 下载 `TAgent-${{ env.VERSION }}-portable.zip`，解压到任意目录
+            - 解压后双击 `TAgent.exe` 即可运行
+            - **整个目录都要保留**，不要只拷 exe
 
             ### 包含
             - Electron 桌面壳
@@ -137,8 +155,8 @@ jobs:
 
             完整变更见仓库 `progress.md`。
           files: |
-            release/electron/${{ github.ref_name }}/*.exe
-            release/electron/${{ github.ref_name }}/win-unpacked/TAgent.exe
+            release/electron/${{ github.ref_name }}/*.Setup.*.exe
+            release/electron/${{ github.ref_name }}/*-portable.zip
           fail_on_unmatched_files: false
           generate_release_notes: true
           draft: false
