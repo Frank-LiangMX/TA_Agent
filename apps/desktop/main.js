@@ -23,6 +23,7 @@ const SERVER_HOST = '127.0.0.1'
 const DEFAULT_SERVER_PORT = 8080
 const DEV_FRONTEND_URL = 'http://localhost:5175'  // Vite 开发服务器
 const STARTUP_TIMEOUT = 30000
+const configuredRuntimePort = Number(process.env.TAGENT_RUNTIME_PORT)
 
 if (process.platform === 'win32') {
   app.setAppUserModelId('com.tagent.desktop')
@@ -39,7 +40,9 @@ let mainWindow = null
 let pythonProcess = null
 let tray = null
 let isQuitting = false
-let runtimePort = DEFAULT_SERVER_PORT
+let runtimePort = Number.isInteger(configuredRuntimePort) && configuredRuntimePort > 0
+  ? configuredRuntimePort
+  : DEFAULT_SERVER_PORT
 
 function getServerUrl() {
   return `http://${SERVER_HOST}:${runtimePort}`
@@ -60,7 +63,12 @@ function isPortAvailable(port) {
   })
 }
 
-async function findAvailablePort(preferredPort = DEFAULT_SERVER_PORT) {
+/** 打包启动：8080 上已有 TAgent 则复用；否则空闲用 preferred，再扫 18080+ */
+async function resolveRuntimePort(preferredPort = DEFAULT_SERVER_PORT) {
+  if (await checkServerReady(preferredPort)) {
+    console.log(`[Electron] 复用已有 TAgent Runtime 端口: ${preferredPort}`)
+    return preferredPort
+  }
   if (await isPortAvailable(preferredPort)) return preferredPort
   for (let port = 18080; port < 18180; port += 1) {
     if (await isPortAvailable(port)) return port
@@ -106,17 +114,17 @@ function loadConfig() {
   }
   // 默认配置
   return {
-    mode: 'local',
-    local: {
+    agent_mode: 'ta',
+    runtime: {
       llm_provider: 'glm',
       llm_api_key: '',
       llm_base_url: '',
       llm_model: 'glm-5',
       blender_path: '',
     },
-    online: {
-      server_host: '',
-      server_port: 8081,
+    cloud: {
+      enabled: false,
+      server_url: '',
       user_id: '',
       user_name: '',
     },
@@ -149,6 +157,7 @@ function registerIpcHandlers() {
     apiBase: getServerUrl(),
     wsUrl: `ws://${SERVER_HOST}:${runtimePort}/ws`,
   }))
+  ipcMain.handle('runtime-restart', async () => restartPythonBackend())
 
   // 窗口控制
   ipcMain.on('window-minimize', () => mainWindow?.minimize())
@@ -182,14 +191,39 @@ function registerIpcHandlers() {
 
   // 配置管理
   ipcMain.handle('get-config', () => loadConfig())
-  ipcMain.handle('save-config', (event, config) => saveConfig(config))
+  ipcMain.handle('save-config', async (event, config) => {
+    const prev = loadConfig()
+    const result = saveConfig(config)
+    const prevMode = prev.agent_mode === 'general' ? 'general' : 'ta'
+    const nextMode = config.agent_mode === 'general' ? 'general' : 'ta'
+    if (app.isPackaged && prevMode !== nextMode) {
+      console.log(`[Electron] 工作台模式 ${prevMode} -> ${nextMode}，重启后端`)
+      const restarted = await restartPythonBackend()
+      if (!restarted.ok) {
+        return { success: false, error: restarted.error || '后端重启失败' }
+      }
+    }
+    return result
+  })
+  ipcMain.handle('get-cloud-config', () => {
+    const config = loadConfig()
+    return config.cloud || { enabled: false, server_url: '', user_id: '', user_name: '' }
+  })
+  ipcMain.handle('set-cloud-config', (event, cloud) => {
+    const config = loadConfig()
+    config.cloud = { ...config.cloud, ...cloud }
+    saveConfig(config)
+    return config
+  })
+  // 兼容旧 IPC（过渡期）
   ipcMain.handle('get-mode', () => {
     const config = loadConfig()
-    return config.mode || 'local'
+    return config.cloud?.enabled ? 'online' : 'local'
   })
   ipcMain.handle('set-mode', (event, mode) => {
     const config = loadConfig()
-    config.mode = mode
+    if (!config.cloud) config.cloud = { enabled: false, server_url: '', user_id: '', user_name: '' }
+    config.cloud.enabled = mode === 'online'
     saveConfig(config)
     return config
   })
@@ -294,7 +328,7 @@ function checkServerReady(port = runtimePort) {
         }
         try {
           const health = JSON.parse(body)
-          resolve(health.status === 'ok' && health.app === 'TAgentLocalRuntime')
+          resolve(health.status === 'ok' && health.app === 'TAgentLocalRuntime' && !!health.agentMode)
         } catch {
           resolve(false)
         }
@@ -317,6 +351,21 @@ async function waitForServer(timeout = STARTUP_TIMEOUT) {
   return false
 }
 
+function getBackendSpawnEnv() {
+  const agentDataDir = getAgentDataDir()
+  const config = loadConfig()
+  const agentMode = config.agent_mode === 'general' ? 'general' : 'ta'
+  return {
+    ...process.env,
+    PYTHONIOENCODING: 'utf-8',
+    TAGENT_RUNTIME_HOST: SERVER_HOST,
+    TAGENT_RUNTIME_PORT: String(runtimePort),
+    TAGENT_RUNTIME_DIR: agentDataDir,
+    ELECTRON_USER_DATA: agentDataDir,
+    TAGENT_AGENT_MODE: agentMode,
+  }
+}
+
 function startPythonBackend() {
   if (!app.isPackaged) {
     console.log('[Electron] 开发模式：不自动启动后端')
@@ -329,7 +378,9 @@ function startPythonBackend() {
     return false
   }
 
+  const spawnEnv = getBackendSpawnEnv()
   console.log(`[Electron] 启动后端: ${exePath}`)
+  console.log(`[Electron] TAGENT_AGENT_MODE=${spawnEnv.TAGENT_AGENT_MODE}`)
   
   // 打包模式下，将后端输出写入日志文件
   const agentDataDir = getAgentDataDir()
@@ -344,14 +395,7 @@ function startPythonBackend() {
     cwd: path.dirname(exePath),
     stdio: ['ignore', 'pipe', 'pipe'],  // 分离输出
     windowsHide: true,
-    env: { 
-      ...process.env, 
-      PYTHONIOENCODING: 'utf-8',
-      TAGENT_RUNTIME_HOST: SERVER_HOST,
-      TAGENT_RUNTIME_PORT: String(runtimePort),
-      TAGENT_RUNTIME_DIR: agentDataDir,
-      ELECTRON_USER_DATA: agentDataDir  // 传给 Python 后端
-    }
+    env: spawnEnv,
   })
 
   // 记录后端输出到日志
@@ -390,6 +434,26 @@ function stopPythonBackend() {
   }
 }
 
+async function restartPythonBackend() {
+  if (!app.isPackaged) {
+    return { ok: true }
+  }
+
+  stopPythonBackend()
+  await new Promise((resolve) => setTimeout(resolve, 500))
+
+  if (!startPythonBackend()) {
+    return { ok: false, error: '后端启动失败' }
+  }
+
+  const ready = await waitForServer()
+  if (!ready) {
+    return { ok: false, error: '后端启动超时' }
+  }
+
+  return { ok: true }
+}
+
 function createWindow() {
   const iconPath = getAppIconPath()
 
@@ -408,10 +472,14 @@ function createWindow() {
     show: false
   })
 
-  // 开发模式：加载 Vite 开发服务器；打包模式：加载后端静态文件
-  const url = app.isPackaged ? getServerUrl() : DEV_FRONTEND_URL
-  console.log(`[Electron] 加载: ${url}`)
-  mainWindow.loadURL(url)
+  if (app.isPackaged) {
+    const indexPath = path.join(__dirname, 'dist', 'index.html')
+    console.log(`[Electron] 加载本地前端: ${indexPath}`)
+    mainWindow.loadFile(indexPath)
+  } else {
+    console.log(`[Electron] 加载: ${DEV_FRONTEND_URL}`)
+    mainWindow.loadURL(DEV_FRONTEND_URL)
+  }
 
   // 隐藏默认菜单栏
   Menu.setApplicationMenu(null)
@@ -505,18 +573,9 @@ async function startApp() {
     return
   }
 
-  // 打包模式：优先复用默认端口上的 TAgent，否则选择空闲动态端口
-  if (await checkServerReady(DEFAULT_SERVER_PORT)) {
-    runtimePort = DEFAULT_SERVER_PORT
-    publishRuntimeEnv()
-    console.log(`[Electron] 后端已运行: ${getServerUrl()}`)
-    createWindow()
-    createTray()
-    return
-  }
-
+  // 打包模式：启动自己的后端。8080 被占用时使用动态端口，避免连到其他 agent。
   try {
-    runtimePort = await findAvailablePort(DEFAULT_SERVER_PORT)
+    runtimePort = await resolveRuntimePort(runtimePort)
     publishRuntimeEnv()
     console.log(`[Electron] 使用后端端口: ${runtimePort}`)
   } catch (err) {

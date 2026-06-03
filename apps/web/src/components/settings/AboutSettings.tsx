@@ -1,14 +1,11 @@
 /**
- * 关于页面
- *
- * 显示版本号、更新状态、GitHub 链接。
+ * 关于与帮助
  */
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { RefreshCw, CheckCircle2, AlertCircle, ExternalLink, Download } from 'lucide-react'
+import { RefreshCw, CheckCircle2, AlertCircle, ExternalLink, Download, Info } from 'lucide-react'
 import { SettingsSection, SettingsCard, SettingsRow } from './primitives'
-import { API_BASE } from '@/lib/api'
-
+import { HelpGuide } from './HelpGuide'
 interface UpdateStatus {
   state: string
   version?: string
@@ -72,44 +69,39 @@ export function AboutSettings() {
     <div className="space-y-6">
       <SettingsSection title="关于 TAgent" description="版本信息和更新">
         <SettingsCard>
-          <SettingsRow label="版本号" icon={<span className="text-xs font-mono">v</span>}>
+          <SettingsRow label="版本号" icon={<Info size={16} />}>
             <span className="text-sm font-mono">{version || '...'}</span>
           </SettingsRow>
 
           {isElectron && (
-            <div className="px-4 py-3 border-t border-border/30">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  {updateStatus?.state === 'downloaded' ? (
-                    <CheckCircle2 size={14} className="text-success" />
-                  ) : updateStatus?.state === 'error' ? (
-                    <AlertCircle size={14} className="text-destructive" />
-                  ) : updateStatus?.state === 'downloading' ? (
-                    <RefreshCw size={14} className="text-primary animate-spin" />
-                  ) : (
-                    <Download size={14} className="text-muted-foreground" />
-                  )}
-                  <span className="text-xs text-muted-foreground">{statusText() || '点击检查更新'}</span>
-                </div>
-                <div className="flex gap-2">
-                  {updateStatus?.state === 'downloaded' && (
-                    <button
-                      onClick={handleRestart}
-                      className="text-xs bg-primary text-primary-foreground px-3 py-1 rounded hover:bg-primary/80 transition-colors"
-                    >
-                      重启更新
-                    </button>
-                  )}
+            <SettingsRow
+              label="应用更新"
+              description={statusText() || '点击检查是否有新版本'}
+              icon={
+                updateStatus?.state === 'downloaded' ? <CheckCircle2 size={16} className="text-success" />
+                : updateStatus?.state === 'error' ? <AlertCircle size={16} className="text-destructive" />
+                : updateStatus?.state === 'downloading' ? <RefreshCw size={16} className="text-primary animate-spin" />
+                : <Download size={16} />
+              }
+            >
+              <div className="flex gap-2">
+                {updateStatus?.state === 'downloaded' && (
                   <button
-                    onClick={handleCheckUpdate}
-                    disabled={checking || updateStatus?.state === 'downloading'}
-                    className="text-xs bg-muted text-muted-foreground px-3 py-1 rounded hover:bg-accent disabled:opacity-50 transition-colors"
+                    onClick={handleRestart}
+                    className="text-xs bg-primary text-primary-foreground px-3 py-1.5 rounded-lg hover:bg-primary/80 transition-colors"
                   >
-                    {checking ? '检查中...' : '检查更新'}
+                    重启更新
                   </button>
-                </div>
+                )}
+                <button
+                  onClick={handleCheckUpdate}
+                  disabled={checking || updateStatus?.state === 'downloading'}
+                  className="text-xs bg-muted text-foreground px-3 py-1.5 rounded-lg hover:bg-accent disabled:opacity-50 transition-colors"
+                >
+                  {checking ? '检查中...' : '检查更新'}
+                </button>
               </div>
-            </div>
+            </SettingsRow>
           )}
         </SettingsCard>
       </SettingsSection>
@@ -128,6 +120,8 @@ export function AboutSettings() {
           </SettingsRow>
         </SettingsCard>
       </SettingsSection>
+
+      <HelpGuide />
     </div>
   )
 }

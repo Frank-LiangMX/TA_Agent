@@ -8,7 +8,6 @@
 import React, { useEffect, useState } from 'react'
 import { X, Package, Loader2, Camera, CheckCircle2, AlertTriangle, Box, Link2 } from 'lucide-react'
 import { getDataSource } from '@/lib/cache'
-import { API_BASE } from '@/lib/api'
 import { formatAssetTypeLabel } from '@/services/intake'
 import { FbxViewerModal, FbxViewerInline } from '@/components/viewer'
 import type { FieldConfig } from './detailFields'
@@ -96,7 +95,8 @@ export function DetailPanel({ asset, onClose, onOpenAsset }: DetailPanelProps) {
     setDetail(toAssetDetail(asset))
     const assetId = asset?.asset_id as string | undefined
     if (!assetId) return
-    fetch(`${API_BASE}/api/assets/${assetId}`)
+    getDataSource()
+      .then((base) => fetch(`${base}/api/assets/${assetId}`))
       .then((res) => res.json())
       .then((data) => {
         if (!data.error) setDetail(data)
@@ -418,7 +418,7 @@ function PreviewImage({ assetId, assetName, assetType, filePath, triCount }: { a
   const [rendering, setRendering] = React.useState(false)
   const [renderMsg, setRenderMsg] = React.useState<string | null>(null)
   const [viewerOpen, setViewerOpen] = React.useState(false)
-  const [dataSource, setDataSource] = React.useState(API_BASE)
+  const [dataSource, setDataSource] = React.useState('')
 
   React.useEffect(() => {
     getDataSource().then(setDataSource)

@@ -5,22 +5,36 @@ setlocal enabledelayedexpansion
 set "ROOT=%~dp0.."
 set "SCRIPTS_DIR=%~dp0"
 set "ELECTRON_DIR=%ROOT%\apps\desktop"
+set "TAGENT_RUNTIME_HOST=127.0.0.1"
+
+if not defined TAGENT_RUNTIME_PORT (
+  for /f %%p in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPTS_DIR%find-free-port.ps1" 18080 18179') do set "TAGENT_RUNTIME_PORT=%%p"
+)
+
+if not defined TAGENT_RUNTIME_PORT (
+  echo [error] No available backend port found in 18080-18179.
+  endlocal
+  exit /b 1
+)
+
+set "TAGENT_RUNTIME_URL=http://%TAGENT_RUNTIME_HOST%:%TAGENT_RUNTIME_PORT%"
 
 echo ========================================
 echo   TAgent Dev - Electron
 echo ========================================
 echo.
 echo [info] Electron dev mode starts or reuses the local backend and web frontend.
+echo [info] Runtime endpoint: %TAGENT_RUNTIME_URL%
 echo.
 
 echo [1/3] Checking TAgent backend...
-call :check_health 8080
+call :check_health %TAGENT_RUNTIME_PORT%
 if not errorlevel 1 (
   echo [1/3] TAgent backend is already running.
 ) else (
   echo [1/3] Starting TAgent backend...
-  start "TAgent Backend :8080" cmd /k call "%SCRIPTS_DIR%run-backend.bat"
-  call :wait_health 8080 30
+  start "TAgent Backend :%TAGENT_RUNTIME_PORT%" cmd /k call "%SCRIPTS_DIR%run-backend.bat"
+  call :wait_health %TAGENT_RUNTIME_PORT% 30
   if errorlevel 1 (
     echo [error] TAgent backend startup timed out.
     endlocal

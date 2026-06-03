@@ -404,6 +404,83 @@ pre code,
   animation: pulse-status 2s ease-in-out infinite;
 }
 
+/* 齿轮旋转动画 */
+@keyframes gear-spin-cw {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes gear-spin-ccw {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(-360deg); }
+}
+.animate-gear-spin {
+  animation: gear-spin-cw 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.animate-gear-spin-reverse {
+  animation: gear-spin-ccw 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 设置页 tab 内容淡入 */
+@keyframes settings-content-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-settings-content-in {
+  animation: settings-content-in 0.15s ease-out;
+}
+
+/* 只读提示条滑入 */
+@keyframes settings-banner-in {
+  from { opacity: 0; transform: translateY(-100%); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-settings-banner-in {
+  animation: settings-banner-in 0.2s ease-out;
+}
+
+/* 分组折叠/展开 */
+.settings-group-body {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 0.2s ease;
+}
+.settings-group-body-collapsed {
+  grid-template-rows: 0fr;
+}
+.settings-group-body > div {
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* 设置页整体入场 */
+@keyframes settings-enter {
+  from { transform: translateY(6px); }
+  to { transform: translateY(0); }
+}
+.animate-settings-enter {
+  animation: settings-enter 0.2s ease-out;
+}
+
+/* 搜索结果 tab 淡入 */
+@keyframes settings-tab-in {
+  from { opacity: 0; transform: translateX(-4px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.animate-settings-tab-in {
+  animation: settings-tab-in 0.15s ease-out both;
+}
+
+/* 返回按钮齿轮 hover 摆动 */
+@keyframes gear-wobble {
+  0% { transform: rotate(0deg); }
+  25% { transform: rotate(15deg); }
+  75% { transform: rotate(-15deg); }
+  100% { transform: rotate(0deg); }
+}
+.gear-wobble:hover .animate-gear-spin {
+  animation: gear-wobble 0.4s ease-in-out;
+}
+
 /* Shimmer 动画 */
 @keyframes shimmer {
   0% { background-position: -200% 0; }

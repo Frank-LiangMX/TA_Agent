@@ -5,7 +5,7 @@
 import React, { useState, useEffect } from 'react'
 import { Shield, Lock, Unlock, Loader2 } from 'lucide-react'
 import { SettingsSection, SettingsCard, SettingsRow, SettingsSegmentedControl } from './primitives'
-import { API_BASE } from '@/lib/api'
+import { localApiFetch } from '@/lib/api'
 
 interface PermissionData {
   global_mode: string
@@ -30,7 +30,7 @@ export function PermissionSettings({ refreshKey = 0 }: PermissionSettingsProps) 
 
   useEffect(() => {
     setLoading(true)
-    fetch(`${API_BASE}/api/permissions`)
+    localApiFetch('/api/permissions')
       .then((res) => res.json())
       .then((json) => {
         setData({
@@ -47,7 +47,7 @@ export function PermissionSettings({ refreshKey = 0 }: PermissionSettingsProps) 
     if (!data) return
     setSaving(true)
     try {
-      const res = await fetch(`${API_BASE}/api/permissions`, {
+      const res = await localApiFetch('/api/permissions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ global_mode: mode }),
@@ -72,7 +72,7 @@ export function PermissionSettings({ refreshKey = 0 }: PermissionSettingsProps) 
     setSaving(true)
     try {
       const newTools = { ...data.tools, [toolName]: mode }
-      const res = await fetch(`${API_BASE}/api/permissions`, {
+      const res = await localApiFetch('/api/permissions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tools: newTools }),

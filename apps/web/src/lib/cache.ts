@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { API_BASE } from './api'
+import { getApiBase } from './api'
 import { getConfig } from '../services/config'
 
 // 内存缓存
@@ -33,11 +33,11 @@ export function clearCache() {
 export async function getDataSource(): Promise<string> {
   try {
     const config = await getConfig()
-    if (config.mode === 'online' && config.online.server_host) {
-      return `http://${config.online.server_host}:${config.online.server_port || 8081}`
+    if (config.cloud?.enabled && config.cloud.server_url) {
+      return `http://${config.cloud.server_url}`
     }
   } catch {}
-  return API_BASE
+  return getApiBase()
 }
 
 /** 获取资产列表（带缓存） */

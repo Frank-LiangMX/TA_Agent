@@ -2,8 +2,10 @@ import React, { useEffect, useRef, useState } from 'react'
 import { Toaster } from 'sonner'
 import { tagentClient } from './services/websocket'
 import { listSessions } from './services/sessions'
-import { getConfig, type AppConfig } from './services/config'
+import { getConfig, ensureRuntimeConfigSync, ensureRuntimeAgentModeAligned, type AppConfig } from './services/config'
 import { healthCheck } from './services/api'
+import { resetRuntimeEndpointCache } from './lib/api'
+import { waitForLocalRuntime } from './lib/runtime-ready'
 import { Sidebar, type ViewType } from './components/layout/Sidebar'
 import { MainPanel } from './components/layout/MainPanel'
 import { AssetLibrary, type AssetLibraryFilterHints } from './components/asset/AssetLibrary'
@@ -17,11 +19,11 @@ import { GeneralHistoryView } from './components/general/GeneralHistoryView'
 import { IntakeWizard } from './components/intake/IntakeWizard'
 import { TourGuide } from './components/onboarding/TourGuide'
 import { UpdateDialog } from './components/ui/UpdateDialog'
-import { ModeSelect, LoginView, LocalConfigView } from './components/auth'
+import { LoginView, LocalConfigView } from './components/auth'
 import { ElectronChrome } from './components/layout/ElectronChrome'
 import { loadStoredActiveTab } from './lib/session-storage'
 
-type AppState = 'loading' | 'mode-select' | 'login' | 'local-config' | 'ready'
+type AppState = 'loading' | 'login' | 'local-config' | 'ready'
 
 export default function App() {
   const isViewAllowed = (view: ViewType, mode: 'ta' | 'general') => {
@@ -55,21 +57,38 @@ export default function App() {
         const runtimeAgentMode = appConfig.agent_mode === 'general' ? 'general' : 'ta'
         setAgentMode(runtimeAgentMode)
 
-        if (!appConfig.mode || (appConfig.mode === 'local' && !appConfig.local.llm_api_key)) {
-          setAppState('mode-select')
-        } else if (appConfig.mode === 'online' && !appConfig.online.server_host) {
-          setAppState('login')
-        } else {
-          if (appConfig.mode === 'online') {
-            try {
-              await healthCheck()
-              console.log('[App] server connected')
-            } catch (err) {
-              console.error('[App] server connection failed', err)
-            }
-          }
-          setAppState('ready')
+        if (typeof window !== 'undefined' && window.electronAPI?.isElectron) {
+          await ensureRuntimeConfigSync(appConfig)
+          resetRuntimeEndpointCache()
+          await ensureRuntimeAgentModeAligned(runtimeAgentMode)
+          resetRuntimeEndpointCache()
         }
+
+        // 检查是否已有 LLM 配置或中心服务器
+        if (!appConfig.runtime?.llm_api_key && !appConfig.cloud?.enabled) {
+          // 未配置：检查是否已有 Provider
+          try {
+            const baseUrl = await getApiBase()
+            const res = await fetch(`${baseUrl}/api/config/providers`)
+            if (res.ok) {
+              const data = await res.json()
+              if (!data.providers || data.providers.length === 0) {
+                setAppState('local-config')
+                return
+              }
+            }
+          } catch {}
+        }
+
+        if (appConfig.cloud?.enabled) {
+          try {
+            await healthCheck()
+            console.log('[App] cloud server connected')
+          } catch (err) {
+            console.error('[App] cloud server connection failed', err)
+          }
+        }
+        setAppState('ready')
       } catch (err) {
         console.error('[App] init failed', err)
         setAppState('mode-select')
@@ -86,6 +105,24 @@ export default function App() {
     let cancelled = false
 
     const connectInitialSession = async () => {
+      if (typeof window !== 'undefined' && window.electronAPI?.isElectron) {
+        const ready = await waitForLocalRuntime({ expectedAgentMode: agentMode })
+        if (!ready.ok) {
+          console.error('[App] 本地 Runtime 未就绪')
+          return
+        }
+        if (ready.agentModeMismatch) {
+          console.warn(
+            '[App] 后端工作台与 UI 不一致，尝试对齐:',
+            ready.actualAgentMode,
+            '→',
+            agentMode,
+          )
+          await ensureRuntimeAgentModeAligned(agentMode)
+        }
+        resetRuntimeEndpointCache()
+      }
+
       const storedActiveId = loadStoredActiveTab(agentMode)
       if (storedActiveId) {
         try {
@@ -172,24 +209,16 @@ export default function App() {
     handleViewChange(view)
   }
 
-  const handleModeSelected = async (mode: 'local' | 'online') => {
-    if (mode === 'local') {
-      setAppState('local-config')
-    } else {
-      setAppState('login')
-    }
-  }
-
   const handleLoginSuccess = () => {
     setAppState('ready')
   }
 
   const handleLocalConfigComplete = () => {
-    setAppState('ready')
+    window.location.reload()
   }
 
   const handleBackToModeSelect = () => {
-    setAppState('mode-select')
+    setAppState('local-config')
   }
 
   const handleModeChange = () => {
@@ -202,9 +231,20 @@ export default function App() {
         if (!isViewAllowed(activeView, nextMode)) {
           setActiveView('chat')
         }
-        if (agentModeChanged) {
-          return
+        resetRuntimeEndpointCache()
+        if (typeof window !== 'undefined' && window.electronAPI?.isElectron) {
+          await ensureRuntimeConfigSync(cfg)
+          if (agentModeChanged) {
+            await ensureRuntimeAgentModeAligned(nextMode)
+            const ready = await waitForLocalRuntime({ expectedAgentMode: nextMode, timeoutMs: 30000 })
+            if (!ready.ok) {
+              console.error('[App] 切换工作台后 Runtime 未就绪:', nextMode)
+              return
+            }
+          }
         }
+        resetRuntimeEndpointCache()
+
         const storedActiveId = loadStoredActiveTab(nextMode)
         try {
           if (storedActiveId) {
@@ -241,15 +281,6 @@ export default function App() {
     )
   }
 
-  if (appState === 'mode-select') {
-    return (
-      <>
-        <ElectronChrome mode="floating" />
-        <ModeSelect onModeSelected={handleModeSelected} />
-      </>
-    )
-  }
-
   if (appState === 'login') {
     return (
       <>
@@ -273,9 +304,8 @@ export default function App() {
       <ElectronChrome mode="shell" />
 
       <div className="relative h-full flex overflow-hidden p-2 gap-2">
-        {/* 侧边栏卡片（设置页面隐藏） */}
-        {activeView !== 'settings' && (
-        <div className="shrink-0">
+        {/* 侧边栏卡片 - 始终挂载，设置页时隐藏 */}
+        <div className={`shrink-0 ${activeView === 'settings' ? 'hidden' : ''}`}>
           <div ref={sidebarRef} className="flex flex-col h-full rounded-2xl shadow-xl border border-black/5 overflow-hidden bg-background" style={{ width: 256 }}>
             <Sidebar
               activeView={activeView}
@@ -284,15 +314,14 @@ export default function App() {
             />
           </div>
         </div>
-        )}
 
-        {/* 主内容：设置为双卡，其余为单卡 */}
-        {activeView === 'settings' ? (
-          <div className="flex-1 min-w-0 min-h-0">
-            <SettingsView onBack={() => handleViewChange('chat')} onModeChange={handleModeChange} />
-          </div>
-        ) : (
-          <div className="flex-1 min-w-0">
+        {/* 设置页 - 始终挂载，非设置时隐藏，保留状态 */}
+        <div className={`flex-1 min-w-0 min-h-0 ${activeView !== 'settings' ? 'hidden' : ''}`}>
+          <SettingsView onBack={() => handleViewChange('chat')} onModeChange={handleModeChange} />
+        </div>
+
+        {/* 主内容 */}
+        <div className={`flex-1 min-w-0 ${activeView === 'settings' ? 'hidden' : ''}`}>
             <div className="flex flex-col h-full rounded-2xl shadow-xl border border-black/5 overflow-hidden bg-content-area">
             <div className="flex-1 flex min-w-0 overflow-hidden">
               <div className={`flex-1 flex flex-col min-w-0 h-full ${activeView === 'chat' ? '' : 'hidden'}`}>
@@ -358,15 +387,9 @@ export default function App() {
             </div>
             </div>
           </div>
-        )}
       </div>
 
       <Toaster position="top-right" theme="dark" />
-      <div className="pointer-events-none absolute right-4 bottom-4 z-40">
-        <span className="rounded-full border border-border/70 bg-card/85 px-2.5 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur-sm">
-          工作台: {agentMode === 'general' ? '通用' : 'TA'}
-        </span>
-      </div>
       <TourGuide />
       <UpdateDialog />
     </div>
@@ -374,7 +397,7 @@ export default function App() {
 }
 
 function StatusBar() {
-  const [mode, setMode] = useState<'local' | 'online'>('local')
+  const [cloudEnabled, setCloudEnabled] = useState(false)
   const [userName, setUserName] = useState<string>()
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'connecting' | 'disconnected'>('disconnected')
 
@@ -382,9 +405,9 @@ function StatusBar() {
     const loadConfig = async () => {
       try {
         const config = await getConfig()
-        setMode(config.mode || 'local')
-        if (config.mode === 'online') {
-          setUserName(config.online.user_name)
+        setCloudEnabled(config.cloud?.enabled === true)
+        if (config.cloud?.enabled) {
+          setUserName(config.cloud.user_name)
         }
       } catch {}
     }
@@ -413,13 +436,12 @@ function StatusBar() {
   }
 
   const getStatusText = () => {
-    if (mode === 'online') {
-      if (connectionStatus === 'connected') return '联机模式'
+    if (cloudEnabled) {
+      if (connectionStatus === 'connected') return '已连接中心服'
       if (connectionStatus === 'connecting') return '连接中...'
-      return '未连接'
+      return '中心服未连接'
     }
-    // 本地模式
-    if (connectionStatus === 'connected') return '本地模式'
+    if (connectionStatus === 'connected') return '本地运行时'
     if (connectionStatus === 'connecting') return '连接中...'
     return '未连接'
   }
@@ -430,7 +452,7 @@ function StatusBar() {
         <span className="flex items-center gap-1">
           <span className={`w-1.5 h-1.5 rounded-full ${getStatusColor()}`}></span>
           {getStatusText()}
-          {mode === 'online' && userName && connectionStatus === 'connected' && (
+          {cloudEnabled && userName && connectionStatus === 'connected' && (
             <span>· {userName}</span>
           )}
         </span>

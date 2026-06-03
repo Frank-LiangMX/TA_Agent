@@ -2,7 +2,8 @@
 
 > 创建：2026-06-01  
 > 状态：**进行中**（开发前先查本表，避免与旧文档打架）  
-> 关联设计：`docs/experiments/backend/2026-06-01-dual-mode-memory-design.md`
+> 关联设计：`docs/experiments/backend/2026-06-01-dual-mode-memory-design.md`  
+> **Agent 入口**：根目录 [`AGENTS.md`](../../../AGENTS.md) · 连接/打包 [`local-runtime-connection.md`](../../reference/local-runtime-connection.md)
 
 ---
 
@@ -91,9 +92,9 @@
 
 | 项 | 优先级 | 说明 |
 |----|--------|------|
-| 参考文档同步 | 高 | 更新 `reference/backend.md`、`reference/frontend.md` 工作台章节（见 §6） |
+| 参考文档同步 | 高 | ✅ 已完成 2026-06-03：`reference/backend.md` §十三、`reference/frontend.md` §七 |
 | 通用模式用户指南 | 高 | `guides/general-workbench.md`：工作区、历史、记忆、与 TA 切换 |
-| `record_correction` 通用语义 | 中 | 现 Schema 偏资产纠正；通用优先 `append_profile_fact` |
+| `record_correction` 通用语义 | 中 | ✅ 已完成 2026-06-03：从 `GENERAL_CORE_TOOL_NAMES` 移除，通用模式仅用 `append_profile_fact` |
 
 ### P2 — 体验与 Proma 对齐
 
@@ -139,13 +140,13 @@
 
 ## 5. 验收清单（发版前自检）
 
-- [ ] `agent_mode=general` 时侧边栏无 TA 专页
-- [ ] 新建通用会话默认工作区为「默认工作区」，工具可 `workspace_list_dir`
-- [ ] 切换 TA ↔ 通用后，工具管理 Tab 数量变化且列表正确
-- [ ] 系统提示中无当前用户真实绝对路径
-- [ ] 用户说「记住 Blender 路径」后，下轮对话 L0 段可见（且写入 `memory/general/profile.md`）
-- [ ] 刷新页面不无故新增空会话
-- [ ] TA 模式分析/审核/入库行为与改前一致
+- [x] `agent_mode=general` 时侧边栏无 TA 专页（`Sidebar.tsx` L100 三元过滤 + `App.tsx` `isViewAllowed` 双重守卫）
+- [x] 新建通用会话默认工作区为「默认工作区」，工具可 `workspace_list_dir`（`session_manager.py` L108 自动分配 + `_ensure_general_workspace` 回填）
+- [x] 切换 TA ↔ 通用后，工具管理 Tab 数量变化且列表正确（`/api/tools` 按模式过滤 + `ToolSettings.tsx` 读 `tier_summary`）
+- [x] 系统提示中无当前用户真实绝对路径（`_get_system_context()` 仅暴露 OS 标签 + `~` 映射 + `_format_workspace_section` 不插值绝对路径）
+- [x] 用户说「记住 Blender 路径」后，下轮对话 L0 段可见（且写入 `memory/general/profile.md`）（`append_profile_fact` → `file_provider.append_fact` → `facts.md`；`_append_memory_profile` 每轮注入）
+- [x] 刷新页面不无故新增空会话（`App.tsx` L116 localStorage → L127 listSessions 复用 → L135 才新建）
+- [x] TA 模式分析/审核/入库行为与改前一致（通用模式白名单不含 TA 工具；TA 模式 `is_tool_allowed` 允许全部）
 
 ---
 
@@ -158,8 +159,8 @@
 | `docs/README.md` | 已加本表链接 |
 | `README.md` | 双模式小节改为链接本表 |
 | `progress.md` | 增加「工作台双模式」条目指向本表（不重复罗列） |
-| `reference/backend.md` | **待写**：§ 工作台模式、工具白名单、工作区 API、记忆注入 |
-| `reference/frontend.md` | **待写**：通用导航、General* 视图、模式切换 |
+| `reference/backend.md` | ✅ 已写：§十三 工作台模式、工具白名单、工作区 API、记忆注入 |
+| `reference/frontend.md` | ✅ 已写：§七 通用导航、General* 视图、模式切换 |
 | `guides/general-workbench.md` | **待新建**：用户向说明 |
 
 ---

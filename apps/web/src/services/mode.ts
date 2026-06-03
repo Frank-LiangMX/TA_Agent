@@ -1,44 +1,39 @@
 /**
  * 模式服务
- * 根据当前模式（本地/联机）决定调用哪个 API
+ * 根据当前配置决定调用本地 Runtime 还是中心服务器 API
  */
 
-import { getConfig, type AppConfig } from './config'
+import { getConfig, isCloudEnabled, type AppConfig } from './config'
 import * as api from './api'
 
 /**
- * 获取当前模式
+ * 检查是否启用了中心服务器
  */
-export async function getCurrentMode(): Promise<'local' | 'online'> {
+export async function checkCloudEnabled(): Promise<boolean> {
   const config = await getConfig()
-  return config.mode || 'local'
+  return isCloudEnabled(config)
 }
 
-/**
- * 检查是否为联机模式
- */
-export async function isOnlineMode(): Promise<boolean> {
-  const mode = await getCurrentMode()
-  return mode === 'online'
-}
+// 兼容旧导出（过渡期）
+export const isOnlineMode = checkCloudEnabled
 
 /**
- * 获取用户信息（联机模式）
+ * 获取用户信息（中心服务器模式）
  */
 export async function getUser(): Promise<{ userId: string; userName: string } | null> {
   const config = await getConfig()
-  if (config.mode !== 'online') return null
+  if (!isCloudEnabled(config)) return null
   return {
-    userId: config.online.user_id,
-    userName: config.online.user_name,
+    userId: config.cloud.user_id,
+    userName: config.cloud.user_name,
   }
 }
 
 /**
- * 同步资产到服务器（联机模式下自动调用）
+ * 同步资产到服务器（中心服务器模式下自动调用）
  */
 export async function syncAssetIfOnline(asset: api.AssetData): Promise<boolean> {
-  if (!(await isOnlineMode())) return false
+  if (!(await checkCloudEnabled())) return false
 
   try {
     const user = await getUser()
@@ -54,7 +49,7 @@ export async function syncAssetIfOnline(asset: api.AssetData): Promise<boolean> 
 }
 
 /**
- * 提交审核（联机模式下自动调用）
+ * 提交审核（中心服务器模式下自动调用）
  */
 export async function submitReviewIfOnline(review: {
   asset_id: string
@@ -62,7 +57,7 @@ export async function submitReviewIfOnline(review: {
   comment?: string
   reviewer_id?: string
 }): Promise<boolean> {
-  if (!(await isOnlineMode())) return false
+  if (!(await checkCloudEnabled())) return false
 
   try {
     const user = await getUser()
@@ -78,13 +73,13 @@ export async function submitReviewIfOnline(review: {
 }
 
 /**
- * 记录用量（联机模式下自动调用）
+ * 记录用量（中心服务器模式下自动调用）
  */
 export async function logUsageIfOnline(data: {
   model?: string
   tokens_total?: number
 }): Promise<boolean> {
-  if (!(await isOnlineMode())) return false
+  if (!(await checkCloudEnabled())) return false
 
   try {
     const user = await getUser()
@@ -103,13 +98,13 @@ export async function logUsageIfOnline(data: {
 }
 
 /**
- * 检查用量限制（联机模式）
+ * 检查用量限制（中心服务器模式）
  */
 export async function checkUsageLimit(): Promise<{
   allowed: boolean
   remaining: number
 } | null> {
-  if (!(await isOnlineMode())) return null
+  if (!(await checkCloudEnabled())) return null
 
   try {
     const user = await getUser()
@@ -127,10 +122,10 @@ export async function checkUsageLimit(): Promise<{
 }
 
 /**
- * 获取项目配置（联机模式从服务器获取，本地模式从本地获取）
+ * 获取项目配置（中心服务器模式从服务器获取，本地模式从本地获取）
  */
 export async function getProjectConfig(projectId: string): Promise<Record<string, unknown> | null> {
-  if (await isOnlineMode()) {
+  if (await checkCloudEnabled()) {
     try {
       const result = await api.getProjectConfig(projectId)
       return result.config || null
@@ -153,13 +148,13 @@ export async function getProjectConfig(projectId: string): Promise<Record<string
 }
 
 /**
- * 保存项目配置（联机模式保存到服务器，本地模式保存到本地）
+ * 保存项目配置（中心服务器模式保存到服务器，本地模式保存到本地）
  */
 export async function saveProjectConfig(
   projectId: string,
   config: Record<string, unknown>
 ): Promise<boolean> {
-  if (await isOnlineMode()) {
+  if (await checkCloudEnabled()) {
     try {
       await api.updateProjectConfig(projectId, { config })
       return true
@@ -175,10 +170,10 @@ export async function saveProjectConfig(
 }
 
 /**
- * 获取记忆规则（联机模式从服务器获取）
+ * 获取记忆规则（中心服务器模式从服务器获取）
  */
 export async function getRules(projectId: string): Promise<api.RuleData[]> {
-  if (await isOnlineMode()) {
+  if (await checkCloudEnabled()) {
     try {
       const result = await api.getRules(projectId)
       return result.rules

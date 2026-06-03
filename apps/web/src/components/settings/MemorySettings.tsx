@@ -18,7 +18,7 @@ import {
   CheckCircle2,
 } from 'lucide-react'
 import { SettingsSection, SettingsCard } from './primitives'
-import { API_BASE } from '@/lib/api'
+import { localApiFetch } from '@/lib/api'
 import { useConfirm } from '@/hooks/useConfirm'
 import { Tooltip } from '@/components/ui/Tooltip'
 
@@ -56,8 +56,8 @@ export function MemorySettings({ refreshKey = 0 }: MemorySettingsProps) {
     setLoading(true)
     try {
       const [statsRes, profileRes] = await Promise.all([
-        fetch(`${API_BASE}/api/memory/stats`),
-        fetch(`${API_BASE}/api/memory/profile`),
+        localApiFetch('/api/memory/stats'),
+        localApiFetch('/api/memory/profile'),
       ])
       const statsData = await statsRes.json()
       const profileData = await profileRes.json()
@@ -85,7 +85,7 @@ export function MemorySettings({ refreshKey = 0 }: MemorySettingsProps) {
     if (!await confirm(`确定清空${label}下的全部记忆？此操作不可恢复。`, { danger: true })) return
     setClearing(true)
     try {
-      const res = await fetch(`${API_BASE}/api/memory/clear`, { method: 'POST' })
+      const res = await localApiFetch('/api/memory/clear', { method: 'POST' })
       const data = await res.json()
       if (data.success) {
         setCleared(true)

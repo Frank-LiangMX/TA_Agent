@@ -2,7 +2,7 @@ import React, { useState, useCallback, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { X, FolderOpen, Loader2 } from 'lucide-react'
 import { FbxViewer } from './FbxViewer'
-import { API_BASE } from '@/lib/api'
+import { localApiFetch } from '@/lib/api'
 
 interface FbxViewerModalProps {
   open: boolean
@@ -42,7 +42,7 @@ export function FbxViewerModal({ open, onClose, assetId, assetName, filePath }: 
       setFetching(true)
       setFetchError(null)
       try {
-        const res = await fetch(`${API_BASE}/api/assets/${assetId}/file`)
+        const res = await localApiFetch(`/api/assets/${assetId}/file`)
         if (!res.ok) {
           throw new Error(`下载失败 (${res.status})`)
         }

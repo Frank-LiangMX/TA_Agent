@@ -139,8 +139,11 @@ def create_session(
 
 
 def _session_agent_mode(meta: dict, default_mode: str) -> str:
-    """会话记录上的 agentMode；缺省时视为当前运行模式（兼容旧索引）。"""
-    return (meta.get("agentMode") or default_mode).strip().lower()
+    """会话记录上的 agentMode；缺省视为 ta（兼容旧索引，避免通用模式误匹配旧会话）。"""
+    stored = (meta.get("agentMode") or "").strip().lower()
+    if stored in {"ta", "general"}:
+        return stored
+    return "ta"
 
 
 def list_sessions(include_archived: bool = False, user: str = None, agent_mode: str = "") -> list:

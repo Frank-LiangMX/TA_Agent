@@ -2,8 +2,8 @@
  * 左侧边栏 - 会话列表 + 导航
  */
 
-import React, { useState, useEffect } from 'react'
-import { API_BASE } from '@/lib/api'
+import React, { useState, useEffect, useRef } from 'react'
+import { getApiBase } from '@/lib/api'
 import { getConfig } from '@/services/config'
 import agentIcon from '@/assets/icon.png'
 import { BlurText } from '../animations'
@@ -32,11 +32,11 @@ interface SidebarProps {
 async function getDataSource(): Promise<string> {
   try {
     const config = await getConfig()
-    if (config.mode === 'online' && config.online.server_host) {
-      return `http://${config.online.server_host}:${config.online.server_port || 8081}`
+    if (config.cloud?.enabled && config.cloud.server_url) {
+      return `http://${config.cloud.server_url}`
     }
   } catch {}
-  return API_BASE
+  return getApiBase()
 }
 
 export function Sidebar({
@@ -46,6 +46,8 @@ export function Sidebar({
 }: SidebarProps) {
   const [reviewCount, setReviewCount] = useState(0)
   const [intakeCount, setIntakeCount] = useState(0)
+  const [gearSpinKey, setGearSpinKey] = useState(0)
+  const [gearReverse, setGearReverse] = useState(false)
 
   // 定期刷新待审核数量
   useEffect(() => {
@@ -61,7 +63,8 @@ export function Sidebar({
         setReviewCount(reviewData.total_pending || 0)
 
         // 入库角标：始终读本地 TagStore 统计（与入库向导一致）
-        const statsRes = await fetch(`${API_BASE}/api/stats`)
+        const localBase = await getApiBase()
+        const statsRes = await fetch(`${localBase}/api/stats`)
         const statsData = await statsRes.json()
         setIntakeCount(statsData.by_status?.approved || 0)
       } catch {
@@ -147,14 +150,18 @@ export function Sidebar({
       {/* 底部设置 */}
       <div className="p-2 border-t border-border/50">
         <button
-          onClick={() => onViewChange('settings')}
+          onClick={() => {
+            setGearReverse(activeView === 'settings') // 进入顺时针，离开逆时针
+            setGearSpinKey(k => k + 1)
+            onViewChange('settings')
+          }}
           className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
             activeView === 'settings'
               ? 'bg-foreground/[0.08] text-foreground shadow-[0_1px_2px_0_rgba(0,0,0,0.05)]'
               : 'text-muted-foreground hover:bg-accent hover:text-foreground'
           }`}
         >
-          <Settings size={18} className={activeView === 'settings' ? 'rotate-90 transition-transform' : 'transition-transform'} />
+          <Settings key={gearSpinKey} size={18} className={gearReverse ? 'animate-gear-spin-reverse' : 'animate-gear-spin'} />
           <span>{activeView === 'settings' ? '返回' : '设置'}</span>
         </button>
       </div>

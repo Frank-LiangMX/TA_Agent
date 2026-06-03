@@ -5,7 +5,7 @@
 import React, { useState, useEffect } from 'react'
 import { FileText, Loader2 } from 'lucide-react'
 import { SettingsSection, SettingsCard, SettingsRow } from './primitives'
-import { API_BASE } from '@/lib/api'
+import { localApiFetch } from '@/lib/api'
 
 export function PromptSettings() {
   const [prompt, setPrompt] = useState('')
@@ -13,7 +13,7 @@ export function PromptSettings() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/config/prompt`)
+    localApiFetch('/api/config/prompt')
       .then((res) => res.json())
       .then((data) => {
         setPrompt(data.prompt || '')

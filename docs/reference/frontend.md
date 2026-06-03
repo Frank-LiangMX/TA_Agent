@@ -1,8 +1,10 @@
 # 前端设计参考
 
-> 最后更新：2026-05-19
-> 前端路径：`F:\ta_agent\fronted` | 端口 5175
-> 后端路径：`F:\ta_agent` (Python) | WebSocket 端口 8080
+> 最后更新：2026-06-03
+> 前端路径：`apps/web` | 开发端口 5175
+> 本地 Runtime：动态端口，见 **[local-runtime-connection.md](./local-runtime-connection.md)**
+
+**连接约定**：REST 用 `localApiFetch()` / `getApiBase()`；联机列表用 `getDataSource()`；WebSocket 用 `getWsUrl()`。勿用静态 `API_BASE`。
 
 ---
 
@@ -24,17 +26,19 @@ F:\ta_agent\fronted\
     ├── styles/globals.css         # 主题变量 + 动画关键帧
     │
     ├── lib/
-    │   ├── api.ts                 # API_BASE, WS_URL
-    │   ├── cache.ts               # 全局数据缓存
+    │   ├── api.ts                 # getApiBase, localApiFetch, getWsUrl (deprecated: 静态 API_BASE)
+    │   ├── cache.ts               # 全局数据缓存 + getDataSource()
+    │   ├── connection-diagnostic.ts # 连接诊断（端口/健康检查/WS 逐层排查）
     │   └── utils.ts               # 工具函数
     │
     ├── services/
-    │   └── websocket.ts           # WebSocket 客户端
+    │   ├── websocket.ts           # WebSocket 客户端
+    │   └── config.ts              # AppConfig 管理 + agent_mode 切换 + 运行时对齐
     │
     └── components/
         ├── layout/                # 三面板布局
-        │   ├── Sidebar.tsx        # 左侧导航（动态徽章）
-        │   ├── MainPanel.tsx      # 对话面板（流式输出）
+        │   ├── Sidebar.tsx        # 左侧导航（动态徽章，按模式过滤）
+        │   ├── MainPanel.tsx      # 对话面板（流式输出，通用模式含工作区条）
         │   ├── DetailPanel.tsx    # 资产详情面板
         │   └── ResizeHandle.tsx   # 可拖动分隔条
         │
@@ -68,8 +72,11 @@ F:\ta_agent\fronted\
         │   └── DashboardView.tsx  # 项目总览仪表盘
         ├── workflow/
         │   └── WorkflowView.tsx   # 资产流水线视图
+        ├── general/               # 通用模式专用视图
+        │   ├── GeneralWorkspaceView.tsx  # 文件树 + 只读预览
+        │   └── GeneralHistoryView.tsx    # 按工作区分组的历史
         ├── settings/
-        │   └── SettingsView.tsx   # 设置面板
+        │   └── SettingsView.tsx   # 设置面板（含 ModeSettings）
         └── ui/                    # 通用 UI 组件
 ```
 
@@ -375,6 +382,103 @@ python server.py
 cd F:\ta_agent\fronted
 bun run dev
 ```
+
+---
+
+## 七、工作台模式（TA / 通用）
+
+> 详细台账：`docs/experiments/backend/2026-06-01-workbench-dual-mode-roadmap.md`
+
+`agent_mode` 控制前端导航、视图、会话和设置页的展示范围。与 `cloud.enabled`（中心服务器连接）正交。
+
+### 7.0 配置结构（config.ts）
+
+旧 `mode: local|online` + `local` + `online` 已迁移为 `runtime` + `cloud`：
+
+```ts
+interface AppConfig {
+  runtime: RuntimeConfig    // 本地 LLM 配置（始终生效）
+  cloud: CloudConfig        // 中心服务器（可选叠加）
+  agent_mode?: 'ta' | 'general'
+}
+```
+
+| 函数 | 说明 |
+|------|------|
+| `getConfig()` | 读取配置（含旧格式自动迁移） |
+| `isCloudEnabled(config)` | 判断是否启用了中心服务器 |
+| `updateRuntimeConfig(updates)` | 更新本地 LLM 配置 |
+| `updateCloudConfig(updates)` | 更新中心服务器配置 |
+| `getAgentMode()` / `setAgentMode()` | 工作台模式读写 |
+
+兼容导出：`updateLocalConfig` = `updateRuntimeConfig`，`updateOnlineConfig` = `updateCloudConfig`。
+
+切换流程（`ModeSettings.tsx` → `handleSwitchAgentMode`）：
+
+1. 确认对话框
+2. 断开 WebSocket + 清除缓存
+3. 调用 `setAgentMode()`
+4. 打包模式等待 800ms 后端重启
+5. 重新连接 + 刷新视图
+
+### 7.2 导航隔离（Sidebar.tsx）
+
+`isViewAllowed(view, mode)` 控制视图可用性：
+
+| 模式 | 可用视图 |
+|------|---------|
+| TA | 全部（对话、资产库、分析、审核、入库、搜索、流水线、设置） |
+| 通用 | 对话、工作区、历史、设置 |
+
+侧边栏 `navItems` 按模式过滤，副标题切换为「通用工作台」/「游戏 TA AI Agent」。审核/入库徽章仅 TA 模式请求。
+
+### 7.3 通用模式专用视图
+
+**GeneralWorkspaceView**：
+
+- 显示当前会话的工作区名称和路径
+- 可编辑目录（Electron 文件夹选择器或手动输入）
+- 左侧文件树（`GET /api/workspace/tree`）+ 右侧只读预览（`GET /api/workspace/file`）
+- 文件树和预览均受后端沙箱限制
+
+**GeneralHistoryView**：
+
+- 所有会话按 `workspaceName` 分组
+- 支持搜索过滤
+- 点击会话切换到对话视图并重连 WebSocket
+
+### 7.4 对话面板适配（MainPanel.tsx）
+
+通用模式下的差异：
+
+| 区域 | TA 模式 | 通用模式 |
+|------|---------|---------|
+| 顶栏 | 会话选择器 | 会话选择器 + 工作区路径条 |
+| 输入框占位 | 资产操作提示 | 通用对话提示 |
+| @ 资产提及 | 有 | 隐藏 |
+| 流水线进度条 | 有 | 隐藏 |
+| 空状态文案 | TA 相关引导 | 工作区/对话引导 |
+| 标签栏存储 | `loadStoredOpenTabs('ta')` | `loadStoredOpenTabs('general')` |
+
+### 7.5 设置页适配
+
+| 设置模块 | 模式感知 |
+|---------|---------|
+| **ModeSettings** | 独立的工作台模式切换区（与本地/联机模式分离） |
+| **ToolSettings** | `/api/tools` 按模式过滤，Tab 数量随模式变化 |
+| **MemorySettings** | 显示当前 namespace，描述文案按模式区分（TA=项目规范/资产纠正；通用=工具路径/工作习惯） |
+| **PermissionSettings** | 仅列出当前模式可用工具的权限 |
+
+### 7.6 模式切换副作用
+
+切换 `agent_mode` 时前端执行：
+
+1. 断开当前 WebSocket
+2. 清除内存缓存（资产列表、工具列表等）
+3. 重置 API 端点缓存
+4. 等待后端 `/health` 返回一致的 `agentMode`
+5. 重新连接 WebSocket
+6. 导航到对话视图
 
 ---
 

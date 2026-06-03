@@ -3,13 +3,18 @@
  */
 
 import React, { useState, useEffect } from 'react'
-import { SettingsSection, SettingsCard, SettingsSelect, SettingsToggle, SettingsSegmentedControl } from './primitives'
+import { SettingsSection, SettingsCard, SettingsSelect, SettingsToggle, SettingsSegmentedControl, SettingsRow } from './primitives'
 import { tagentClient } from '@/services/websocket'
+import { API_BASE } from '@/lib/api'
+import { FileText, Loader2 } from 'lucide-react'
 
 export function AgentSettings() {
   const [workflowMode, setWorkflowMode] = useState<'step_by_step' | 'auto'>('step_by_step')
   const [autoArchive, setAutoArchive] = useState(true)
   const [archiveDays, setArchiveDays] = useState('7')
+  const [prompt, setPrompt] = useState('')
+  const [promptLength, setPromptLength] = useState(0)
+  const [promptLoading, setPromptLoading] = useState(true)
 
   useEffect(() => {
     tagentClient.getStatus().then((status: Record<string, unknown>) => {
@@ -17,6 +22,17 @@ export function AgentSettings() {
         setWorkflowMode(status.workflowMode as 'step_by_step' | 'auto')
       }
     }).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/config/prompt`)
+      .then((res) => res.json())
+      .then((data) => {
+        setPrompt(data.prompt || '')
+        setPromptLength(data.length || 0)
+      })
+      .catch(() => {})
+      .finally(() => setPromptLoading(false))
   }, [])
 
   const handleWorkflowChange = (mode: string) => {
@@ -27,6 +43,26 @@ export function AgentSettings() {
 
   return (
     <div className="space-y-6">
+      <SettingsSection title="系统提示词" description="Agent 的基础系统提示词（只读）">
+        <SettingsCard>
+          <SettingsRow label="当前提示词" description={`${promptLength} 字符`} icon={<FileText size={16} />}>
+            <span className="text-sm text-muted-foreground">见下方</span>
+          </SettingsRow>
+        </SettingsCard>
+        {promptLoading ? (
+          <div className="flex items-center justify-center py-4 text-muted-foreground">
+            <Loader2 size={16} className="animate-spin mr-2" />
+            <span className="text-sm">加载中...</span>
+          </div>
+        ) : (
+          <div className="rounded-lg bg-muted/50 p-4 max-h-[200px] overflow-y-auto scrollbar-thin">
+            <pre className="text-xs text-muted-foreground whitespace-pre-wrap break-words font-mono leading-relaxed">
+              {prompt || '暂无内容'}
+            </pre>
+          </div>
+        )}
+      </SettingsSection>
+
       <SettingsSection title="工作流模式" description="控制 Agent 执行任务的方式">
         <SettingsCard>
           <SettingsSegmentedControl
@@ -64,22 +100,6 @@ export function AgentSettings() {
               ]}
             />
           )}
-        </SettingsCard>
-      </SettingsSection>
-
-      <SettingsSection title="权限模式" description="控制 Agent 使用工具时的权限策略">
-        <SettingsCard>
-          <SettingsSegmentedControl
-            label="工具权限"
-            description="safe 需确认，ask 询问后执行，allow-all 自动执行"
-            value="ask"
-            onChange={() => {}}
-            options={[
-              { value: 'safe', label: '安全' },
-              { value: 'ask', label: '询问' },
-              { value: 'allow-all', label: '自动' },
-            ]}
-          />
         </SettingsCard>
       </SettingsSection>
     </div>

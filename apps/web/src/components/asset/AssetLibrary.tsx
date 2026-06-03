@@ -9,7 +9,6 @@ import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { Search, Package, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react'
 import { tagentClient } from '@/services/websocket'
 import { useAssets, getDataSource } from '@/lib/cache'
-import { API_BASE } from '@/lib/api'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { DetailPanel } from '@/components/layout/DetailPanel'
@@ -80,7 +79,7 @@ export function AssetLibrary({ onAssetSelect, filterHints, initialDetailAsset, d
   const [filterStatus, setFilterStatus] = useState<string>(filterHints?.status ?? 'all')
   const [sortBy, setSortBy] = useState<'name' | 'type' | 'tri_count'>(filterHints?.sortBy ?? 'name')
   const [currentPage, setCurrentPage] = useState(1)
-  const [dataSource, setDataSource] = useState(API_BASE)
+  const [dataSource, setDataSource] = useState('')
 
   // 内部：选中的资产详情
   const [detailAsset, setDetailAsset] = useState<Record<string, unknown> | null>(null)

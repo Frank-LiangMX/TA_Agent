@@ -87,7 +87,8 @@ _agent_module = None
 def get_agent_module():
     global _agent_module
     if _agent_module is None:
-        import agent as _agent_module
+        # 打包版仅包含 backend/agent_main.py，根目录 agent.py 薄壳不在 _internal
+        import agent_main as _agent_module
     return _agent_module
 
 
@@ -139,6 +140,7 @@ class Session:
         self.created_at: float = time.time()
         self.context_cutoff: int = 0  # 上下文分割点索引
         self.cancel_event = threading.Event()  # 工具执行取消信号
+        self.agent_running = False
 
     def to_dict(self) -> dict:
         return {
@@ -165,6 +167,59 @@ async def send_event(ws: WebSocket, event: str, payload: dict):
         })
     except Exception:
         pass  # 客户端已断开，忽略
+
+
+async def _run_agent_background(
+    ws: WebSocket,
+    session: Session,
+    user_message: str,
+    context_cutoff: int | None = None,
+    thinking: bool = False,
+    images: list[dict] | None = None,
+    attachments: list[dict] | None = None,
+):
+    """后台运行 Agent，避免阻塞 WebSocket 收包（断线可及时 cancel）。"""
+    session.agent_running = True
+    try:
+        await run_agent(
+            ws,
+            session,
+            user_message,
+            context_cutoff=context_cutoff,
+            thinking=thinking,
+            images=images,
+            attachments=attachments,
+        )
+    except Exception as e:
+        traceback.print_exc()
+        await send_event(ws, "error", {
+            "sessionId": session.session_id,
+            "error": f"Agent 执行失败: {str(e)}",
+        })
+    finally:
+        session.agent_running = False
+
+
+def _bind_ws_session(
+    connection_id: str,
+    target_id: str,
+    current_agent_mode: str,
+) -> tuple[Session | None, str | None]:
+    """将 WebSocket 连接绑定到目标会话，失败时返回 (None, error_message)。"""
+    meta = session_manager.get_session(target_id, agent_mode=current_agent_mode)
+    if not meta:
+        return None, f"会话不存在: {target_id}"
+
+    session = Session(target_id)
+    session.history = session_manager.get_messages(target_id, limit=50)
+    sessions[connection_id] = session
+
+    from progress_hook import set_active_session
+
+    set_active_session(target_id)
+    ws_path = (meta.get("workspacePath") or "").strip()
+    set_workspace_path(ws_path if ws_path else None)
+    return session, None
 
 
 async def send_response(ws: WebSocket, request_id: str, result: dict):
@@ -705,6 +760,7 @@ async def run_agent(
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
+    connection_id = uuid.uuid4().hex[:12]
 
     # 客户端可通过 query 参数传递会话 ID 和用户信息
     params = ws.query_params
@@ -748,7 +804,7 @@ async def websocket_endpoint(ws: WebSocket):
 
     session = Session(session_id)
     session.history = history
-    sessions[session_id] = session
+    sessions[connection_id] = session
 
     # 设置活跃会话和取消信号
     from progress_hook import set_active_session, set_cancel_event
@@ -778,6 +834,22 @@ async def websocket_endpoint(ws: WebSocket):
                     await send_error(ws, request_id, "消息不能为空")
                     continue
 
+                if session.agent_running:
+                    await send_error(ws, request_id, "当前会话正在生成，请等待完成或点击停止")
+                    continue
+
+                # 前端可指定 sessionId，须与连接绑定一致
+                target_sid = (params.get("sessionId") or session.session_id or "").strip()
+                if target_sid and target_sid != session.session_id:
+                    bound, bind_err = _bind_ws_session(
+                        connection_id, target_sid, current_agent_mode
+                    )
+                    if bind_err:
+                        await send_error(ws, request_id, bind_err)
+                        continue
+                    session = bound
+                    session_id = target_sid
+
                 # 立即返回确认
                 await send_response(ws, request_id, {"status": "processing"})
 
@@ -793,8 +865,18 @@ async def websocket_endpoint(ws: WebSocket):
                 images = params.get("images", [])
                 attachments = params.get("attachments", [])
 
-                # 运行 Agent
-                await run_agent(ws, session, content.strip(), context_cutoff=ctx_cutoff, thinking=thinking, images=images, attachments=attachments)
+                # 后台运行 Agent，保持 WS 可收 stopGeneration / 断线 cancel
+                asyncio.create_task(
+                    _run_agent_background(
+                        ws,
+                        session,
+                        content.strip(),
+                        context_cutoff=ctx_cutoff,
+                        thinking=thinking,
+                        images=images,
+                        attachments=attachments,
+                    )
+                )
 
             elif method == "setMode":
                 mode = params.get("mode", "step_by_step")
@@ -848,25 +930,19 @@ async def websocket_endpoint(ws: WebSocket):
                     await send_error(ws, request_id, "sessionId 不能为空")
                     continue
 
-                # 查找或创建目标会话
-                meta = session_manager.get_session(target_id, agent_mode=current_agent_mode)
-                if not meta:
-                    await send_error(ws, request_id, f"会话不存在: {target_id}")
+                if session.agent_running:
+                    await send_error(ws, request_id, "正在生成回复，无法切换会话")
                     continue
 
-                # 保存旧会话到 sessions 字典
-                sessions[session.session_id] = session
-
-                # 切换到新会话
+                bound, bind_err = _bind_ws_session(
+                    connection_id, target_id, current_agent_mode
+                )
+                if bind_err:
+                    await send_error(ws, request_id, bind_err)
+                    continue
+                session = bound
                 session_id = target_id
-                session = Session(session_id)
-                session.history = session_manager.get_messages(session_id, limit=50)
-                sessions[session_id] = session
-
-                # 更新活跃会话
-                set_active_session(session_id)
-                ws_path = meta.get("workspacePath") or ""
-                set_workspace_path(ws_path if ws_path else None)
+                meta = session_manager.get_session(target_id, agent_mode=current_agent_mode) or {}
 
                 await send_response(ws, request_id, {
                     "sessionId": session_id,
@@ -887,34 +963,44 @@ async def websocket_endpoint(ws: WebSocket):
         # 触发取消信号，停止正在执行的工具
         session.cancel_event.set()
 
-        # 空会话自动清理（断开时 0 条消息）
-        session_obj = sessions.get(session_id)
-        if session_obj and len(session_obj.history) == 0:
+        session_obj = sessions.get(connection_id)
+        owns_session_slot = session_obj is session
+
+        # 空会话自动清理（仅清理当前连接自己的 session 对象）
+        if owns_session_slot and len(session.history) == 0:
             session_manager.delete_session(session_id, agent_mode=current_agent_mode)
+            sessions.pop(connection_id, None)
             print(f"[WS] 空会话 {session_id} 已自动清理")
-        else:
+        elif owns_session_slot:
+            sessions.pop(connection_id, None)
             print(f"[WS] 会话 {session_id} 断开")
-        del sessions[session_id]
-        set_active_session(None)
+        else:
+            print(f"[WS] 会话 {session_id} 旧连接断开")
+
+        if owns_session_slot:
+            set_active_session(None)
     except Exception as e:
         print(f"[WS] 会话 {session_id} 异常: {e}")
         traceback.print_exc()
-        if session_id in sessions:
-            session_obj = sessions[session_id]
-            if len(session_obj.history) == 0:
+        session_obj = sessions.get(connection_id)
+        if session_obj is session:
+            if len(session.history) == 0:
                 session_manager.delete_session(session_id, agent_mode=current_agent_mode)
-            del sessions[session_id]
+            sessions.pop(connection_id, None)
 
 
 # ===== REST 端点（辅助） =====
 
 @app.get("/health")
 async def health():
+    from config import get_agent_runtime_mode
+
     return {
         "status": "ok",
         "app": "TAgentLocalRuntime",
         "version": "0.1.0",
         "runtime": "local",
+        "agentMode": get_agent_runtime_mode(),
         "ws_sessions": len(sessions),
     }
 
@@ -1170,49 +1256,83 @@ async def save_app_config(payload: dict = Body(...)):
 
 # ===== REST 端点（用户自定义模型管理） =====
 
-@app.get("/api/config/models")
-async def get_models():
-    """获取所有用户自定义模型"""
-    from config import list_models, get_active_model
-    models = list_models()
-    active_id = get_active_model().get("id") if get_active_model() else None
+# ========== Provider / 模型配置 API ==========
+
+@app.get("/api/config/providers")
+async def get_providers():
+    """获取所有 Provider"""
+    from config import list_providers, get_active_provider_model
+    providers = list_providers()
+    active = get_active_provider_model()
+    active_provider_id = active.get("provider_id") if active else None
+    active_model_id = active.get("model") if active else None
     return {
-        "models": models,
-        "active_id": active_id,
+        "providers": providers,
+        "active_provider_id": active_provider_id,
+        "active_model_id": active_model_id,
     }
 
-@app.post("/api/config/models")
-async def create_model(payload: dict = Body(...)):
-    """添加新模型"""
-    from config import add_model
+@app.post("/api/config/providers")
+async def create_provider(payload: dict = Body(...)):
+    """创建新 Provider"""
+    from config import add_provider
     name = payload.get("name", "")
     base_url = payload.get("base_url", "")
-    model = payload.get("model", "")
     api_key = payload.get("api_key", "")
-    extra_headers = payload.get("extra_headers") or {}
     protocol = payload.get("protocol", "openai")
-    if not name or not base_url or not model:
-        return {"success": False, "error": "name, base_url, model 不能为空"}
-    return add_model(name=name, base_url=base_url, model=model, api_key=api_key, extra_headers=extra_headers, protocol=protocol)
+    extra_headers = payload.get("extra_headers") or {}
+    models = payload.get("models", [])
+    enabled = payload.get("enabled", True)
+    if not name or not base_url:
+        return {"success": False, "error": "name 和 base_url 不能为空"}
+    return add_provider(
+        name=name, base_url=base_url, api_key=api_key,
+        protocol=protocol, extra_headers=extra_headers,
+        models=models, enabled=enabled
+    )
 
-@app.put("/api/config/models/{model_id}")
-async def modify_model(model_id: str, payload: dict = Body(...)):
-    """更新模型"""
-    from config import update_model
+@app.put("/api/config/providers/{provider_id}")
+async def modify_provider(provider_id: str, payload: dict = Body(...)):
+    """更新 Provider"""
+    from config import update_provider
     updates = {k: v for k, v in payload.items() if k not in ("id",)}
-    return update_model(model_id, updates)
+    return update_provider(provider_id, updates)
 
-@app.delete("/api/config/models/{model_id}")
-async def remove_model(model_id: str):
-    """删除模型"""
-    from config import delete_model
-    return delete_model(model_id)
+@app.delete("/api/config/providers/{provider_id}")
+async def remove_provider(provider_id: str):
+    """删除 Provider"""
+    from config import delete_provider
+    return delete_provider(provider_id)
 
-@app.post("/api/config/models/{model_id}/activate")
-async def activate_model(model_id: str):
-    """激活指定模型"""
-    from config import set_active_model
-    return set_active_model(model_id)
+@app.patch("/api/config/providers/{provider_id}/enabled")
+async def toggle_provider(provider_id: str, payload: dict = Body(...)):
+    """启用/禁用 Provider"""
+    from config import set_provider_enabled
+    enabled = payload.get("enabled", True)
+    return set_provider_enabled(provider_id, enabled)
+
+@app.post("/api/config/providers/{provider_id}/models")
+async def add_model_to_provider(provider_id: str, payload: dict = Body(...)):
+    """向 Provider 添加模型"""
+    from config import add_model_to_provider as _add
+    model_id = payload.get("id", "")
+    model_name = payload.get("name", "")
+    if not model_id:
+        return {"success": False, "error": "模型 id 不能为空"}
+    return _add(provider_id, model_id, model_name)
+
+@app.delete("/api/config/providers/{provider_id}/models/{model_id}")
+async def remove_model_from_provider(provider_id: str, model_id: str):
+    """从 Provider 移除模型"""
+    from config import remove_model_from_provider as _remove
+    return _remove(provider_id, model_id)
+
+@app.patch("/api/config/providers/{provider_id}/models/{model_id}/enabled")
+async def toggle_model(provider_id: str, model_id: str, payload: dict = Body(...)):
+    """启用/禁用 Provider 下的模型"""
+    from config import set_model_enabled
+    enabled = payload.get("enabled", True)
+    return set_model_enabled(provider_id, model_id, enabled)
 
 
 @app.post("/api/models/discover")
@@ -1267,7 +1387,7 @@ async def wechat_message(payload: dict = Body(...)):
     print(f"[WeChat] 收到消息: {text[:100]} (from: {from_user})")
 
     try:
-        from agent import agent_loop, build_system_prompt
+        from agent_main import agent_loop, build_system_prompt
         from config import get_llm_config
         from openai import OpenAI
 
@@ -1500,7 +1620,7 @@ async def clear_memory():
 @app.get("/api/config/prompt")
 async def get_prompt():
     """获取当前 system prompt"""
-    from agent import build_system_prompt
+    from agent_main import build_system_prompt
     prompt = build_system_prompt()
     return {"prompt": prompt, "length": len(prompt)}
 

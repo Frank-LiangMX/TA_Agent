@@ -5,7 +5,7 @@
 import React, { useState, useEffect } from 'react'
 import { BookOpen, FileCheck, Loader2, Trash2, Eye, EyeOff } from 'lucide-react'
 import { SettingsSection, SettingsCard, SettingsRow } from './primitives'
-import { API_BASE } from '@/lib/api'
+import { localApiFetch } from '@/lib/api'
 import { useConfirm } from '@/hooks/useConfirm'
 
 interface ConventionData {
@@ -31,7 +31,7 @@ export function ConventionSettings() {
 
   const fetchConventions = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/conventions`)
+      const res = await localApiFetch('/api/conventions')
       const json = await res.json()
       setData(json)
     } catch {} finally { setLoading(false) }
@@ -41,7 +41,7 @@ export function ConventionSettings() {
     if (!await confirm('确定卸载已加载的规范文档？', { danger: true })) return
     setClearing(true)
     try {
-      await fetch(`${API_BASE}/api/conventions/clear`, { method: 'POST' })
+      await localApiFetch('/api/conventions/clear', { method: 'POST' })
       fetchConventions()
     } catch {} finally { setClearing(false) }
   }

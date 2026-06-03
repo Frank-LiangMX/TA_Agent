@@ -6,7 +6,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { RefreshCw, Trash2, Brain, AlertTriangle, CheckCircle2, Clock, Zap } from 'lucide-react'
-import { API_BASE } from '@/lib/api'
+import { localApiFetch } from '@/lib/api'
 import { useConfirm } from '@/hooks/useConfirm'
 import { Tooltip } from '@/components/ui/Tooltip'
 
@@ -33,7 +33,7 @@ export function UsageSettings() {
   const fetchLogs = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/api/usage/logs?limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`)
+      const res = await localApiFetch(`/api/usage/logs?limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`)
       const data = await res.json()
       setLogs(data.logs || [])
       setTotal(data.total || 0)
@@ -49,7 +49,7 @@ export function UsageSettings() {
 
   const handleClear = async () => {
     if (!await confirm('确定清空所有用量日志？', { danger: true })) return
-    await fetch(`${API_BASE}/api/usage/logs`, { method: 'DELETE' })
+    await localApiFetch('/api/usage/logs', { method: 'DELETE' })
     setPage(0)
     fetchLogs()
   }

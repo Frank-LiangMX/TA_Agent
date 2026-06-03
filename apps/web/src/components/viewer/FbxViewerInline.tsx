@@ -4,7 +4,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { FBXLoader } from './FBXLoader.js'
 import { TGALoader } from 'three/examples/jsm/loaders/TGALoader.js'
 import { Maximize2, Loader2 } from 'lucide-react'
-import { API_BASE } from '@/lib/api'
+import { localApiFetch } from '@/lib/api'
 
 interface FbxViewerInlineProps {
   assetId: string
@@ -138,7 +138,7 @@ export function FbxViewerInline({ assetId, filePath, onExpand }: FbxViewerInline
           check()
         })
 
-        const res = await fetch(`${API_BASE}/api/assets/${assetId}/file`)
+        const res = await localApiFetch(`/api/assets/${assetId}/file`)
         if (!res.ok || cancelled) return
         const blob = await res.blob()
         const fileName = filePath.split(/[/\\]/).pop() || 'model.fbx'

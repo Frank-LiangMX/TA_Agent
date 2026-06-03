@@ -1,6 +1,6 @@
 # 文档地图
 
-> 最后更新：2026-06-01
+> 最后更新：2026-06-02（含 Agent 协作入口）
 
 ## 文档结构
 
@@ -10,6 +10,7 @@ docs/
 │   ├── backend.md            # 后端架构、数据流、工具系统、集成方案
 │   ├── frontend.md           # 前端架构、WebSocket 协议、组件参考、设计规范
 │   ├── electron.md           # Electron 桌面应用架构、IPC、打包、Bridge 扩展
+│   ├── local-runtime-connection.md  # 本地 Runtime 连接（端口、双模式、排障、验收）
 │   └── pipeline.md           # 资产流水线系统：核心概念 + 前后端 API
 ├── decisions/                # 架构决策记录——为什么这么做 (只追加，不修改)
 │   ├── user-auth-design.md   # 用户认证、权限管理、管理员分配
@@ -31,9 +32,11 @@ docs/
 
 | 你想做什么 | 看什么 |
 |-----------|--------|
+| **编码 Agent 总入口** | **根目录 `AGENTS.md`** |
 | 改后端代码 | `reference/backend.md` |
 | 改前端代码 | `reference/frontend.md` |
 | 改 Electron 桌面应用 | `reference/electron.md` |
+| 连接不稳 / 连错端口 / 双模式会话 | **`reference/local-runtime-connection.md`** |
 | 了解资产流水线 | `reference/pipeline.md` |
 | 了解为什么这么设计 | `decisions/` |
 | 验证一个新思路 | 在 `experiments/` 对应目录下新建带日期的 `.md` |
@@ -52,6 +55,7 @@ docs/
 | 本地 Runtime 与中心服务器架构评估 | `experiments/backend/2026-06-02-local-runtime-cloud-server-architecture.md` |
 | 本地 Runtime 健康检查实施记录 | `experiments/backend/2026-06-02-local-runtime-health-check-implementation.md` |
 | 动态 Runtime 端口实施记录 | `experiments/backend/2026-06-02-dynamic-runtime-port-implementation.md` |
+| **本地 Runtime 连接（稳定版说明）** | **`reference/local-runtime-connection.md`** |
 | **工作台双模式（TA/通用）实施台账** | `experiments/backend/2026-06-01-workbench-dual-mode-roadmap.md` |
 
 ## 写入规则
@@ -70,3 +74,5 @@ docs/
 - 2026-06-02：新增本地 Runtime 与中心服务器架构评估
 - 2026-06-02：新增本地 Runtime 健康检查实施记录
 - 2026-06-02：新增动态 Runtime 端口实施记录
+- 2026-06-02：新增 `reference/local-runtime-connection.md`（整合连接方案与验收）
+- 2026-06-02：新增根目录 `AGENTS.md`（其他 Agent 协作入口）

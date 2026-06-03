@@ -31,6 +31,7 @@ import { Tooltip } from '@/components/ui/Tooltip'
 import { AppTitleBar } from '@/components/layout/AppTitleBar'
 import { PAGE_TITLE_BAR_STYLE } from '@/components/layout/PageHeader'
 import { loadStoredActiveTab, loadStoredOpenTabs, saveStoredActiveTab, saveStoredOpenTabs } from '@/lib/session-storage'
+import { getConfig } from '@/services/config'
 
 interface ProgressEvent {
   phase: string
@@ -58,6 +59,15 @@ function formatElapsed(seconds: number): string {
   const s = Math.round(seconds % 60)
   return `${m}m${s}s`
 }
+
+const findActiveTurnIndex = (msgs: ChatMessageType[]) =>
+  msgs.findIndex((m) => m.role === 'assistant' && !!(m as any)._turnOpen)
+
+const closeOpenTurn = (msgs: ChatMessageType[]) =>
+  msgs.map((m) => {
+    if (m.role !== 'assistant' || !(m as any)._turnOpen) return m
+    return finalizeTurn(m as AssistantTurnMessage, m.content || '', undefined)
+  })
 
 interface MainPanelProps {
   onAssetSelect: (asset: Record<string, unknown>) => void
@@ -119,6 +129,8 @@ export function MainPanel({ onAssetSelect, agentMode = 'ta' }: MainPanelProps) {
   const tabMessagesRef = useRef(tabMessages)
   tabMessagesRef.current = tabMessages
   const pendingNewTabRef = useRef(false)
+  const streamingTabsRef = useRef(streamingTabs)
+  streamingTabsRef.current = streamingTabs
 
   useEffect(() => {
     const nextOpenTabs = loadStoredOpenTabs(agentMode)
@@ -524,6 +536,10 @@ const loadTabHistory = useCallback(async (tabId: string) => {
     // 连接确认：捕获后端分配的 sessionId
     const unsubConnected = tagentClient.on('connected', (payload: any) => {
       if (!payload?.sessionId) return
+      // 自动重连时若仍在生成，不要重载标签/历史（否则会像「断线重连」且卡住思考中）
+      if (streamingTabsRef.current.size > 0 || tagentClient.agentInFlight) {
+        return
+      }
       const newSessionId = payload.sessionId as string
       const storedActive = loadStoredActiveTab(agentMode)
       const isKnownTab = openTabIdsRef.current.includes(newSessionId)
@@ -538,12 +554,18 @@ const loadTabHistory = useCallback(async (tabId: string) => {
         (openTabIdsRef.current.length === 0 && !storedActive && !activeTabIdRef.current)
 
       if (!shouldTrackTab) {
-        // 意外的新会话（如误触 connect 无 sessionId）：切回已有标签，不新增
-        console.warn('[Session] 忽略意外新会话:', newSessionId)
-        const fallbackId = storedActive || activeTabIdRef.current || openTabIdsRef.current[0]
-        if (fallbackId && fallbackId !== newSessionId) {
-          tagentClient.reconnectWithSession(fallbackId).catch(() => {})
+        // 存储的 sessionId 与当前工作台不一致时，采纳后端会话，避免反复 reconnect 导致「连不上」
+        if (storedActive && storedActive !== newSessionId) {
+          console.warn('[Session] 活动会话已失效，切换到后端会话:', newSessionId)
+          saveStoredActiveTab(agentMode, newSessionId)
+          setOpenTabIds([newSessionId])
+          setActiveTabId(newSessionId)
+          if (!tabMessagesRef.current[newSessionId]?.length) {
+            loadTabHistory(newSessionId)
+          }
+          return
         }
+        console.warn('[Session] 忽略意外新会话:', newSessionId)
         return
       }
 
@@ -581,22 +603,32 @@ const loadTabHistory = useCallback(async (tabId: string) => {
       }
     })
 
-    const findActiveTurnIndex = (msgs: ChatMessageType[]) =>
-      msgs.findIndex((m) => m.role === 'assistant' && !!(m as any)._turnOpen)
-
-    const closeOpenTurn = (msgs: ChatMessageType[]) =>
-      msgs.map((m) => {
-        if (m.role !== 'assistant' || !(m as any)._turnOpen) return m
-        return finalizeTurn(m as AssistantTurnMessage, m.content || '', undefined)
-      })
-
     const resolveEventTabId = (eventSessionId?: string | null) => {
-      const wsId = tagentClient.sessionId
       const active = activeTabIdRef.current
+      const wsId = tagentClient.sessionId
+      // 生成中：事件一律落到用户正在看的标签，避免 session 不一致导致卡住「思考中」
+      if (active && streamingTabsRef.current.has(active)) {
+        return active
+      }
       if (eventSessionId && (eventSessionId === active || eventSessionId === wsId)) {
         return eventSessionId
       }
       return wsId || active || eventSessionId || null
+    }
+
+    const endStreamingForTabs = (...tabIds: Array<string | null | undefined>) => {
+      setIsStreaming(false)
+      setActiveTools(new Map())
+      setProgress(null)
+      const ids = new Set(tabIds.filter((id): id is string => !!id))
+      const active = activeTabIdRef.current
+      if (active) ids.add(active)
+      if (ids.size === 0) return
+      setStreamingTabs((prev) => {
+        const next = new Set(prev)
+        ids.forEach((id) => next.delete(id))
+        return next
+      })
     }
 
     const applyToOpenTurn = (
@@ -692,9 +724,7 @@ const loadTabHistory = useCallback(async (tabId: string) => {
     const unsubDone = tagentClient.on('done', (payload: any) => {
       const { content, sessionId, suggestion, thinking } = payload
       const currentTabId = resolveEventTabId(sessionId)
-      setIsStreaming(false)
-      setActiveTools(new Map())
-      setProgress(null)
+      endStreamingForTabs(currentTabId, sessionId, activeTabIdRef.current)
       setSessionRefreshKey((k) => k + 1)
 
       if (suggestion) setPromptSuggestion(suggestion)
@@ -703,14 +733,6 @@ const loadTabHistory = useCallback(async (tabId: string) => {
         const tokensEstimate = content.length * 2
         import('@/services/sync').then(({ logLlmUsage }) => {
           logLlmUsage('agent', tokensEstimate).catch(() => {})
-        })
-      }
-
-      if (currentTabId) {
-        setStreamingTabs((prev) => {
-          const next = new Set(prev)
-          next.delete(currentTabId)
-          return next
         })
       }
 
@@ -770,14 +792,8 @@ const loadTabHistory = useCallback(async (tabId: string) => {
     const unsubError = tagentClient.on('error', (payload: any) => {
       const { error, sessionId } = payload
       const currentTabId = resolveEventTabId(sessionId) || activeTabIdRef.current
-      setIsStreaming(false)
-      setActiveTools(new Map())
+      endStreamingForTabs(currentTabId, sessionId, activeTabIdRef.current)
       if (currentTabId) {
-        setStreamingTabs((prev) => {
-          const next = new Set(prev)
-          next.delete(currentTabId)
-          return next
-        })
         const errText =
           typeof error === 'string' ? error : (error != null ? String(error) : '未知错误')
         setMessagesForTab(currentTabId, (prev) => [
@@ -883,13 +899,13 @@ const loadTabHistory = useCallback(async (tabId: string) => {
     }
 
     if (connectionStatus === 'connected') {
-      let messageTabId = targetTabId
+      const messageTabId = targetTabId
       try {
-        if (targetTabId && tagentClient.sessionId && targetTabId !== tagentClient.sessionId) {
-          await tagentClient.switchSession(targetTabId)
-        }
-        messageTabId = tagentClient.sessionId || targetTabId
-        setMessagesForTab(messageTabId, (prev) => [...prev, userMsg])
+        setMessagesForTab(messageTabId, (prev) => [
+          ...prev,
+          userMsg,
+          syncTurnDerivedFields(createEmptyTurn()),
+        ])
         await tagentClient.sendMessage(
           content,
           contextCutoff,
@@ -900,18 +916,21 @@ const loadTabHistory = useCallback(async (tabId: string) => {
         )
         setTimeout(() => setSessionRefreshKey((k) => k + 1), 300)
       } catch (e: any) {
-        setIsStreaming(false)
         setStreamingTabs(prev => {
           const next = new Set(prev)
           next.delete(targetTabId)
           return next
         })
-        setMessagesForTab(messageTabId, (prev) => [...prev, {
-          id: `error-${Date.now()}`,
-          role: 'assistant',
-          content: `❌ 发送失败: ${e instanceof Error ? e.message : String(e)}`,
-          timestamp: Date.now(),
-        }])
+        setIsStreaming(false)
+        setMessagesForTab(messageTabId, (prev) => [
+          ...closeOpenTurn(prev),
+          {
+            id: `error-${Date.now()}`,
+            role: 'assistant',
+            content: `❌ 发送失败: ${e instanceof Error ? e.message : String(e)}`,
+            timestamp: Date.now(),
+          },
+        ])
       }
     } else {
       // Mock 模式
@@ -1365,12 +1384,15 @@ function ConnectionBadge({ status }: { status: ConnectionStatus }) {
     connecting: 'bg-yellow-500 animate-pulse-status',
     disconnected: 'bg-red-500',
   }
-  const mode = localStorage.getItem('tagent-mode') || 'local'
-  const modeLabel = mode === 'online' ? '联机模式' : '本地模式'
+  const [cloudEnabled, setCloudEnabled] = useState(false)
+  useEffect(() => {
+    getConfig().then(cfg => setCloudEnabled(cfg.cloud?.enabled === true)).catch(() => {})
+  }, [])
+  const label = cloudEnabled ? '中心服' : '本地'
   return (
     <span className="text-xs flex items-center gap-1.5 text-muted-foreground">
       <span className={`w-1.5 h-1.5 rounded-full ${dotColor[status]}`} />
-      {modeLabel}
+      {label}
     </span>
   )
 }

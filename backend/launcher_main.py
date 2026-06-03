@@ -2,8 +2,8 @@
 TAgent 桌面启动器
 
 双击启动：
-1. 启动后端 server（本机 8080 端口）
-2. 自动打开浏览器 http://localhost:8080
+1. 启动后端 server（默认本机 8080 端口，可用 TAGENT_RUNTIME_PORT 覆盖）
+2. 自动打开浏览器 http://localhost:端口
 3. 系统托盘显示图标（可选）
 
 打包命令：
@@ -55,8 +55,11 @@ if not getattr(sys, 'frozen', False):
     if BASE_DIR not in sys.path:
         sys.path.insert(0, BASE_DIR)
 
-SERVER_HOST = "127.0.0.1"
-SERVER_PORT = 8080
+SERVER_HOST = os.environ.get("TAGENT_RUNTIME_HOST", "127.0.0.1")
+try:
+    SERVER_PORT = int(os.environ.get("TAGENT_RUNTIME_PORT", "8080"))
+except ValueError:
+    SERVER_PORT = 8080
 BROWSER_URL = f"http://{SERVER_HOST}:{SERVER_PORT}"
 
 
@@ -104,7 +107,8 @@ def start_server():
             print(f"[TAgent] 前端: 开发模式（需要 npm run dev）")
 
         print(f"[TAgent] 启动服务器 {BROWSER_URL}")
-        uvicorn.run(app, host="0.0.0.0", port=SERVER_PORT, log_level="warning")
+        bind_host = os.environ.get("TAGENT_RUNTIME_BIND_HOST", "0.0.0.0")
+        uvicorn.run(app, host=bind_host, port=SERVER_PORT, log_level="warning")
     except Exception as e:
         print(f"[TAgent] 服务器启动失败: {e}")
         input("按回车退出...")

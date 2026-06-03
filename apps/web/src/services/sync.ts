@@ -1,16 +1,16 @@
 /**
- * 联机模式同步服务
- * 在联机模式下自动同步数据到服务器
+ * 中心服务器模式同步服务
+ * 在中心服务器模式下自动同步数据到服务器
  */
 
-import { isOnlineMode, getUser, logUsageIfOnline, syncAssetIfOnline } from './mode'
+import { checkCloudEnabled, getUser, logUsageIfOnline, syncAssetIfOnline } from './mode'
 import * as api from './api'
 
 /**
  * 同步工具执行结果到服务器
  */
 export async function syncToolResult(toolName: string, result: unknown): Promise<void> {
-  if (!(await isOnlineMode())) return
+  if (!(await checkCloudEnabled())) return
 
   try {
     // 解析结果
@@ -80,7 +80,7 @@ async function syncReviewResult(data: Record<string, unknown>): Promise<void> {
  * 记录 LLM 用量
  */
 export async function logLlmUsage(model: string, tokensEstimate: number): Promise<void> {
-  if (!(await isOnlineMode())) return
+  if (!(await checkCloudEnabled())) return
   await logUsageIfOnline({
     model,
     tokens_total: tokensEstimate,

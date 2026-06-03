@@ -8,7 +8,7 @@ import {
   RefreshCw, Check, X, ChevronDown, ChevronRight,
 } from 'lucide-react'
 import { SettingsSection, SettingsCard, SettingsRow } from './primitives'
-import { API_BASE } from '@/lib/api'
+import { localApiFetch } from '@/lib/api'
 import { useConfirm } from '@/hooks/useConfirm'
 
 interface McpServerStatus {
@@ -55,8 +55,8 @@ export function McpSettings() {
   const fetchAll = async () => {
     setLoading(true)
     const [sr, cr] = await Promise.all([
-      fetch(`${API_BASE}/api/mcp`).then(r => r.json()).catch(() => ({ servers: {} })),
-      fetch(`${API_BASE}/api/mcp/servers`).then(r => r.json()).catch(() => ({ servers: {} })),
+      localApiFetch('/api/mcp').then(r => r.json()).catch(() => ({ servers: {} })),
+      localApiFetch('/api/mcp/servers').then(r => r.json()).catch(() => ({ servers: {} })),
     ])
     setStatuses(sr.servers || {})
     setConfigs(cr.servers || {})
@@ -83,7 +83,7 @@ export function McpSettings() {
     }
     const config: Record<string, unknown> = { type: 'stdio', command: formCommand, args, enabled: true }
     if (Object.keys(env).length > 0) config.env = env
-    const res = await fetch(`${API_BASE}/api/mcp/servers`, {
+    const res = await localApiFetch('/api/mcp/servers', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: formName.trim(), config }),
@@ -110,7 +110,7 @@ export function McpSettings() {
     }
     const config: Record<string, unknown> = { type: 'stdio', command: formCommand, args }
     if (Object.keys(env).length > 0) config.env = env
-    const res = await fetch(`${API_BASE}/api/mcp/test`, {
+    const res = await localApiFetch('/api/mcp/test', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ config }),
@@ -125,7 +125,7 @@ export function McpSettings() {
   }
 
   const handleToggle = async (name: string, enabled: boolean) => {
-    const res = await fetch(`${API_BASE}/api/mcp/servers/${encodeURIComponent(name)}`, {
+    const res = await localApiFetch(`/api/mcp/servers/${encodeURIComponent(name)}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enabled }),
@@ -146,7 +146,7 @@ export function McpSettings() {
 
   const handleDelete = async (name: string) => {
     if (!await confirm(`确定删除 MCP 服务器 "${name}"？`, { danger: true })) return
-    const res = await fetch(`${API_BASE}/api/mcp/servers/${encodeURIComponent(name)}`, {
+    const res = await localApiFetch(`/api/mcp/servers/${encodeURIComponent(name)}`, {
       method: 'DELETE',
     }).then(r => r.json())
     if (res.success) {
@@ -159,7 +159,7 @@ export function McpSettings() {
 
   const handleReload = async () => {
     setReloading(true)
-    const res = await fetch(`${API_BASE}/api/mcp/reload`, { method: 'POST' }).then(r => r.json())
+    const res = await localApiFetch('/api/mcp/reload', { method: 'POST' }).then(r => r.json())
     if (res.success) {
       showMsg('success', `重新加载完成，${res.loaded_tools} 个工具已注册`)
     } else {

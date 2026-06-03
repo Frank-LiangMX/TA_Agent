@@ -4,7 +4,7 @@
  */
 
 import { getConfig } from './config'
-import { API_BASE } from '@/lib/api'
+import { getDataSource } from '@/lib/cache'
 
 const API_TIMEOUT = 10000
 
@@ -12,13 +12,7 @@ const API_TIMEOUT = 10000
  * 获取服务器基础 URL
  */
 async function getBaseUrl(): Promise<string> {
-  const config = await getConfig()
-  if (config.mode === 'online' && config.online.server_host) {
-    const { server_host, server_port } = config.online
-    return `http://${server_host}:${server_port}`
-  }
-  // 本地模式或未配置联机模式，使用本地后端
-  return API_BASE
+  return getDataSource()
 }
 
 /**

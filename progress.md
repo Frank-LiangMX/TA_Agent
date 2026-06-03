@@ -1,6 +1,6 @@
 # 项目进度
 
-> 最后更新：2026-06-01
+> 最后更新：2026-06-02
 
 ---
 
@@ -127,6 +127,27 @@
 
 ---
 
+## 本地 Runtime 连接（2026-06-02 收口）
+
+> **Agent 入口**：根目录 [`AGENTS.md`](AGENTS.md)  
+> **排障 / 验收**：[`docs/reference/local-runtime-connection.md`](docs/reference/local-runtime-connection.md)
+
+### 已完成
+
+- Phase 1：`/health` 返回 `TAgentLocalRuntime`；启动脚本与 Electron 打包等待 health
+- Phase 2：动态端口 + preload `runtimeEndpoint` + 前端 `getApiBase` / `localApiFetch`
+- Electron 打包复用 8080 上已有 TAgent；微信转发用 `getServerUrl()`
+- 打包修复：`server.py` → `agent_main`（`TAgent.spec` hiddenimports）
+- 设置页「连接诊断」；`ensureRuntimeAgentModeAligned`；WS 后台 Agent、会话标签相关修补
+
+### 未完成
+
+- Phase 3：配置拆 `runtime` / `cloud`（见架构评估文档）
+- Phase 4：中心服同步协议
+- `reference/backend.md` 双模式细节、general-workbench 用户指南（见双模式台账）
+
+---
+
 ## 工作台双模式（TA / 通用）
 
 > **单一事实来源**：[实施台账](docs/experiments/backend/2026-06-01-workbench-dual-mode-roadmap.md)  
@@ -139,7 +160,8 @@
 
 ### P1（核心体验）
 - [ ] 入库向导 — 分步引导流程（前端）
-- [ ] 客户端双模式 — 本地模式 + 联机模式切换
+- [x] 客户端双模式 — TA/通用工作台（实现见双模式台账；发版验收 §5 待勾）
+- [ ] 联机架构落地 — 中心服仅协作/同步，Agent 仍走本地 Runtime（Phase 3–4，见 AGENTS.md）
 - [ ] SSO 登录集成 — 接入公司 XSJSSO 登录系统
 - [ ] 数据同步 — 客户端与服务器数据同步
 

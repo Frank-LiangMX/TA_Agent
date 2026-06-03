@@ -48,8 +48,11 @@ export function LoginView({ onLoginSuccess, onBack }: LoginViewProps) {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
-      <div className="max-w-sm w-full space-y-6 p-8 bg-card rounded-lg shadow border border-border">
+    <div
+      className="min-h-screen flex items-center justify-center"
+      style={{ background: 'linear-gradient(135deg, hsl(var(--shell-start)) 0%, hsl(var(--shell-end)) 100%)' }}
+    >
+      <div className="max-w-sm w-full space-y-6 p-8 rounded-2xl border border-white/20 bg-white/60 backdrop-blur-xl shadow-xl dark:bg-black/30 dark:border-white/10">
         <div className="text-center">
           <h2 className="text-xl font-bold text-foreground">连接服务器</h2>
           <p className="mt-1 text-sm text-muted-foreground">输入服务器地址和登录信息</p>
@@ -112,14 +115,14 @@ export function LoginView({ onLoginSuccess, onBack }: LoginViewProps) {
             <button
               type="button"
               onClick={onBack}
-              className="flex-1 py-2 px-4 border border-border text-foreground rounded-md hover:bg-muted"
+              className="flex-1 py-2 px-4 border border-border/50 text-foreground rounded-xl hover:bg-white/40 dark:hover:bg-white/5 transition-colors"
             >
               返回
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="flex-1 py-2 px-4 bg-primary text-primary-foreground rounded-md hover:opacity-90 disabled:opacity-50"
+              className="flex-1 py-2 px-4 bg-foreground text-background rounded-xl hover:opacity-90 disabled:opacity-50 transition-opacity font-medium"
             >
               {loading ? '连接中...' : '连接'}
             </button>

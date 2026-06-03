@@ -1,7 +1,8 @@
 # 客户端双模式设计
 
-> 日期：2026-05-21
-> 状态：已确定
+> 日期：2026-05-21  
+> 状态：已确定（数据与配额视角）  
+> **2026-06 补充**：Agent 执行路径以 [`AGENTS.md`](../../AGENTS.md) 与 [`local-runtime-connection.md`](../reference/local-runtime-connection.md) 为准——**联机不取消本地 Runtime**；中心服不做本机 Blender/UE/Agent 循环。配置层 `mode: local | online` 未来将拆为 `runtime` + `cloud`（Phase 3，未实现）。
 
 ---
 

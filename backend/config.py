@@ -38,6 +38,50 @@ LLM_CONFIGS = {
 # 当前使用的 LLM
 ACTIVE_LLM = "glm"  # 可选: LLM_CONFIGS 中的任意 key
 
+def _migrate_legacy_mode(app_config: dict) -> dict:
+    """将旧 mode: local|online 迁移为 runtime + cloud 结构。"""
+    if "mode" not in app_config:
+        return app_config
+
+    old_mode = app_config.pop("mode")
+
+    # 迁移 local → runtime
+    if "runtime" not in app_config:
+        local = app_config.pop("local", {})
+        app_config["runtime"] = {
+            "llm_provider": local.get("llm_provider", ""),
+            "llm_api_key": local.get("llm_api_key", ""),
+            "llm_base_url": local.get("llm_base_url", ""),
+            "llm_model": local.get("llm_model", ""),
+            "blender_path": local.get("blender_path", ""),
+        }
+    else:
+        app_config.pop("local", None)
+
+    # 迁移 online → cloud
+    if "cloud" not in app_config:
+        online = app_config.pop("online", {})
+        app_config["cloud"] = {
+            "enabled": old_mode == "online",
+            "server_url": f"{online.get('server_host', '')}:{online.get('server_port', 8081)}" if old_mode == "online" else "",
+            "user_id": online.get("user_id", ""),
+            "user_name": online.get("user_name", ""),
+        }
+    else:
+        app_config.pop("online", None)
+
+    # 写回文件
+    try:
+        config_path = os.path.join(CONFIGS_DIR, "app-config.json")
+        if config_path:
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(app_config, f, ensure_ascii=False, indent=2)
+    except OSError:
+        pass
+
+    return app_config
+
+
 def _get_runtime_app_config() -> dict:
     """读取运行目录里的前端/桌面配置。"""
     config_dir = CONFIGS_DIR
@@ -49,7 +93,9 @@ def _get_runtime_app_config() -> dict:
     try:
         with open(config_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        return data if isinstance(data, dict) else {}
+        if not isinstance(data, dict):
+            return {}
+        return _migrate_legacy_mode(data)
     except (OSError, json.JSONDecodeError):
         return {}
 
@@ -80,44 +126,41 @@ def get_memory_namespace() -> str:
 
 def _get_runtime_llm_config() -> dict | None:
     app_config = _get_runtime_app_config()
-    if app_config.get("mode", "local") != "local":
+    cloud = app_config.get("cloud") or {}
+    if cloud.get("enabled"):
         return None
 
-    # 优先使用用户自定义模型列表中的激活模型
-    active_model = get_active_model()
-    if active_model:
-        # 模型必须有自己的 API Key，不 fallback 到旧配置
-        api_key = active_model.get("api_key") or ""
-        base_url = active_model.get("base_url") or ""
-        model = active_model.get("model") or ""
-        extra_headers = active_model.get("extra_headers") or {}
-
+    # 优先使用 Provider 模型中的激活模型
+    active = get_active_provider_model()
+    if active:
+        api_key = active.get("api_key") or ""
+        base_url = active.get("base_url") or ""
+        model = active.get("model") or ""
         if not base_url or not model:
             return None
-
         return {
-            "name": active_model.get("name", "Custom"),
+            "name": active.get("model_name", active.get("provider_name", "Custom")),
             "type": "custom",
             "base_url": base_url,
             "api_key": api_key,
             "model": model,
-            "protocol": active_model.get("protocol", "openai"),
-            "extra_headers": extra_headers,
+            "protocol": active.get("protocol", "openai"),
+            "extra_headers": active.get("extra_headers", {}),
         }
 
-    # 兼容旧配置：从 local 配置读取（仅在没有自定义模型时）
-    local = app_config.get("local") or {}
-    api_key = local.get("llm_api_key") or ""
-    llm_base_url = local.get("llm_base_url") or ""
-    model = local.get("llm_model") or ""
+    # 兼容旧配置
+    runtime = app_config.get("runtime") or app_config.get("local") or {}
+    api_key = runtime.get("llm_api_key") or ""
+    llm_base_url = runtime.get("llm_base_url") or ""
+    model = runtime.get("llm_model") or ""
 
     if not llm_base_url or not model:
         return None
 
-    extra_headers = local.get("llm_extra_headers") or {}
+    extra_headers = runtime.get("llm_extra_headers") or {}
 
     return {
-        "name": local.get("llm_name") or "Custom",
+        "name": runtime.get("llm_name") or "Custom",
         "type": "custom",
         "base_url": llm_base_url,
         "api_key": api_key,
@@ -129,8 +172,6 @@ def get_llm_config():
     """获取当前活跃的 LLM 配置"""
     runtime_config = _get_runtime_llm_config()
     if runtime_config:
-        if not runtime_config.get("api_key"):
-            raise ValueError("LLM API Key 未配置，请先在启动向导或设置页配置本地模式。")
         return runtime_config
     if ACTIVE_LLM not in LLM_CONFIGS:
         raise ValueError(f"未知的 LLM: {ACTIVE_LLM}，可用: {list(LLM_CONFIGS.keys())}")
@@ -145,14 +186,14 @@ def list_llm_configs():
 
     # 添加用户已保存的自定义配置（来自 app-config.json）
     app_config = _get_runtime_app_config()
-    local = app_config.get("local", {})
-    if local.get("llm_base_url") and local.get("llm_model"):
+    runtime = app_config.get("runtime") or app_config.get("local") or {}
+    if runtime.get("llm_base_url") and runtime.get("llm_model"):
         result.append({
             "key": "user_custom",
-            "name": local.get("llm_name") or "自定义配置",
-            "type": local.get("llm_type", "custom"),
-            "base_url": local.get("llm_base_url"),
-            "model": local.get("llm_model"),
+            "name": runtime.get("llm_name") or "自定义配置",
+            "type": runtime.get("llm_type", "custom"),
+            "base_url": runtime.get("llm_base_url"),
+            "model": runtime.get("llm_model"),
             "active": True,  # 用户自定义配置始终是当前使用的
         })
 
@@ -164,7 +205,7 @@ def list_llm_configs():
             "type": cfg.get("type", "cloud"),
             "base_url": cfg["base_url"],
             "model": cfg["model"],
-            "active": not local.get("llm_base_url") and key == ACTIVE_LLM,
+            "active": not runtime.get("llm_base_url") and key == ACTIVE_LLM,
         })
     return result
 
@@ -188,18 +229,37 @@ def add_llm_config(key: str, name: str, base_url: str, model: str, api_key: str 
     }
     return {"success": True, "key": key, "message": f"已添加 {name}，使用 /llm switch {key} 切换"}
 
-# ========== 用户自定义模型管理（存储在 app-config.json）==========
+# ========== LLM Provider 管理（存储在 app-config.json）==========
+# 两级结构: providers[] → 内嵌 models[]
+#
+# 数据格式:
+# {
+#   "providers": [
+#     {
+#       "id": "uuid",
+#       "name": "DeepSeek",
+#       "base_url": "https://api.deepseek.com/v1",
+#       "api_key": "",
+#       "protocol": "openai",
+#       "extra_headers": {},
+#       "models": [
+#         {"id": "deepseek-v4-pro", "name": "DeepSeek V4 Pro", "enabled": True},
+#         {"id": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "enabled": False}
+#       ],
+#       "enabled": True
+#     }
+#   ]
+# }
 
-def _get_models() -> list:
-    """获取用户自定义模型列表"""
+def _get_providers() -> list:
+    """获取 providers 列表"""
     app_config = _get_runtime_app_config()
-    return app_config.get("models", [])
+    return app_config.get("providers", [])
 
-def _save_models(models: list) -> None:
-    """保存用户自定义模型列表"""
+def _save_providers(providers: list) -> None:
+    """保存 providers 列表"""
     app_config = _get_runtime_app_config()
-    app_config["models"] = models
-    # 保存到文件
+    app_config["providers"] = providers
     config_dir = CONFIGS_DIR
     if not config_dir:
         return
@@ -208,89 +268,167 @@ def _save_models(models: list) -> None:
     with open(config_path, "w", encoding="utf-8") as f:
         json.dump(app_config, f, ensure_ascii=False, indent=2)
 
-def list_models() -> list:
-    """列出所有用户自定义模型（不暴露 api_key）"""
-    models = _get_models()
+def list_providers() -> list:
+    """列出所有 Provider（不暴露 api_key）"""
+    providers = _get_providers()
     result = []
-    for m in models:
-        item = {k: v for k, v in m.items() if k != "api_key"}
-        item["has_api_key"] = bool(m.get("api_key"))
+    for p in providers:
+        item = {k: v for k, v in p.items() if k != "api_key"}
+        item["has_api_key"] = bool(p.get("api_key"))
+        # 模型列表不暴露 api_key
+        item["models"] = [
+            {k: v for k, v in m.items()}
+            for m in p.get("models", [])
+        ]
         result.append(item)
     return result
 
-def get_model(model_id: str) -> dict | None:
-    """获取指定模型"""
-    models = _get_models()
-    for m in models:
-        if m.get("id") == model_id:
-            return m
+def get_provider(provider_id: str) -> dict | None:
+    """获取指定 Provider"""
+    providers = _get_providers()
+    for p in providers:
+        if p.get("id") == provider_id:
+            return p
     return None
 
-def add_model(name: str, base_url: str, model: str, api_key: str, extra_headers: dict = None, protocol: str = "openai") -> dict:
-    """添加新模型"""
+def add_provider(name: str, base_url: str, api_key: str, protocol: str = "openai",
+                  extra_headers: dict = None, models: list = None, enabled: bool = True) -> dict:
+    """添加新 Provider"""
     import uuid
-    models = _get_models()
-    new_model = {
+    providers = _get_providers()
+    new_provider = {
         "id": str(uuid.uuid4())[:8],
         "name": name,
         "base_url": base_url,
-        "model": model,
         "api_key": api_key,
         "protocol": protocol,
         "extra_headers": extra_headers or {},
+        "models": models or [],
+        "enabled": enabled,
     }
-    models.append(new_model)
-    _save_models(models)
-    return {"success": True, "id": new_model["id"], "model": {k: v for k, v in new_model.items() if k != "api_key"}}
+    providers.append(new_provider)
+    _save_providers(providers)
+    return {
+        "success": True,
+        "id": new_provider["id"],
+        "provider": {k: v for k, v in new_provider.items() if k != "api_key"}
+    }
 
-def update_model(model_id: str, updates: dict) -> dict:
-    """更新模型"""
-    models = _get_models()
-    for i, m in enumerate(models):
-        if m.get("id") == model_id:
-            # 不允许通过 updates 修改 id
+def update_provider(provider_id: str, updates: dict) -> dict:
+    """更新 Provider"""
+    providers = _get_providers()
+    for i, p in enumerate(providers):
+        if p.get("id") == provider_id:
             updates.pop("id", None)
-            # 如果 api_key 为空，保留原来的
             if not updates.get("api_key"):
                 updates.pop("api_key", None)
-            models[i].update(updates)
-            _save_models(models)
-            return {"success": True, "model": {k: v for k, v in models[i].items() if k != "api_key"}}
-    return {"success": False, "error": "模型不存在"}
+            providers[i].update(updates)
+            _save_providers(providers)
+            return {"success": True, "provider": {k: v for k, v in providers[i].items() if k != "api_key"}}
+    return {"success": False, "error": "Provider 不存在"}
 
-def delete_model(model_id: str) -> dict:
-    """删除模型"""
-    models = _get_models()
-    original_len = len(models)
-    models = [m for m in models if m.get("id") != model_id]
-    if len(models) == original_len:
-        return {"success": False, "error": "模型不存在"}
-    _save_models(models)
+def delete_provider(provider_id: str) -> dict:
+    """删除 Provider"""
+    providers = _get_providers()
+    original_len = len(providers)
+    providers = [p for p in providers if p.get("id") != provider_id]
+    if len(providers) == original_len:
+        return {"success": False, "error": "Provider 不存在"}
+    _save_providers(providers)
     return {"success": True}
 
-def get_active_model() -> dict | None:
-    """获取当前启用的模型"""
-    models = _get_models()
-    for m in models:
-        if m.get("active"):
-            return m
-    # 如果没有激活的，返回第一个
-    if models:
-        return models[0]
+def add_model_to_provider(provider_id: str, model_id: str, model_name: str = None) -> dict:
+    """向 Provider 添加模型"""
+    providers = _get_providers()
+    for i, p in enumerate(providers):
+        if p.get("id") == provider_id:
+            models = p.get("models", [])
+            if any(m.get("id") == model_id for m in models):
+                return {"success": False, "error": "模型已存在"}
+            models.append({
+                "id": model_id,
+                "name": model_name or model_id,
+                "enabled": True,
+            })
+            providers[i]["models"] = models
+            _save_providers(providers)
+            return {"success": True}
+    return {"success": False, "error": "Provider 不存在"}
+
+def remove_model_from_provider(provider_id: str, model_id: str) -> dict:
+    """从 Provider 移除模型"""
+    providers = _get_providers()
+    for i, p in enumerate(providers):
+        if p.get("id") == provider_id:
+            models = p.get("models", [])
+            original_len = len(models)
+            models = [m for m in models if m.get("id") != model_id]
+            if len(models) == original_len:
+                return {"success": False, "error": "模型不存在"}
+            providers[i]["models"] = models
+            _save_providers(providers)
+            return {"success": True}
+    return {"success": False, "error": "Provider 不存在"}
+
+def set_provider_enabled(provider_id: str, enabled: bool) -> dict:
+    """启用/禁用 Provider"""
+    providers = _get_providers()
+    for i, p in enumerate(providers):
+        if p.get("id") == provider_id:
+            providers[i]["enabled"] = enabled
+            _save_providers(providers)
+            return {"success": True}
+    return {"success": False, "error": "Provider 不存在"}
+
+def set_model_enabled(provider_id: str, model_id: str, enabled: bool) -> dict:
+    """启用/禁用 Provider 下的模型"""
+    providers = _get_providers()
+    for i, p in enumerate(providers):
+        if p.get("id") == provider_id:
+            for j, m in enumerate(p.get("models", [])):
+                if m.get("id") == model_id:
+                    providers[i]["models"][j]["enabled"] = enabled
+                    _save_providers(providers)
+                    return {"success": True}
+            return {"success": False, "error": "模型不存在"}
+    return {"success": False, "error": "Provider 不存在"}
+
+def get_active_provider_model() -> dict | None:
+    """获取当前启用的 Provider 和模型"""
+    providers = _get_providers()
+    for p in providers:
+        if not p.get("enabled"):
+            continue
+        for m in p.get("models", []):
+            if m.get("enabled"):
+                return {
+                    "provider_id": p["id"],
+                    "provider_name": p.get("name", ""),
+                    "base_url": p.get("base_url", ""),
+                    "api_key": p.get("api_key", ""),
+                    "protocol": p.get("protocol", "openai"),
+                    "extra_headers": p.get("extra_headers", {}),
+                    "model": m["id"],
+                    "model_name": m.get("name", m["id"]),
+                }
     return None
 
+def get_active_model() -> dict | None:
+    """获取当前启用的模型（兼容旧接口）"""
+    return get_active_provider_model()
+
 def set_active_model(model_id: str) -> dict:
-    """激活指定模型"""
-    models = _get_models()
-    found = False
-    for m in models:
-        m["active"] = (m.get("id") == model_id)
-        if m.get("id") == model_id:
-            found = True
-    if not found:
-        return {"success": False, "error": "模型不存在"}
-    _save_models(models)
-    return {"success": True}
+    """兼容旧接口：激活指定模型（通过 model_id 在所有 Provider 中查找）"""
+    providers = _get_providers()
+    for p in providers:
+        for m in p.get("models", []):
+            if m.get("id") == model_id:
+                # 禁用同 Provider 下其他模型，启用目标模型
+                for pm in p.get("models", []):
+                    pm["enabled"] = (pm["id"] == model_id)
+                _save_providers(providers)
+                return {"success": True}
+    return {"success": False, "error": "模型不存在"}
 
 # ========== Blender 配置 ==========
 
@@ -437,7 +575,7 @@ def _get_runtime_dir() -> str:
     if electron_user_data:
         return electron_user_data
 
-    # 打包模式：使用用户目录，确保用户数据在更新后保留
+    # 打包模式：与 Electron userData 对齐（package.json name: tagent-desktop）
     if getattr(sys, 'frozen', False):
         appdata = os.environ.get(
             "APPDATA",

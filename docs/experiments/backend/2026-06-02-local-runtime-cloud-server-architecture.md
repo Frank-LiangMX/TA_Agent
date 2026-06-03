@@ -1,7 +1,7 @@
 # 本地 Runtime 与中心服务器架构评估
 
 > 日期：2026-06-02  
-> 状态：评估中  
+> 状态：Phase 1–3 已落地；Phase 4 待定（稳定说明见 `docs/reference/local-runtime-connection.md`）  
 > 背景：TAgent 同时需要本地 TA 工具链执行能力和中心服务器协作能力，现有 `local / online` 概念容易把两类职责混在一起。
 
 ## 1. 问题背景

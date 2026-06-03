@@ -121,6 +121,7 @@ http://127.0.0.1:8080/api/wechat/message
 - 开发模式仍是固定 `8080`，端口冲突时由启动脚本报错。
 - 前端配置层仍有 `mode: local | online` 的旧概念，尚未拆成 `runtime/cloud`。
 - 打包后完整验证需要重新构建 Electron 产物。
+- **2026-06-02 收口**：业务 REST 统一 `localApiFetch`；Electron 打包复用 8080 上已有 TAgent；说明见 `reference/local-runtime-connection.md`。
 
 ## 5. 验证
 

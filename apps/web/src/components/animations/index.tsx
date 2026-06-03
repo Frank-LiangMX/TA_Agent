@@ -404,6 +404,66 @@ export function GlowingBar({ active, className = '' }: GlowingBarProps) {
   )
 }
 
+// ===== RotatingText =====
+// 文字切换过渡动画（参考 react-bits，纯 CSS transition 实现）
+
+interface RotatingTextProps {
+  text: string
+  className?: string
+}
+
+export function RotatingText({ text, className = '' }: RotatingTextProps) {
+  const [display, setDisplay] = useState(text)
+  const [phase, setPhase] = useState<'idle' | 'exit' | 'enter'>('idle')
+  const prevRef = useRef(text)
+
+  useEffect(() => {
+    if (prevRef.current === text) return
+    prevRef.current = text
+
+    // 1. 退出：旧文字向上滑出
+    setPhase('exit')
+
+    // 2. 退出动画结束后，换文字，从下方开始进入
+    const timer = setTimeout(() => {
+      setDisplay(text)
+      setPhase('enter')
+      // 3. 进入动画结束后回到 idle
+      setTimeout(() => setPhase('idle'), 200)
+    }, 200)
+
+    return () => { clearTimeout(timer) }
+  }, [text])
+
+  const style: React.CSSProperties =
+    phase === 'exit'
+      ? { opacity: 0, transform: 'translateY(-100%)', transition: 'opacity 200ms ease, transform 200ms ease' }
+      : phase === 'enter'
+        ? { opacity: 0, transform: 'translateY(100%)', transition: 'none' }
+        : { opacity: 1, transform: 'translateY(0)', transition: 'opacity 200ms ease, transform 200ms ease' }
+
+  // enter 阶段：下一帧触发动画（从下方滑到原位）
+  const ref = useRef<HTMLSpanElement>(null)
+  useEffect(() => {
+    if (phase === 'enter' && ref.current) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (ref.current) {
+            ref.current.style.opacity = '1'
+            ref.current.style.transform = 'translateY(0)'
+          }
+        })
+      })
+    }
+  }, [phase])
+
+  return (
+    <span ref={ref} className={className} style={{ display: 'inline-block', ...style }}>
+      {display}
+    </span>
+  )
+}
+
 // ===== InputPulse =====
 // 输入框边框呼吸发光效果
 

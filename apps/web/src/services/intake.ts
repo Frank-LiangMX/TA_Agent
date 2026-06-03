@@ -2,13 +2,13 @@
  * 入库向导 API
  */
 
-import { API_BASE } from '@/lib/api'
+import { getApiBase } from '@/lib/api'
 
 const TARGET_DIR_KEY = 'tagent-intake-target-dir'
 
 /** 入库始终走本地 Agent（TagStore + intake 工具在本机） */
-function getIntakeBaseUrl(): string {
-  return API_BASE
+async function getIntakeBaseUrl(): Promise<string> {
+  return getApiBase()
 }
 
 export interface IntakeStatusCounts {
@@ -70,7 +70,7 @@ export function formatAssetTypeLabel(assetType: string, category = ''): string {
 }
 
 export async function fetchIntakeStatusCounts(): Promise<IntakeStatusCounts> {
-  const base = getIntakeBaseUrl()
+  const base = await getIntakeBaseUrl()
   const res = await fetch(`${base}/api/stats`)
   if (!res.ok) return { pending: 0, approved: 0 }
   const data = await res.json()
@@ -143,7 +143,7 @@ export function saveTargetDir(dir: string): void {
 }
 
 export async function fetchApprovedAssets(): Promise<ApprovedAsset[]> {
-  const base = getIntakeBaseUrl()
+  const base = await getIntakeBaseUrl()
   const res = await fetch(`${base}/api/intake/approved`)
   if (res.ok) {
     const data = await res.json()
@@ -164,7 +164,7 @@ export async function fetchApprovedAssets(): Promise<ApprovedAsset[]> {
 }
 
 export async function fetchProjectConfigs(): Promise<ProjectConfigOption[]> {
-  const base = getIntakeBaseUrl()
+  const base = await getIntakeBaseUrl()
   const res = await fetch(`${base}/api/intake/project-configs`)
   if (res.ok) {
     const data = await res.json()
@@ -179,7 +179,7 @@ export async function previewIntake(params: {
   target_engine_dir: string
   project_config_name?: string
 }): Promise<IntakeBatchResult> {
-  const base = getIntakeBaseUrl()
+  const base = await getIntakeBaseUrl()
   const res = await fetch(`${base}/api/intake/preview`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -195,7 +195,7 @@ export async function runIntake(params: {
   target_engine_dir: string
   project_config_name?: string
 }): Promise<IntakeBatchResult> {
-  const base = getIntakeBaseUrl()
+  const base = await getIntakeBaseUrl()
   const res = await fetch(`${base}/api/intake/run`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

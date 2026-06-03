@@ -7,7 +7,7 @@ import {
   AlertCircle, ChevronDown, ChevronRight, Cpu, Box, Plug, Archive,
 } from 'lucide-react'
 import { SettingsSection, SettingsCard, SettingsRow } from './primitives'
-import { API_BASE } from '@/lib/api'
+import { localApiFetch } from '@/lib/api'
 import { useConfirm } from '@/hooks/useConfirm'
 
 interface ToolInfo {
@@ -56,7 +56,7 @@ export function ToolSettings({ refreshKey = 0 }: ToolSettingsProps) {
 
   const fetchTools = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/tools`)
+      const res = await localApiFetch('/api/tools')
       const data = await res.json()
       const list: ToolInfo[] = data.tools || []
       setTools(list)
@@ -74,7 +74,7 @@ export function ToolSettings({ refreshKey = 0 }: ToolSettingsProps) {
 
   const fetchPlugins = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/plugins`)
+      const res = await localApiFetch('/api/plugins')
       const data = await res.json()
       setInstalled(data.installed || [])
       setAvailable(data.available || [])
@@ -93,7 +93,7 @@ export function ToolSettings({ refreshKey = 0 }: ToolSettingsProps) {
   const handleInstall = async (filename: string) => {
     setActionLoading(filename); setMessage('')
     try {
-      const res = await fetch(`${API_BASE}/api/plugins/install`, {
+      const res = await localApiFetch('/api/plugins/install', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filename }),
       })
@@ -108,7 +108,7 @@ export function ToolSettings({ refreshKey = 0 }: ToolSettingsProps) {
     if (!await confirm(`确定卸载 ${filename}？`, { danger: true })) return
     setActionLoading(filename); setMessage('')
     try {
-      const res = await fetch(`${API_BASE}/api/plugins/uninstall`, {
+      const res = await localApiFetch('/api/plugins/uninstall', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filename }),
       })

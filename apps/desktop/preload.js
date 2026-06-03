@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   getRuntimeEndpoint: () => ipcRenderer.invoke('runtime-endpoint'),
+  restartRuntime: () => ipcRenderer.invoke('runtime-restart'),
   getBackendLogPath: () => ipcRenderer.invoke('backend-log-path'),
   openBackendLog: () => ipcRenderer.invoke('open-backend-log'),
   openUserDataDir: () => ipcRenderer.invoke('open-user-data-dir'),

@@ -11,7 +11,7 @@ import type { LucideIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { useStats, getDataSource } from '@/lib/cache'
-import { API_BASE } from '@/lib/api'
+import { localApiFetch } from '@/lib/api'
 
 interface PipelineStage {
   id: string; label: string; icon: string; description: string
@@ -117,7 +117,7 @@ export function WorkflowView({ onNavigate }: WorkflowViewProps) {
   const [customStages, setCustomStages] = useState<PipelineStage[]>([])
   const [branchTarget, setBranchTarget] = useState<string | null>(null)
   const [newBranch, setNewBranch] = useState({ label: '', description: '', prompt: '' })
-  const [dataSource, setDataSource] = useState(API_BASE)
+  const [dataSource, setDataSource] = useState('')
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
   const [focusedStageId, setFocusedStageId] = useState<StageId>('scan')
   const [executingStage, setExecutingStage] = useState<string | null>(null)
@@ -186,7 +186,7 @@ export function WorkflowView({ onNavigate }: WorkflowViewProps) {
   const handleRunStage = async (stageId: string, label: string) => {
     setExecutingStage(stageId)
     try {
-      const res = await fetch(`${API_BASE}/api/pipeline/run`, {
+      const res = await localApiFetch('/api/pipeline/run', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ stageId }),
       })

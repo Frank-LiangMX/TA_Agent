@@ -123,7 +123,6 @@ GENERAL_CORE_TOOL_NAMES = frozenset({
     "workspace_list_dir",
     "scan_directory",
     "check_file_info",
-    "record_correction",
     "get_memory_stats",
     "update_project_profile",
     "append_profile_fact",

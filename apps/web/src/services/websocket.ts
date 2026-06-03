@@ -5,7 +5,7 @@
  * 提供 RPC 调用和事件订阅。
  */
 
-import { WS_URL } from '@/lib/api'
+import { WS_URL, getWsUrl } from '@/lib/api'
 import { getUserQueryParams } from '@/lib/user-config'
 import { loadStoredActiveTab } from '@/lib/session-storage'
 import { getConfig } from './config'
@@ -35,6 +35,12 @@ export class TAgentClient {
   private statusListeners = new Set<(status: ConnectionStatus) => void>()
   private _sessionId: string | null = null
   private _connectedPayload: any = null  // 缓存 connected 事件
+  private _agentInFlight = false
+
+  /** 是否正在等待 Agent 流式结果（sendMessage 已发出、尚未 done/error） */
+  get agentInFlight(): boolean {
+    return this._agentInFlight
+  }
 
   constructor(url: string = WS_URL) {
     this.url = url
@@ -44,13 +50,11 @@ export class TAgentClient {
   private async getWebSocketUrl(): Promise<string> {
     try {
       const config = await getConfig()
-      if (config.mode === 'online' && config.online.server_host) {
-        const host = config.online.server_host
-        const port = config.online.server_port || 8081
-        return `ws://${host}:${port}/ws`
+      if (config.cloud?.enabled && config.cloud.server_url) {
+        return `ws://${config.cloud.server_url}/ws`
       }
     } catch {}
-    return this.url
+    return getWsUrl()
   }
 
   /** 当前连接状态 */
@@ -117,6 +121,9 @@ export class TAgentClient {
             this._connectedPayload = data.payload
             this._sessionId = data.payload.sessionId
           }
+          if (data.event === 'done' || data.event === 'error') {
+            this._agentInFlight = false
+          }
           this.emit(data.event, data.payload)
         } else if (data.id) {
           // RPC 响应
@@ -141,6 +148,13 @@ export class TAgentClient {
     }
 
     this.ws.onclose = () => {
+      if (this._agentInFlight) {
+        this._agentInFlight = false
+        this.emit('error', {
+          sessionId: this._sessionId,
+          error: '连接已断开，生成已中断',
+        })
+      }
       this.setStatus('disconnected')
       this.reconnectAttempts++
       // 指数退避：5s, 10s, 20s, 最大 30s
@@ -230,6 +244,7 @@ export class TAgentClient {
     const params: Record<string, unknown> = { content }
     if (sessionId) {
       params.sessionId = sessionId
+      this._sessionId = sessionId
     }
     if (contextCutoff != null) {
       params.contextCutoff = contextCutoff
@@ -243,7 +258,13 @@ export class TAgentClient {
     if (attachments && attachments.length > 0) {
       params.attachments = attachments
     }
-    await this.rpc('sendMessage', params)
+    this._agentInFlight = true
+    try {
+      await this.rpc('sendMessage', params)
+    } catch (e) {
+      this._agentInFlight = false
+      throw e
+    }
   }
 
   /** 清除上下文（分割线之前的不发给 LLM） */

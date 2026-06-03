@@ -34,24 +34,24 @@ interface WeChatConfig {
 }
 
 interface AppConfig {
-  mode: 'local' | 'online'
-  agent_mode?: 'ta' | 'general'
-  local: {
+  runtime: {
     llm_provider: string
     llm_api_key: string
     llm_base_url: string
     llm_model: string
     blender_path: string
   }
-  online: {
-    server_host: string
-    server_port: number
+  cloud: {
+    enabled: boolean
+    server_url: string
     user_id: string
     user_name: string
+    token?: string
   }
+  agent_mode?: 'ta' | 'general'
 }
 
-interface RuntimeEndpoint {
+export interface RuntimeEndpoint {
   host: string
   port: number
   apiBase: string
@@ -66,6 +66,7 @@ declare global {
       runtimeEndpoint?: RuntimeEndpoint
       getAppVersion?: () => Promise<string>
       getRuntimeEndpoint?: () => Promise<RuntimeEndpoint>
+      restartRuntime?: () => Promise<{ ok: boolean; error?: string }>
       getBackendLogPath?: () => Promise<string>
       openBackendLog?: () => Promise<ElectronActionResult>
       openUserDataDir?: () => Promise<ElectronActionResult>
@@ -73,6 +74,9 @@ declare global {
       // 配置管理
       getConfig?: () => Promise<AppConfig>
       saveConfig?: (config: AppConfig) => Promise<{ success: boolean; error?: string }>
+      getCloudConfig?: () => Promise<AppConfig['cloud']>
+      setCloudConfig?: (cloud: Partial<AppConfig['cloud']>) => Promise<AppConfig>
+      // 兼容旧 IPC（过渡期）
       getMode?: () => Promise<'local' | 'online'>
       setMode?: (mode: 'local' | 'online') => Promise<AppConfig>
 

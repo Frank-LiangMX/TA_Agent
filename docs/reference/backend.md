@@ -1,6 +1,6 @@
 # 后端设计参考
 
-> 最后更新：2026-05-27
+> 最后更新：2026-06-03
 
 ---
 
@@ -666,45 +666,184 @@ python main.py
 
 ## 十二、客户端双模式
 
-### 12.1 模式对比
+> **Agent 请先读** 根目录 [`AGENTS.md`](../../AGENTS.md) 与 [`local-runtime-connection.md`](./local-runtime-connection.md)。  
+> **执行路径**：本地 Runtime 始终运行（Agent 对话、WebSocket、Blender/UE、本机 TagStore/MCP）。中心服务器（`apps/server/`）是可选叠加，负责协作数据与规范下发，**不替代**本机 Agent。详述见 [`2026-06-02-local-runtime-cloud-server-architecture.md`](../experiments/backend/2026-06-02-local-runtime-cloud-server-architecture.md)。
 
-| 功能 | 本地模式 | 联机模式 |
-|------|---------|---------|
-| LLM 调用 | 用自己的 API Key | 用服务器配额 |
-| 资产数据 | 存本地 | 同步到服务器 |
-| 项目配置 | 本地配置 | 从服务器获取 |
-| 记忆系统 | 本地学习 | 服务器共享 |
-| 多人协作 | 不支持 | 支持 |
+### 12.1 配置结构（runtime + cloud）
 
-### 12.2 配置文件
+旧 `mode: local|online` 已迁移为 `runtime` + `cloud` 两个独立配置段。启动时自动迁移旧格式。
 
 ```json
 {
-  "mode": "local",
-  "local": {
-    "llm_provider": "glm",
+  "runtime": {
+    "llm_provider": "custom",
     "llm_api_key": "sk-xxx",
-    "llm_model": "glm-5"
+    "llm_base_url": "https://api.example.com/v1",
+    "llm_model": "model-name",
+    "blender_path": ""
   },
-  "online": {
-    "server_host": "10.11.131.124",
-    "server_port": 8081,
-    "user_id": "zhangsan"
-  }
+  "cloud": {
+    "enabled": false,
+    "server_url": "10.11.131.124:8081",
+    "user_id": "zhangsan",
+    "user_name": "张三"
+  },
+  "agent_mode": "ta"
 }
 ```
+
+| 字段 | 说明 |
+|------|------|
+| `runtime.*` | 本地 LLM 配置，**始终生效** |
+| `cloud.enabled` | 是否连接中心服务器（默认 `false`） |
+| `cloud.server_url` | 中心服务器地址（`host:port`） |
+| `agent_mode` | 工作台模式：`ta` / `general`（与 cloud 正交） |
+
+### 12.2 职责边界
+
+| 功能 | 本地 Runtime（始终运行） | 中心服务器（可选） |
+|------|---------|---------|
+| Agent 执行 / WS | 本机 | 不替代 |
+| LLM 调用 | `runtime.*` 配置 | 规划中 |
+| 资产数据 | 存本地 | `cloud.enabled` 时同步 |
+| 项目配置 | 本地 | `cloud.enabled` 时从服务器获取 |
+| 记忆系统 | 本地 `memory/{namespace}/` | 规划中 |
+| 多人协作 | 不支持 | `cloud.enabled` 时支持 |
 
 ### 12.3 数据隔离
 
 ```
-本地模式数据：
-├── %APPDATA%/tagent-desktop/agent-running-data/sessions/    # 会话记录
-├── %APPDATA%/tagent-desktop/agent-running-data/memory/      # 记忆系统
-└── %APPDATA%/tagent-desktop/agent-running-data/tag_store/   # 资产数据库
+本地 Runtime 数据（始终存在）：
+├── %APPDATA%/tagent-desktop/agent-running-data/sessions/
+├── %APPDATA%/tagent-desktop/agent-running-data/memory/
+├── %APPDATA%/tagent-desktop/agent-running-data/tag_store/
+└── %APPDATA%/tagent-desktop/agent-running-data/workspaces/
 
-联机模式数据：
-├── %APPDATA%/tagent-desktop/agent-running-data/sessions/    # 会话记录（本地）
-└── 服务器同步              # 资产、配置、记忆（服务器）
+中心服务器数据（cloud.enabled 时同步）：
+├── 资产索引、审核记录、用量统计
+└── 项目配置、规则模板
 ```
 
 详见 `docs/decisions/client-dual-mode-design.md`
+
+---
+
+## 十三、工作台模式（TA / 通用）
+
+> 详细台账：`docs/experiments/backend/2026-06-01-workbench-dual-mode-roadmap.md`
+
+工作台模式（`agent_mode`）控制 Agent 的能力边界和 UI 展示范围，与客户端双模式（`mode: local|online`）正交。
+
+### 13.1 模式切换机制
+
+| 层级 | 读取方式 | 说明 |
+|------|---------|------|
+| 环境变量 | `TAGENT_AGENT_MODE` | 最高优先级，dev 调试用 |
+| 配置文件 | `app-config.json` → `agent_mode` | Electron 打包后持久化 |
+| 默认值 | `"ta"` | 无配置时的兜底 |
+
+入口函数：`config.py` → `get_agent_runtime_mode()` 返回 `"ta"` 或 `"general"`。
+
+切换流程：
+
+1. 前端调用 `setAgentMode()` 写入配置，重置 API 端点缓存
+2. 打包模式下 Electron 重启嵌入后端（后端启动时读取 `agent_mode`）
+3. dev 模式需手动重启 Python 后端
+4. 前端校验：`ensureRuntimeAgentModeAligned()` 检查 `/health.agentMode` 是否一致
+
+`GET /health` 响应包含 `agentMode` 字段，前端用于校验前后端模式一致性。
+
+### 13.2 系统提示
+
+| 模式 | 常量 | 说明 |
+|------|------|------|
+| TA | `BASE_SYSTEM_PROMPT` | 完整资产流水线工作流、审核/入库指引 |
+| 通用 | `GENERAL_SYSTEM_PROMPT` | 办公/编码助手，不提及 TA 能力（FBX/UE5/资产分析等） |
+
+构建函数：`agent_main.py` → `build_system_prompt(agent_mode=...)`
+
+- 通用模式注入当前工作区名称和路径（`~` 形式，不暴露绝对路径）
+- 记忆索引（L0 项目画像）通过 `_append_memory_profile()` 追加，标题按模式区分
+
+### 13.3 工具白名单
+
+`registry.py` → `GENERAL_CORE_TOOL_NAMES`（frozenset，17 个工具）：
+
+| 类别 | 工具 |
+|------|------|
+| 工作区 | `workspace_read_file`, `workspace_write_file`, `workspace_list_dir` |
+| 扫描 | `scan_directory`, `check_file_info` |
+| 记忆 | `get_memory_stats`, `update_project_profile`, `append_profile_fact`, `memory_read_facts`, `memory_read_sop` |
+| 规范 | `discover_conventions`, `load_conventions` |
+| MCP | `mcp_list_servers`, `mcp_add_server`, `mcp_remove_server`, `mcp_toggle_server`, `mcp_reload_servers`, `mcp_test_connection` |
+
+> 注：`record_correction` 仅 TA 模式可用（Schema 含资产专用字段 `asset_name`/`face_count`/`material_name`），通用模式记忆写入统一走 `append_profile_fact`。
+
+过滤逻辑：
+
+- `is_tool_allowed(tool_name, mode)` — 通用模式仅允许白名单 + `mcp__*` 远程工具；TA 模式允许全部
+- `get_tools_for_mode(mode)` — 返回过滤后的 Schema 列表
+- `execute_tool()` — 调用前检查权限，被拦截时返回中文错误提示
+
+### 13.4 工作区系统
+
+**路径常量**（`config.py`）：
+
+| 常量 | 值 | 说明 |
+|------|---|------|
+| `WORKSPACES_DIR` | `<RUNTIME_DIR>/workspaces` | 工作区根目录 |
+| `DEFAULT_WORKSPACE_NAME` | `"默认工作区"` | 显示名 |
+| `get_default_workspace_path()` | `<RUNTIME_DIR>/workspaces/default` | 默认路径，自动创建 |
+
+**会话绑定**：
+
+- `session_manager.py` → `create_session()` — 通用模式自动写入 `workspacePath` / `workspaceName`
+- `_ensure_general_workspace()` — `get_session()` 时回填默认工作区（兼容旧会话）
+- 每轮 `run_agent` 调用 `set_workspace_path()` 绑定当前会话目录
+
+**沙箱隔离**（`workspace_context.py`）：
+
+- `resolve_in_workspace(path)` — 解析相对/绝对路径，通过 `os.path.commonpath` 校验是否在工作区根目录内
+- 三个工作区工具（`workspace_tools.py`）均通过此函数强制沙箱限制
+- `workspace_read_file`：80K 字符上限，拒绝二进制
+- `workspace_write_file`：120K 字符上限，自动创建父目录
+- `workspace_list_dir`：最多 500 条目，跳过 dotfiles
+
+**REST API**：
+
+| 端点 | 说明 |
+|------|------|
+| `GET /api/workspace/tree?path=` | 文件树（沙箱内） |
+| `GET /api/workspace/file?path=` | 文件预览（沙箱内） |
+
+### 13.5 会话隔离
+
+所有会话端点按 `agent_mode` 过滤：
+
+- `POST /api/sessions` — 创建时写入 `agentMode` 元数据
+- `GET /api/sessions` — 仅返回当前模式的会话
+- `PATCH /api/sessions/{id}` / `DELETE /api/sessions/{id}` — 校验模式匹配
+- `POST /api/sessions/search` — 搜索范围限定当前模式
+- `GET /api/sessions/stats` — 统计数据按模式分组
+
+WebSocket `/ws` 连接时读取当前 `agentMode`，在 `connected` 事件中返回给前端。无效 `sessionId` 时复用当前模式最近会话，避免刷新新建空会话。
+
+### 13.6 记忆隔离
+
+| 维度 | 说明 |
+|------|------|
+| 存储目录 | `memory/{namespace}/`，`namespace` = `agent_mode` 值（`ta` 或 `general`） |
+| L0 画像 | `memory/{namespace}/profile.md` |
+| L1 规则 | `memory/{namespace}/rules.jsonl` |
+| L2 归档 | `memory/{namespace}/archive.jsonl` |
+| 清除 | `POST /api/memory/clear` 按当前 namespace 清除 |
+
+通用模式下 `record_correction` 语义偏通用（工作习惯、工具偏好），优先使用 `append_profile_fact` 追加而非整段覆盖。
+
+### 13.7 前端联动
+
+| 端点 | 模式感知 |
+|------|---------|
+| `GET /api/tools` | 返回当前模式可用工具 + `tier_summary` 按模式统计 |
+| `GET /api/permissions` | 仅列出当前模式可用工具的权限 |
+| `GET /api/memory/profile` | 返回当前 namespace 的记忆数据 |

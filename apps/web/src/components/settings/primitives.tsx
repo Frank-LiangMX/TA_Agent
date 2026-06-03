@@ -11,7 +11,7 @@ const LABEL_CLASS = 'text-sm font-medium text-foreground'
 const DESCRIPTION_CLASS = 'text-sm text-muted-foreground'
 const SECTION_TITLE_CLASS = 'text-base font-semibold text-foreground'
 const SECTION_DESCRIPTION_CLASS = 'text-sm text-muted-foreground mt-1'
-const CARD_CLASS = 'rounded-xl overflow-hidden settings-card w-full'
+const CARD_CLASS = 'rounded-xl settings-card w-full'
 const ROW_CLASS = 'flex items-center justify-between px-4 py-3'
 const DIVIDER_CLASS = 'border-border/50'
 
