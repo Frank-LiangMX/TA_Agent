@@ -157,6 +157,8 @@ jobs:
           files: |
             release/electron/${{ github.ref_name }}/*.Setup.*.exe
             release/electron/${{ github.ref_name }}/*-portable.zip
+            release/electron/${{ github.ref_name }}/*.yml
+            release/electron/${{ github.ref_name }}/*.blockmap
           fail_on_unmatched_files: false
           generate_release_notes: true
           draft: false
