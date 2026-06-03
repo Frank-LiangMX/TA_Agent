@@ -21,13 +21,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'
+          cache: pip
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
+          cache: npm
           cache-dependency-path: |
             apps/web/package-lock.json
             apps/desktop/package-lock.json
@@ -161,9 +161,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: '3.11' }
+        with:
+          python-version: '3.11'
       - uses: actions/setup-node@v4
-        with: { node-version: '20' }
+        with:
+          node-version: '20'
       - name: Install Python deps
         shell: cmd
         run: |
@@ -175,7 +177,7 @@ jobs:
         run: |
           cd apps\web
           if not exist node_modules npm install
-      - name: Smoke: build web + lint electron
+      - name: Smoke build web and lint electron
         shell: cmd
         run: |
           cd apps\web && npm run build
