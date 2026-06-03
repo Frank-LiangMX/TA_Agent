@@ -5,7 +5,8 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { getApiBase } from '@/lib/api'
 import { getConfig } from '@/services/config'
-import agentIcon from '@/assets/icon.png'
+import { getThemeIconSrc } from '@/assets/theme-icons'
+import { loadTheme, resolveThemeAppearance, type ThemeAppearance } from '@/atoms/theme'
 import { BlurText } from '../animations'
 import {
   MessageSquare,
@@ -39,6 +40,11 @@ async function getDataSource(): Promise<string> {
   return getApiBase()
 }
 
+function getCurrentThemeIcon() {
+  const { mode, variant } = loadTheme()
+  return getThemeIconSrc(resolveThemeAppearance(mode, variant).iconKey)
+}
+
 export function Sidebar({
   activeView,
   agentMode,
@@ -48,6 +54,18 @@ export function Sidebar({
   const [intakeCount, setIntakeCount] = useState(0)
   const [gearSpinKey, setGearSpinKey] = useState(0)
   const [gearReverse, setGearReverse] = useState(false)
+  const [agentIconSrc, setAgentIconSrc] = useState(getCurrentThemeIcon)
+
+  useEffect(() => {
+    const handleThemeChange = (event: Event) => {
+      const detail = (event as CustomEvent<ThemeAppearance>).detail
+      setAgentIconSrc(getThemeIconSrc(detail.iconKey))
+    }
+
+    setAgentIconSrc(getCurrentThemeIcon())
+    window.addEventListener('tagent-theme-change', handleThemeChange)
+    return () => window.removeEventListener('tagent-theme-change', handleThemeChange)
+  }, [])
 
   // 定期刷新待审核数量
   useEffect(() => {
@@ -111,7 +129,7 @@ export function Sidebar({
       <div className="titlebar-drag-region flex h-14 items-center border-b border-border/50 px-4">
         <div className="titlebar-no-drag flex min-w-0 items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-background border border-border/60 flex items-center justify-center overflow-hidden">
-            <img src={agentIcon} alt="TAgent" className="w-full h-full object-cover" />
+            <img src={agentIconSrc} alt="TAgent" className="w-full h-full object-cover" />
           </div>
           <div>
             <h1 className="text-sm font-semibold"><BlurText text="TAgent" delay={80} /></h1>
