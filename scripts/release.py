@@ -209,7 +209,7 @@ def cmd_status(_args: argparse.Namespace) -> int:
             print(f"    {color(match)} {d.name}  {dim(f'{size_mb:.0f} MB')}{extra}")
 
     # 提示
-    orphans = [d.name for d in dirs if d.name not in tag_set and d.name != "latest"]
+    orphans = [d.name for d in dirs if d.name not in tag_set and d.name not in ("latest", "archive")]
     if orphans:
         print()
         print(yellow(f"  → {len(orphans)} orphan bundle(s). Run `release clean` to archive."))
@@ -362,7 +362,7 @@ def cmd_clean(args: argparse.Namespace) -> int:
     for d in RELEASE_DIR.iterdir():
         if not d.is_dir():
             continue
-        if d.name == "latest":
+        if d.name in ("latest", "archive"):
             continue
         if d.name in tag_set:
             continue
