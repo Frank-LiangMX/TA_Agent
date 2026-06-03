@@ -134,9 +134,29 @@ def tool_name(param1: str, param2: int = 0) -> dict:
 | 美术操作指南 | `docs/guides/artist-guide.md` |
 | 项目介绍/全貌 | 根目录 `README.md` |
 | 进度追踪/待办 | 根目录 `progress.md` |
+| **发版流程 / 版本管理** | `docs/operations/release.md` |
 
 ### 何时新建文件 vs 追加到现有文件
 - **新增功能模块**（如"新增 UV 检查工具"）→ 改 `reference/backend.md`，在对应章节加内容
 - **新增前端页面**（如"新增 UV 检查视图"）→ 改 `reference/frontend.md`
 - **尝试新技术/不确定的方案** → 新建 `experiments/` 文件
 - **以上都不匹配** → 先读 `docs/README.md` 找到最合适的位置，不确定则请教用户
+
+## 发版约束（Agent 必读）
+
+**所有发版操作走 `scripts/release.py`。禁止手动改版本号或 git tag。**
+
+```bash
+# 发版前看现状
+python scripts/release.py status
+
+# 发版本（自动 bump + commit + push main + tag + push tag）
+python scripts/release.py ship 0.30.0 --yes
+```
+
+详见 `docs/operations/release.md`。**关键约束**：
+- 版本号源是根目录 `VERSION`。`ship` 会同步到 4 个文件，**手动改会被覆盖**
+- `release/electron/` 是产物（`.gitignore`），**不要在里面改代码**
+- 触发 CI = push tag `v*`。普通 `git push origin main` **不**会触发 build
+- 改 `.github/workflows/release.yml` 后本地校验：
+  `python -c "import yaml; yaml.safe_load(open('.github/workflows/release.yml'))"`

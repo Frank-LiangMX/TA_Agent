@@ -52,6 +52,7 @@ results = engine.search("中世纪风格的武器")
 | 文档 | 内容 |
 |------|------|
 | [**AGENTS.md**](AGENTS.md) | **其他 Agent 协作入口（必读）** |
+| [**发版流程**](docs/operations/release.md) | 版本管理、`ship` 命令、CI 触发、Release 产物 |
 | [本地 Runtime 连接](docs/reference/local-runtime-connection.md) | 端口、双模式、排障、发版验收 |
 | [实施台账](docs/experiments/backend/2026-06-01-workbench-dual-mode-roadmap.md) | 双模式进度与待办 |
 | [Runtime / 中心服架构](docs/experiments/backend/2026-06-02-local-runtime-cloud-server-architecture.md) | 联机不替代本机 Agent |

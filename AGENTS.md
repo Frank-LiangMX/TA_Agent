@@ -1,6 +1,6 @@
 # Agent 协作说明（读仓库请先打开本文件）
 
-> 最后更新：2026-06-02  
+> 最后更新：2026-06-03  
 > 面向：Cursor / Codex / 其他自动读库的编码 Agent。
 
 ## 1. 项目是什么
@@ -91,3 +91,44 @@ TAgent：游戏技术美术 AI Agent。桌面端 **Electron + React**，本机 *
 ## 8. 发版前最小验收
 
 见 `docs/reference/local-runtime-connection.md` §6（dev-web / dev-electron / 打包 / TA+通用 四格）+ 双模式 roadmap §5。
+
+## 9. 发版流程（必读）
+
+**所有发版操作走 `scripts/release.py`，不要手动改版本号或 git tag。**
+
+```bash
+# 看现状（发版前必跑）
+python scripts/release.py status
+
+# 发版本（一气呵成：bump + commit + push main + tag + push tag）
+python scripts/release.py ship 0.30.0 --dry-run   # 先看命令
+python scripts/release.py ship 0.30.0 --yes       # 真跑
+```
+
+详细：[**`docs/operations/release.md`**](docs/operations/release.md)（单一来源、CI 行为、错误处理、什么时候 ship 什么时候普通 commit）
+
+**关键约束**：
+- 版本号源是根目录 `VERSION` 文件。`ship` 会自动同步到 4 个文件，**不要手动改**
+- `release/electron/` 是产物，`.gitignore`，**不要在里面改代码**
+- 触发 CI = push tag `v*`。普通 `git push origin main` **不会**触发 build
+- 改 `.github/workflows/release.yml` 之前本地校验 YAML：
+  `python -c "import yaml; yaml.safe_load(open('.github/workflows/release.yml'))"`
+
+## 10. 给 Agent 的文档索引
+
+按这个顺序读可以快速上手：
+
+1. **本文件**（AGENTS.md）— 项目结构、改代码约束
+2. [**`docs/operations/release.md`**](docs/operations/release.md) — 发版
+3. `docs/reference/local-runtime-connection.md` — 排障、连接、发版验收
+4. `docs/experiments/backend/2026-06-02-local-runtime-cloud-server-architecture.md` — 架构
+5. `progress.md` — 人类可读里程碑
+6. `CLAUDE.md` — Claude Code 特定指令（路径、配置位置、风格）
+
+子目录约定：
+- `apps/desktop/` — Electron 壳
+- `apps/web/` — React + 嵌入 Python Runtime
+- `apps/server/` — 中心服（不参与桌面打包）
+- `backend/` — Python Agent 本体（PyInstaller 唯一来源）
+- `packages/{conventions,core,tags,tools}/` — 跨端共享纯逻辑
+- `docs/{reference,experiments,business,decisions,operations}/` — 文档分类
