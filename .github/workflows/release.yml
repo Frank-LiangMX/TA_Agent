@@ -1,0 +1,184 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build TAgent ${{ github.ref_name }} (Windows)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            apps/web/package-lock.json
+            apps/desktop/package-lock.json
+
+      - name: Extract version from tag
+        shell: bash
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          echo "Building TAgent ${VERSION}"
+
+      - name: Install Python dependencies (PyInstaller)
+        shell: cmd
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Install frontend dependencies
+        shell: cmd
+        run: |
+          cd apps\web
+          if not exist node_modules npm install
+
+      - name: Build web frontend
+        shell: cmd
+        run: |
+          cd apps\web
+          npm run build
+
+      - name: Package Python backend (PyInstaller)
+        shell: cmd
+        run: |
+          cd "%GITHUB_WORKSPACE%"
+          pyinstaller TAgent.spec --clean --noconfirm --distpath release\pyinstaller --workpath release\pyinstaller-build
+
+      - name: Prepare Electron dist (frontend → desktop/dist)
+        shell: cmd
+        run: |
+          cd "%GITHUB_WORKSPACE%"
+          if exist apps\desktop\dist rmdir /s /q apps\desktop\dist
+          xcopy /E /I /Y release\frontend apps\desktop\dist
+
+      - name: Install Electron dependencies
+        shell: cmd
+        run: |
+          cd apps\desktop
+          if not exist node_modules npm install
+
+      - name: Generate versioned electron-builder config
+        shell: pwsh
+        run: |
+          $version = "${{ env.VERSION }}"
+          $output = "../../release/electron/${{ github.ref_name }}"
+          $src = "apps\desktop\electron-builder.yml"
+          $dst = "apps\desktop\electron-builder.generated.yml"
+          (Get-Content -LiteralPath $src) -replace '^  output: .+$', "  output: $output" | Set-Content -LiteralPath $dst -Encoding utf8
+          Write-Host "Generated config: $dst (output -> $output)"
+
+      - name: Build Electron package (NSIS + win-unpacked)
+        shell: cmd
+        run: |
+          cd apps\desktop
+          npm run build:win -- --config electron-builder.generated.yml --publish never
+
+      - name: Verify build outputs
+        shell: pwsh
+        run: |
+          $outDir = "release\electron\${{ github.ref_name }}"
+          $nsis = Get-ChildItem -Path $outDir -Filter "*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          $unpacked = Test-Path "$outDir\win-unpacked\TAgent.exe"
+          if (-not $nsis) { Write-Error "No NSIS installer found in $outDir"; exit 1 }
+          if (-not $unpacked) { Write-Error "win-unpacked\TAgent.exe not found"; exit 1 }
+          Write-Host "NSIS installer: $($nsis.FullName)"
+          Write-Host "Unpacked exe:   $outDir\win-unpacked\TAgent.exe"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tagent-${{ env.VERSION }}-windows
+          path: |
+            release/electron/${{ github.ref_name }}/*.exe
+            release/electron/${{ github.ref_name }}/win-unpacked/**
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: TAgent ${{ env.VERSION }}
+          body: |
+            ## TAgent ${{ env.VERSION }}
+
+            自动构建产物（Windows x64）。
+
+            ### 安装
+            - 下载 `TAgent Setup *.exe` 双击安装
+
+            ### 包含
+            - Electron 桌面壳
+            - 内嵌 Python Runtime（PyInstaller 打包）
+            - 离线标签库 / 会话 / 工具
+
+            ### 升级说明
+            - 旧版本设置保留（`%APPDATA%\TAgent\`）
+            - 安装时建议勾选「替换」
+
+            完整变更见仓库 `progress.md`。
+          files: |
+            release/electron/${{ github.ref_name }}/*.exe
+            release/electron/${{ github.ref_name }}/win-unpacked/TAgent.exe
+          fail_on_unmatched_files: false
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+
+      - name: Cleanup intermediate artifacts
+        shell: cmd
+        run: |
+          cd "%GITHUB_WORKSPACE%"
+          if exist release\frontend rmdir /s /q release\frontend
+          if exist release\pyinstaller rmdir /s /q release\pyinstaller
+          if exist release\pyinstaller-build rmdir /s /q release\pyinstaller-build
+          if exist apps\desktop\dist rmdir /s /q apps\desktop\dist
+          if exist apps\desktop\electron-builder.generated.yml del /f /q apps\desktop\electron-builder.generated.yml
+
+  build-dryrun:
+    name: Smoke test build (no upload)
+    runs-on: windows-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: Install Python deps
+        shell: cmd
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+      - name: Install frontend deps
+        shell: cmd
+        run: |
+          cd apps\web
+          if not exist node_modules npm install
+      - name: Smoke: build web + lint electron
+        shell: cmd
+        run: |
+          cd apps\web && npm run build
+          cd ..\..\apps\desktop
+          if not exist node_modules npm install
+          npx --no-install electron --version
