@@ -1,6 +1,6 @@
 {
   "name": "tagent-desktop",
-  "version": "0.28.0",
+  "version": "0.29.0",
   "description": "TAgent - 游戏技术美术 AI Agent 桌面应用",
   "main": "main.js",
   "scripts": {

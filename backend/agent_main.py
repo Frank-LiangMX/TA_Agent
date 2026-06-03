@@ -1191,7 +1191,7 @@ def main():
         sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
     print("=" * 60)
-    print("   游戏 TA Agent v0.28")
+    print("   游戏 TA Agent v0.29")
     print("   单 Agent + 多工具架构")
     print("=" * 60)
 

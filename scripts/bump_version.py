@@ -10,7 +10,7 @@ import sys
 import re
 import os
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # 版本号来源文件和匹配模式
 VERSION_FILES = [
