@@ -19,6 +19,9 @@ win:
     - target: nsis
     - target: dir
   icon: assets/icon.ico
+  # 必须跟 latest.yml 里的 files[].url 格式一致，否则 electron-updater 找不到下载文件
+  # electron-updater 默认期望 ${productName}-Setup-${version}.${ext}（连字符）
+  artifactName: ${productName}-Setup-${version}.${ext}
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
