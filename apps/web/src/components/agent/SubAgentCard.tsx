@@ -1,6 +1,18 @@
 import React from 'react'
-import { Loader2, CheckCircle2, AlertCircle, Slash, ChevronRight, ChevronDown } from 'lucide-react'
+import {
+  ChevronRight,
+  Loader2,
+  XCircle,
+  Compass,
+  BookOpen,
+  ClipboardCheck,
+  MessageSquare,
+  Wrench,
+} from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import type { SubAgentType, SubAgentStatus } from '@/types'
+import { getSubAgentPhrase } from '@/lib/subagent-phrase'
 
 export type SubAgentState = {
   task_id: string
@@ -16,6 +28,7 @@ export type SubAgentState = {
   total_steps?: number
   total_tokens?: number
   error?: string
+  duration_ms?: number
 }
 
 export interface SubAgentCardProps {
@@ -24,109 +37,150 @@ export interface SubAgentCardProps {
   onViewDetails?: (taskId: string) => void
 }
 
-const TYPE_LABEL: Record<SubAgentType, string> = {
-  explorer: '代码探索',
-  researcher: '技术调研',
-  'code-reviewer': '代码评审',
+const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
+  explorer: Compass,
+  researcher: BookOpen,
+  'code-reviewer': ClipboardCheck,
+}
+
+function PromptRow({ prompt }: { prompt: string }) {
+  const [expanded, setExpanded] = React.useState(false)
+  const preview = prompt.length > 60 ? prompt.slice(0, 60) + '…' : prompt
+  return (
+    <button
+      type="button"
+      onClick={() => setExpanded(!expanded)}
+      className="flex items-center gap-2 py-0.5 text-left hover:opacity-70 transition-opacity"
+    >
+      <MessageSquare className="size-3.5 text-muted-foreground shrink-0" />
+      <span className="text-[14px] text-muted-foreground">提示词</span>
+      <span className="truncate text-[14px] text-muted-foreground/60">{preview}</span>
+    </button>
+  )
+}
+
+function SubToolRow({ name, args_preview }: { name: string; args_preview: string }) {
+  return (
+    <div className="flex items-center gap-2 py-0.5 text-[14px] text-muted-foreground">
+      <Wrench className="size-3.5 shrink-0" />
+      <span className="font-mono">{name}</span>
+      {args_preview && <span className="text-muted-foreground/60 truncate">({args_preview})</span>}
+    </div>
+  )
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`
+  return `${(ms / 1000).toFixed(1)}s`
 }
 
 export function SubAgentCard({ state, onStop, onViewDetails }: SubAgentCardProps) {
-  const [toolsExpanded, setToolsExpanded] = React.useState(false)
-  const [tick, setTick] = React.useState(0)
-  // 简易 1s 一次的 timer 用于 running 状态的实时秒数
+  const [expanded, setExpanded] = React.useState(false)
+  const [, setTick] = React.useState(0)
   React.useEffect(() => {
     if (state.status !== 'running') return
-    const id = setInterval(() => setTick(t => t + 1), 1000)
+    const id = setInterval(() => setTick((t) => t + 1), 1000)
     return () => clearInterval(id)
   }, [state.status])
-  const elapsed = Math.round((Date.now() - state.started_at) / 1000)
+
+  const phrase = getSubAgentPhrase(state.subagent_type)
+  const isCompleted =
+    state.status === 'completed' ||
+    state.status === 'error' ||
+    state.status === 'stopped'
+  const displayLabel = isCompleted ? phrase.label : phrase.loadingLabel
+  const Icon = ICON_MAP[state.subagent_type] || Compass
+
+  const toolCount = state.tools.length
+  const elapsed =
+    state.status === 'running'
+      ? Math.round((Date.now() - state.started_at) / 1000)
+      : 0
 
   return (
-    <div className="my-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-      {/* Header */}
-      <div className="flex items-center gap-2 text-sm">
-        {state.status === 'running' && <Loader2 className="h-4 w-4 animate-spin text-blue-500" />}
-        {state.status === 'completed' && <CheckCircle2 className="h-4 w-4 text-green-500" />}
-        {state.status === 'error' && <AlertCircle className="h-4 w-4 text-red-500" />}
-        {state.status === 'stopped' && <Slash className="h-4 w-4 text-slate-400" />}
-        <span className="font-medium">SubAgent · {TYPE_LABEL[state.subagent_type]} ({state.subagent_type})</span>
-        {state.run_in_background && (
-          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600">后台</span>
+    <div className="my-1">
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center gap-2 py-1 text-left hover:opacity-70 transition-opacity"
+      >
+        <ChevronRight
+          className={`size-3 text-muted-foreground/50 transition-transform shrink-0 ${
+            expanded ? 'rotate-90' : ''
+          }`}
+        />
+        {state.status === 'running' && (
+          <Loader2 className="size-3.5 animate-spin text-primary/50 shrink-0" />
         )}
-      </div>
+        {state.status === 'error' && (
+          <XCircle className="size-3.5 text-destructive/70 shrink-0" />
+        )}
+        <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+        <span className="truncate text-[14px] text-muted-foreground">
+          {displayLabel}
+        </span>
+        {toolCount > 0 && !expanded && (
+          <span className="shrink-0 text-[11px] text-muted-foreground/50 tabular-nums">
+            {toolCount} 项工具调用
+          </span>
+        )}
+        {state.run_in_background && (
+          <span className="shrink-0 text-[11px] text-muted-foreground/50 px-1.5 py-0.5 rounded bg-muted/40">
+            后台
+          </span>
+        )}
+      </button>
 
-      {/* Description */}
-      <div className="mt-1 text-sm text-slate-600">"{state.description}"</div>
-
-      {/* Tools (collapsed by default) */}
-      {state.tools.length > 0 && (
-        <div className="mt-2 border-t border-slate-100 pt-2">
-          <button
-            className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700"
-            onClick={() => setToolsExpanded(!toolsExpanded)}
-          >
-            {toolsExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-            嵌套工具调用 ({state.tools.length})
-          </button>
-          {toolsExpanded && (
-            <div className="mt-1 space-y-0.5 pl-4 text-xs text-slate-600">
-              {state.tools.map((t, i) => (
-                <div key={i} className="font-mono">
-                  ↳ {t.name}({t.args_preview})
-                </div>
-              ))}
+      {expanded && (
+        <div className="pl-5 mt-1 space-y-1.5 border-l-2 border-primary/20 ml-[5px]">
+          {state.description && <PromptRow prompt={state.description} />}
+          {state.tools.map((t, i) => (
+            <SubToolRow key={i} name={t.name} args_preview={t.args_preview} />
+          ))}
+          {state.status === 'completed' && state.result_preview && (
+            <div className="text-[13px] text-foreground/80 leading-relaxed prose prose-sm dark:prose-invert max-w-none prose-p:my-1 prose-pre:my-2 prose-code:text-primary">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {state.result_preview}
+              </ReactMarkdown>
             </div>
           )}
+          {state.status === 'error' && state.error && (
+            <div className="text-[13px] text-destructive">{state.error}</div>
+          )}
+          <div className="flex items-center gap-3 text-[11px] text-muted-foreground/60 tabular-nums">
+            {state.status === 'running' && (
+              <span>已用 {state.step_count} 步 · {elapsed}s</span>
+            )}
+            {state.status === 'completed' && (state.total_steps ?? 0) > 0 && (
+              <span>共 {state.total_steps} 步</span>
+            )}
+            {(state.total_tokens ?? 0) > 0 && (
+              <span>{state.total_tokens!.toLocaleString()} tokens</span>
+            )}
+            {state.duration_ms != null && state.duration_ms > 0 && state.status === 'completed' && (
+              <span>{formatDuration(state.duration_ms)}</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 pt-1">
+            {state.status === 'running' && !state.run_in_background && onStop && (
+              <button
+                onClick={() => onStop(state.task_id)}
+                className="text-[11px] text-red-600 hover:bg-red-50 rounded px-2 py-0.5"
+              >
+                停止
+              </button>
+            )}
+            {state.run_in_background && onViewDetails && (
+              <button
+                onClick={() => onViewDetails(state.task_id)}
+                className="text-[11px] text-blue-600 hover:bg-blue-50 rounded px-2 py-0.5"
+              >
+                查看进度
+              </button>
+            )}
+          </div>
         </div>
       )}
-
-      {/* Result (only when completed) */}
-      {state.status === 'completed' && state.result_preview && (
-        <div className="mt-2 whitespace-pre-wrap rounded bg-slate-50 p-2 text-xs text-slate-700">
-          {state.result_preview.slice(0, 500)}
-          {state.result_preview.length > 500 && '...'}
-        </div>
-      )}
-
-      {/* Error message */}
-      {state.status === 'error' && state.error && (
-        <div className="mt-2 rounded bg-red-50 p-2 text-xs text-red-700">
-          {state.error}
-        </div>
-      )}
-
-      {/* Footer */}
-      <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
-        <span>
-          {state.status === 'running' ? (
-            <>已用 {state.step_count} 步 · {elapsed}s · {state.model || '...'}</>
-          ) : state.status === 'completed' ? (
-            <>共 {state.total_steps || 0} 步 · {state.total_tokens || 0} tokens</>
-          ) : state.status === 'error' ? (
-            <>出错</>
-          ) : (
-            <>已停止</>
-          )}
-        </span>
-        <div className="flex gap-2">
-          {state.status === 'running' && !state.run_in_background && onStop && (
-            <button
-              className="rounded px-2 py-0.5 text-red-600 hover:bg-red-50"
-              onClick={() => onStop(state.task_id)}
-            >
-              停止
-            </button>
-          )}
-          {state.run_in_background && onViewDetails && (
-            <button
-              className="rounded px-2 py-0.5 text-blue-600 hover:bg-blue-50"
-              onClick={() => onViewDetails(state.task_id)}
-            >
-              查看进度
-            </button>
-          )}
-        </div>
-      </div>
     </div>
   )
 }
