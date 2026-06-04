@@ -125,6 +125,19 @@
 - 工具重组（物理拆分为 core/extensions/plugins/mcp 四层，前端 4 Tab 展示）
 - 进度追踪（progress.md 里程碑 + 待办 + 版本日志）
 
+### 通用模式 SubAgent（2026-06-04 完成 Phase 1-4）
+- SubAgentSpec + SUBAGENTS 字典（explorer / researcher / code-reviewer）
+- resolve_allowed_tools（mcp__* 通配符展开）
+- get_subagent_model 模型路由（tier 默认 + 用户覆盖）
+- SubAgentOrchestrator（同步 + 真后台路径，类级别 registry）
+- Agent / TaskOutput / TaskStop 工具（仅 general 模式）
+- system prompt 注入 SubAgent 描述
+- subagent_runs.jsonl 日志
+- ADR：docs/decisions/subagent-architecture.md
+- 前端 5 个 subagent_* 事件类型 + SubAgentCard + SubAgentSidePanel
+- 设置页 SubAgentSettings（per-subagent 模型覆盖）
+- progress_hook per-session cancel event + 级联到 in-flight subagent
+
 ---
 
 ## 本地 Runtime 连接（2026-06-02 收口）
@@ -161,7 +174,7 @@
 ### P1（核心体验）
 - [ ] 入库向导 — 分步引导流程（前端）
 - [x] 客户端双模式 — TA/通用工作台（实现见双模式台账；发版验收 §5 待勾）
-- [x] 通用模式 SubAgent 能力（Phase 1 同步最小可用，2026-06-04；Phase 2-4 见实施计划）
+- [x] 通用模式 SubAgent 能力（2026-06-04 完成 Phase 1-4：同步+后台、SubAgentCard、TaskOutput/TaskStop、SubAgentSettings）
 - [ ] 联机架构落地 — 中心服仅协作/同步，Agent 仍走本地 Runtime（Phase 3–4，见 AGENTS.md）
 - [ ] SSO 登录集成 — 接入公司 XSJSSO 登录系统
 - [ ] 数据同步 — 客户端与服务器数据同步
