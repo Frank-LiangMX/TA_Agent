@@ -90,3 +90,30 @@ def get_subagent_spec(name: str) -> SubAgentSpec | None:
 
 def list_subagent_names() -> list[str]:
     return list(SUBAGENTS.keys())
+
+
+def resolve_allowed_tools(spec: SubAgentSpec) -> list[str]:
+    """把 spec.allowed_tools 里的 mcp__* 通配符展开为当前 mcp_bridge 已注册的具体工具名。"""
+    from packages.tools import registry
+
+    # 当前已注册的所有 mcp__* 工具
+    mcp_tool_names = [
+        t["function"]["name"]
+        for t in registry.TOOLS
+        if t["function"]["name"].startswith("mcp__")
+    ]
+
+    resolved: list[str] = []
+    for name in spec.allowed_tools:
+        if name == "mcp__*":
+            resolved.extend(mcp_tool_names)
+        else:
+            resolved.append(name)
+    # 去重保序
+    seen = set()
+    out: list[str] = []
+    for n in resolved:
+        if n not in seen:
+            seen.add(n)
+            out.append(n)
+    return out

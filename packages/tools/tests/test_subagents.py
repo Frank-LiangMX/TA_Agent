@@ -42,3 +42,43 @@ def test_no_subagent_can_recursively_call_agent():
     for name, spec in SUBAGENTS.items():
         bad = forbidden & set(spec.allowed_tools)
         assert not bad, f"{name} 不应在 allowed_tools 中包含 {bad}"
+
+
+from packages.tools.subagents import resolve_allowed_tools
+
+
+def test_resolve_allowed_tools_expands_mcp_wildcard(monkeypatch):
+    """mcp__* 通配符应展开为 mcp_bridge 当前已连接的所有 mcp__* 工具"""
+    from packages.tools import registry
+    monkeypatch.setattr(
+        registry,
+        "TOOLS",
+        [
+            {"function": {"name": "mcp__playwright__browser_navigate"}},
+            {"function": {"name": "mcp__playwright__browser_snapshot"}},
+            {"function": {"name": "workspace_read_file"}},
+        ],
+    )
+    spec = SubAgentSpec(
+        name="test",
+        display_name="t",
+        description_for_parent="t",
+        system_prompt="t",
+        allowed_tools=["workspace_read_file", "mcp__*"],
+    )
+    resolved = resolve_allowed_tools(spec)
+    assert "workspace_read_file" in resolved
+    assert "mcp__playwright__browser_navigate" in resolved
+    assert "mcp__playwright__browser_snapshot" in resolved
+
+
+def test_resolve_allowed_tools_preserves_specific_names():
+    spec = SubAgentSpec(
+        name="test",
+        display_name="t",
+        description_for_parent="t",
+        system_prompt="t",
+        allowed_tools=["workspace_read_file"],
+    )
+    resolved = resolve_allowed_tools(spec)
+    assert resolved == ["workspace_read_file"]
