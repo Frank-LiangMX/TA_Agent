@@ -57,9 +57,9 @@ def _cascade_cancel_subagents(session_id: str) -> None:
     """父级取消时，遍历所有 in-flight subagent 并取消。"""
     try:
         from packages.tools.agent_tool import SubAgentOrchestrator
-        for orch in SubAgentOrchestrator.background_tasks.values():
+        # 列表化避免迭代时修改 dict
+        for orch in list(SubAgentOrchestrator.background_tasks.values()):
             if orch.parent_session_id == session_id:
-                # 当前实现：subagent 没有 cancel event；通过移除 task 阻止后续观察
                 SubAgentOrchestrator.background_tasks.pop(orch.task_id, None)
     except ImportError:
         pass
