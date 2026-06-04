@@ -164,26 +164,21 @@ export function ModelSelector({ className = '' }: ModelSelectorProps) {
 
   const hasNoModels = allModels.length === 0
 
-  // 无模型时显示静态标签
-  if (hasNoModels) {
-    return (
-      <div className={`flex items-center gap-1.5 text-xs text-muted-foreground px-2 py-1 ${className}`}>
-        <Cpu size={14} className="shrink-0" />
-        <span>暂无模型</span>
-      </div>
-    )
-  }
+  // 无模型时也保持可点击（打开 Dialog 至少能给用户提示去设置）
+  const triggerButton = (
+    <button
+      className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors max-w-[220px] ${className}`}
+    >
+      <Cpu size={14} className="shrink-0" />
+      <span className="truncate">{hasNoModels ? '暂无模型（点此配置）' : displayName}</span>
+      <ChevronDown size={12} className="shrink-0" />
+    </button>
+  )
 
   return (
     <Dialog.Root open={open} onOpenChange={handleOpenChange}>
       <Dialog.Trigger asChild>
-        <button
-          className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors max-w-[220px] ${className}`}
-        >
-          <Cpu size={14} className="shrink-0" />
-          <span className="truncate">{displayName}</span>
-          <ChevronDown size={12} className="shrink-0" />
-        </button>
+        {triggerButton}
       </Dialog.Trigger>
 
       <Dialog.Portal>

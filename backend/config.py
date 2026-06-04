@@ -689,7 +689,11 @@ _TIER_DEFAULT_MODELS: dict[str, str] = {
 
 
 def get_subagent_model(subagent_type: str) -> str:
-    """解析 SubAgent 实际使用的模型。优先级：user override > tier default > active model。"""
+    """解析 SubAgent 实际使用的模型。优先级：user override > tier default > active model。
+
+    注：app-config.json 可能用老结构（顶层 active_model）或新结构（providers[].active）。
+    优先用 get_active_provider_model()，回退到 cfg["active_model"]。
+    """
     from packages.tools.subagents import get_subagent_spec
 
     # 1. 加载 runtime config
@@ -703,10 +707,20 @@ def get_subagent_model(subagent_type: str) -> str:
     if subagent_type in overrides:
         return overrides[subagent_type]
 
-    # 3. tier default
+    # 3. fallback：实际活跃模型（兼容老/新两种结构）
+    def _fallback_active_model() -> str:
+        try:
+            m = get_active_provider_model()
+            if m and m.get("model"):
+                return m["model"]
+        except Exception:
+            pass
+        return cfg.get("active_model") or "glm-5"
+
+    # 4. tier default
     spec = get_subagent_spec(subagent_type)
     if spec is not None:
-        return _TIER_DEFAULT_MODELS.get(spec.model_tier, cfg.get("active_model", "glm-5"))
+        return _TIER_DEFAULT_MODELS.get(spec.model_tier, _fallback_active_model())
 
-    # 4. fallback
-    return cfg.get("active_model", "glm-5")
+    # 5. unknown type：直接用 active
+    return _fallback_active_model()
