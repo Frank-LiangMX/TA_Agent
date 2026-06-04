@@ -73,3 +73,37 @@ def test_orchestrator_invokes_agent_loop(monkeypatch):
     assert captured["history"] == []  # 隔离：子 agent 全新 history
     assert result.status == "completed"
     assert "mocked final answer" in result.result_preview or result.total_steps >= 0
+
+
+def test_orchestrator_background_returns_task_id_immediately(monkeypatch):
+    """run_in_background=True 时应立即返回 task_id 字符串，不阻塞。"""
+    from packages.tools import agent_tool
+    import threading
+    import time
+
+    started = threading.Event()
+    completed = threading.Event()
+
+    def slow_loop(self):
+        started.set()
+        time.sleep(0.3)
+        completed.set()
+        return SubAgentResult(
+            task_id=self.task_id, status="completed",
+            result_preview="slow done", total_steps=1,
+        )
+
+    monkeypatch.setattr(SubAgentOrchestrator, "_run_loop", slow_loop)
+
+    orch = SubAgentOrchestrator(
+        subagent_type="explorer", prompt="slow task", description="test",
+        parent_session_id="p1", run_in_background=True,
+    )
+    ret = orch.run()
+    assert isinstance(ret, str)  # 立即返回 task_id
+    assert ret == orch.task_id
+    # 验证后台真的跑了
+    assert started.wait(timeout=1.0)
+    assert completed.wait(timeout=2.0)
+    # cleanup
+    SubAgentOrchestrator.background_tasks.pop(orch.task_id, None)

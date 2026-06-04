@@ -34,13 +34,26 @@ class SubAgentOrchestrator:
     run_in_background: bool = False
     task_id: str = field(default_factory=lambda: f"subagent-{uuid.uuid4().hex[:8]}")
     created_at_ms: int = field(default_factory=lambda: int(time.time() * 1000))
+    _thread: object = field(default=None, init=False, repr=False, compare=False)
 
     def run(self) -> SubAgentResult | str:
         """同步路径返回 SubAgentResult；后台路径返回 task_id 字符串。"""
         if self.run_in_background:
-            # Phase 3 再实现
+            SubAgentOrchestrator.background_tasks[self.task_id] = self
+            import threading
+            self._thread = threading.Thread(target=self._run_in_thread, daemon=True)
+            self._thread.start()
             return self.task_id
         return self._run_loop()
+
+    def _run_in_thread(self) -> None:
+        """后台线程执行体 — 异常吞掉不向外抛。"""
+        try:
+            self._run_loop()
+        except Exception:
+            pass
+        finally:
+            SubAgentOrchestrator.background_tasks.pop(self.task_id, None)
 
     def _run_loop(self) -> SubAgentResult:
         """运行一次完整的子 agent 循环，捕获结果。"""
@@ -128,6 +141,10 @@ class SubAgentOrchestrator:
         ))
 
 
+# 类级别 registry：task_id -> 正在运行的 orchestrator 实例
+SubAgentOrchestrator.background_tasks = {}  # type: ignore[attr-defined]
+
+
 # ========== Agent 工具（OpenAI function-calling 格式）==========
 # 只在 general 模式注册；TA 模式不暴露
 
@@ -191,9 +208,9 @@ def _agent_tool_function(
         parent_session_id=parent_session_id,
         run_in_background=run_in_background,
     )
-    if run_in_bg:
-        # 简化版：Phase 3 才做真正的后台
-        return f"[后台任务已创建] task_id: {orch.task_id}（Phase 1 占位 — 实际不会跑）"
+    if run_in_background:
+        # Phase 3: 后台跑，立即返回 task_id
+        return orch.run() if isinstance(orch.run(), str) else f"[后台任务已创建] task_id: {orch.task_id}"
 
     result = orch.run()
     if isinstance(result, SubAgentResult):
