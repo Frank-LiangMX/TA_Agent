@@ -7,10 +7,24 @@ TAgent PyInstaller 打包配置
 """
 
 import os
-from PyInstaller.utils.hooks import collect_submodules
+import glob
 
 block_cipher = None
 base_dir = os.path.dirname(os.path.abspath(SPEC))
+
+def _submodules(pkg_root: str) -> list[str]:
+    """收集给定目录下的所有 Python 模块（不含 __init__），返回 'pkg.submodule' 列表"""
+    modules = []
+    pkg_name = pkg_root.replace(os.sep, '.')  # e.g. 'packages/tools' -> 'packages.tools'
+    for pyfile in glob.glob(os.path.join(pkg_root, '*.py')):
+        name = os.path.basename(pyfile)[:-3]  # strip .py
+        if name != '__init__':
+            modules.append(f'{pkg_name}.{name}')
+    # 子包
+    for subpkg in glob.glob(os.path.join(pkg_root, '*/__init__.py')):
+        subname = os.path.basename(os.path.dirname(subpkg))
+        modules.append(f'{pkg_name}.{subname}')
+    return modules
 
 a = Analysis(
     ['launcher.py'],
@@ -41,14 +55,27 @@ a = Analysis(
         'agent_main',
         'config',
         'session_manager',
-        'tools',
-        # 自动收集 tools 包所有子模块（包括 server.py 函数体内懒加载的
-        # tools.danger_patterns / tools.permissions 等），避免 PyInstaller
-        # 静态分析扫不到动态 import 路径
-        *collect_submodules('tools'),
-        *collect_submodules('tools.core'),
-        *collect_submodules('tools.extensions'),
-        *collect_submodules('tools.plugins'),
+        # tools 包子模块（glob 扫描，不依赖运行时 import）
+        *_submodules('packages/tools'),
+        *_submodules('packages/tools/core'),
+        *_submodules('packages/tools/extensions'),
+        *_submodules('packages/tools/plugins'),
+        # fastapi / starlette / websockets（必须显式列，否则 PyInstaller 分析跳過）
+        'fastapi',
+        'fastapi.responses',
+        'fastapi.staticfiles',
+        'fastapi.middleware.cors',
+        'starlette',
+        'starlette.responses',
+        'starlette.routing',
+        'starlette.middleware',
+        'starlette.middleware.cors',
+        'starlette.staticfiles',
+        'starlette.exceptions',
+        'starlette.websockets',
+        'websockets',
+        'websockets.client',
+        'websockets.server',
         'uvicorn',
         'uvicorn.logging',
         'uvicorn.loops',
@@ -60,13 +87,13 @@ a = Analysis(
         'uvicorn.protocols.websockets.auto',
         'uvicorn.lifespan',
         'uvicorn.lifespan.on',
-        'fastapi',
-        'fastapi.middleware.cors',
-        'fastapi.staticfiles',
-        'fastapi.responses',
+        'uvicorn.middleware.proxy_headers',
         'openai',
         'PIL',
+        'PIL.Image',
         'numpy',
+        'numpy.core',
+        'numpy.core.multiarray',
     ],
     hookspath=[],
     hooksconfig={},
