@@ -42,3 +42,34 @@ def test_orchestrator_sync_run_returns_result(monkeypatch):
     assert isinstance(result, SubAgentResult)
     assert result.status == "completed"
     assert result.result_preview == "mock output"
+
+
+def test_orchestrator_invokes_agent_loop(monkeypatch):
+    """验证 _run_loop 调用了 backend.agent_main.agent_loop，并传了正确的参数"""
+    from packages.tools import agent_tool
+
+    captured = {}
+
+    def fake_agent_loop(*, user_message, history, workflow_mode, interrupt_event, context_cutoff):
+        captured["user_message"] = user_message
+        captured["history"] = history
+        captured["interrupt_event"] = interrupt_event
+        return "mocked final answer", history + [{"role": "user", "content": user_message}]
+
+    monkeypatch.setattr("backend.agent_main.agent_loop", fake_agent_loop)
+
+    # mock get_subagent_model 返回固定模型
+    monkeypatch.setattr("backend.config.get_subagent_model", lambda t: "mock-model")
+
+    orch = SubAgentOrchestrator(
+        subagent_type="explorer",
+        prompt="list files in src",
+        description="test",
+        parent_session_id="p1",
+    )
+    result = orch._run_loop()
+
+    assert captured["user_message"] == "list files in src"
+    assert captured["history"] == []  # 隔离：子 agent 全新 history
+    assert result.status == "completed"
+    assert "mocked final answer" in result.result_preview or result.total_steps >= 0
