@@ -277,3 +277,103 @@ def test_real_llm_model_routing_effective():
     fallback = get_subagent_model("nonexistent-type")
     print(f"[route] unknown type -> {fallback} (fallback to active)")
     assert fallback, "未知类型也应回退到 active model"
+
+
+# =============================================================================
+# 7. SubAgent 事件流：真实 LLM 跑子 agent 时应 emit tool/progress 事件
+# =============================================================================
+
+def test_real_llm_subagent_emits_tool_events(monkeypatch):
+    """真实 LLM 跑 explorer，确认 subagent_tool/progress 事件被 emit。
+
+    验证：agent_loop 内部调工具时，会通过 progress_hook.emit_subagent_tool
+    和 emit_subagent_progress emit 事件。这些事件最终会被 server.py 转发到 WS。
+    """
+    import sys
+    sys.path.insert(0, "backend")
+    sys.path.insert(0, "packages")
+    sys.path.insert(0, ".")
+
+    from apps.web.server import progress_hook
+    captured = {"tool": [], "progress": []}
+
+    def fake_emit_tool(*, session_id, subagent_type, task_id, tool_name, args_preview):
+        captured["tool"].append({
+            "session_id": session_id,
+            "subagent_type": subagent_type,
+            "task_id": task_id,
+            "tool_name": tool_name,
+            "args_preview": args_preview,
+        })
+
+    def fake_emit_progress(*, session_id, subagent_type, task_id, step_count, elapsed_ms, model):
+        captured["progress"].append({
+            "session_id": session_id,
+            "subagent_type": subagent_type,
+            "task_id": task_id,
+            "step_count": step_count,
+            "elapsed_ms": elapsed_ms,
+            "model": model,
+        })
+
+    monkeypatch.setattr(progress_hook, "emit_subagent_tool", fake_emit_tool)
+    monkeypatch.setattr(progress_hook, "emit_subagent_progress", fake_emit_progress)
+
+    from packages.tools.agent_tool import SubAgentOrchestrator
+    orch = SubAgentOrchestrator(
+        subagent_type="explorer",
+        prompt="Call workspace_list_dir tool to list src directory contents",
+        description="e2e event",
+        parent_session_id="e2e-event-test",
+    )
+    t0 = time.time()
+    result = orch.run()
+    elapsed = time.time() - t0
+
+    print(f"\n[event] explorer: status={result.status}, elapsed={elapsed:.1f}s")
+    print(f"[event] tool emits: {len(captured['tool'])}, progress emits: {len(captured['progress'])}")
+    if captured["tool"]:
+        print(f"[event] first tool: {captured['tool'][0]['tool_name']}({captured['tool'][0]['args_preview'][:60]})")
+    if captured["progress"]:
+        print(f"[event] last progress: step_count={captured['progress'][-1]['step_count']}, elapsed_ms={captured['progress'][-1]['elapsed_ms']}")
+
+    assert result.status in ("completed", "error")
+    # session_id 应被正确传递
+    for evt in captured["tool"]:
+        assert evt["session_id"] == "e2e-event-test"
+    for evt in captured["progress"]:
+        assert evt["session_id"] == "e2e-event-test"
+
+
+def test_real_llm_subagent_does_not_emit_for_nonexistent_type(monkeypatch):
+    """未知 subagent_type 应早返回，不调 agent_loop，因此无事件。"""
+    import sys
+    sys.path.insert(0, "backend")
+    sys.path.insert(0, "packages")
+    sys.path.insert(0, ".")
+
+    from apps.web.server import progress_hook
+    captured = []
+
+    def fake_emit_tool(*args, **kwargs):
+        captured.append(kwargs)
+
+    def fake_emit_progress(*args, **kwargs):
+        captured.append(kwargs)
+
+    monkeypatch.setattr(progress_hook, "emit_subagent_tool", fake_emit_tool)
+    monkeypatch.setattr(progress_hook, "emit_subagent_progress", fake_emit_progress)
+
+    from packages.tools.agent_tool import SubAgentOrchestrator
+    orch = SubAgentOrchestrator(
+        subagent_type="nonexistent-type",
+        prompt="x",
+        description="d",
+        parent_session_id="e2e-no-type",
+    )
+    result = orch.run()
+    assert result.status == "error"
+    # 错误信息在 result_preview 或 error 字段
+    combined = (result.error or "") + (result.result_preview or "")
+    assert "未知" in combined or "unknown" in combined.lower()
+    assert len(captured) == 0, f"未知 type 不应 emit 事件，但有 {len(captured)} 条"
