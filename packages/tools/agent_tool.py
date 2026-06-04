@@ -108,3 +108,86 @@ class SubAgentOrchestrator:
             total_tokens_out=0,
             duration_ms=int((time.time() - start) * 1000),
         )
+
+
+# ========== Agent 工具（OpenAI function-calling 格式）==========
+# 只在 general 模式注册；TA 模式不暴露
+
+AGENT_TOOL_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "Agent",
+        "description": (
+            "委派任务给一个专业子 agent 处理。子 agent 拥有独立的上下文、工具集和模型，"
+            "适合拆解大型任务。返回的是子 agent 产出的简洁摘要（最多 4000 字符）。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "subagent_type": {
+                    "type": "string",
+                    "enum": ["explorer", "researcher", "code-reviewer"],
+                    "description": "子 agent 类型",
+                },
+                "prompt": {
+                    "type": "string",
+                    "description": (
+                        "清晰描述子 agent 要完成的任务。包含必要上下文；"
+                        "不要假设子 agent 知道 parent 的历史。"
+                    ),
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "5-10 字的任务简述，用于 UI 和日志展示",
+                },
+                "run_in_background": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": (
+                        "true 时立即返回 task_id，parent 继续干活；"
+                        "之后用 TaskOutput 取结果。"
+                    ),
+                },
+            },
+            "required": ["subagent_type", "prompt", "description"],
+        },
+    },
+}
+
+
+def _agent_tool_function(
+    subagent_type: str,
+    prompt: str,
+    description: str = "",
+    run_in_background: bool = False,
+) -> str:
+    """Agent 工具的实际执行入口 — 启动 SubAgentOrchestrator 并返回结果。"""
+    # parent_session_id 当前不可用（execute_tool 不传），占位
+    parent_session_id = "parent"
+
+    orch = SubAgentOrchestrator(
+        subagent_type=subagent_type,
+        prompt=prompt,
+        description=description,
+        parent_session_id=parent_session_id,
+        run_in_background=run_in_background,
+    )
+    if run_in_bg:
+        # 简化版：Phase 3 才做真正的后台
+        return f"[后台任务已创建] task_id: {orch.task_id}（Phase 1 占位 — 实际不会跑）"
+
+    result = orch.run()
+    if isinstance(result, SubAgentResult):
+        if result.status == "completed":
+            return (
+                f"## SubAgent ({subagent_type}) 完成\n\n"
+                f"{result.result_preview}\n\n"
+                f"---\n"
+                f"用 {result.total_steps} 步 · 耗时 {result.duration_ms}ms"
+            )
+        elif result.status == "error":
+            return f"## SubAgent ({subagent_type}) 出错\n\n{result.error}"
+        else:
+            return f"## SubAgent ({subagent_type}) 状态: {result.status}"
+    return str(result)

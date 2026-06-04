@@ -153,6 +153,7 @@ DEFAULT_TOOLSET = Toolset(
     name="default",
     description="通用模式默认工具集",
     tool_names={
+        "Agent",
         "workspace_read_file",
         "workspace_write_file",
         "workspace_list_dir",
@@ -359,7 +360,8 @@ def get_tools_for_mode(agent_mode: str | None = None) -> list:
     """按运行模式返回可供 LLM 使用的工具 Schema 列表。"""
     mode = (agent_mode or get_agent_runtime_mode()).strip().lower()
     if mode != "general":
-        return TOOLS
+        # TA 模式：排除仅 general 模式生效的 Agent 工具
+        return [s for s in TOOLS if s["function"]["name"] != "Agent"]
     return [s for s in TOOLS if is_tool_allowed(s["function"]["name"], mode)]
 
 
@@ -473,3 +475,14 @@ def _load_mcp_servers():
     if count:
         print(f"  MCP 加载: {count} 个工具已注册")
 _load_mcp_servers()
+
+
+# ========== 注册 Agent 工具（仅 general 模式生效）==========
+try:
+    from packages.tools.agent_tool import AGENT_TOOL_SCHEMA, _agent_tool_function
+    if AGENT_TOOL_SCHEMA not in TOOLS:
+        TOOLS.append(AGENT_TOOL_SCHEMA)
+    TOOL_FUNCTIONS["Agent"] = _agent_tool_function
+    _tag_tier("Agent", "subagent")
+except ImportError:
+    pass  # agent_tool 还没装好时不影响
