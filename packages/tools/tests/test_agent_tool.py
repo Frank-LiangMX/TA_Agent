@@ -50,7 +50,7 @@ def test_orchestrator_invokes_agent_loop(monkeypatch):
 
     captured = {}
 
-    def fake_agent_loop(*, user_message, history, workflow_mode, interrupt_event, context_cutoff):
+    def fake_agent_loop(*, user_message, history, workflow_mode, interrupt_event, context_cutoff, **kwargs):
         captured["user_message"] = user_message
         captured["history"] = history
         captured["interrupt_event"] = interrupt_event

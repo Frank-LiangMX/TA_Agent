@@ -104,7 +104,16 @@ class SubAgentOrchestrator:
             {"role": "user", "content": self.prompt},
         ]
 
-        # TODO Phase 2 进度事件接入：subagent_tool / subagent_progress
+        # 构造 subagent_context：让 agent_loop 在 tool 调用前后 emit 进度事件
+        from backend.config import get_subagent_model
+        subagent_ctx = {
+            "session_id": self.parent_session_id,
+            "subagent_type": self.subagent_type,
+            "task_id": self.task_id,
+            "model": get_subagent_model(self.subagent_type),
+            "start_time": start,
+        }
+
         try:
             final_text, history = agent_loop(
                 user_message=self.prompt,
@@ -112,6 +121,7 @@ class SubAgentOrchestrator:
                 workflow_mode="auto",
                 interrupt_event=interrupt,
                 context_cutoff=0,
+                subagent_context=subagent_ctx,
             )
         except Exception as e:
             return _finalize(SubAgentResult(

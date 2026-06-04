@@ -819,7 +819,8 @@ def _compress_history(history: list, keep_recent: int = 12) -> list:
     return compressed
 
 
-def agent_loop(user_message: str, history: list = None, workflow_mode: str = None, interrupt_event=None, context_cutoff: int = 0):
+def agent_loop(user_message: str, history: list = None, workflow_mode: str = None, interrupt_event=None, context_cutoff: int = 0,
+               *, subagent_context: dict | None = None):
     """
     Agent 主循环
     接收用户消息，调用 LLM，处理工具调用，返回最终结果
@@ -830,6 +831,12 @@ def agent_loop(user_message: str, history: list = None, workflow_mode: str = Non
         workflow_mode: 工作流模式（"step_by_step" 或 "auto"），None 使用默认值
         interrupt_event: threading.Event，设置后中断当前 Agent 循环
         context_cutoff: 上下文分割点，history[:context_cutoff] 不发送给 LLM（保留用于持久化）
+        subagent_context: 仅 SubAgent 委派时传入。dict 含 keys:
+            - session_id: str
+            - subagent_type: str
+            - task_id: str
+            - model: str
+            - start_time: float
     """
     client, model = create_client()
 
@@ -853,6 +860,9 @@ def agent_loop(user_message: str, history: list = None, workflow_mode: str = Non
     print(f"\n{'='*60}")
     print(f"用户: {user_message}")
     print(f"{'='*60}")
+
+    # 用于 SubAgent 进度事件：累计 LLM 调用次数
+    api_call_count = 0
 
     # Agent 循环：LLM 可能需要多次调用工具
     max_iterations = 15  # 防止无限循环
@@ -1081,6 +1091,21 @@ def agent_loop(user_message: str, history: list = None, workflow_mode: str = Non
                 sys.stdout.flush()
                 result = execute_tool(func_name, func_args)
 
+            # SubAgent 进度事件：emit 工具调用给 progress_hook（server.py 转发到 WS）
+            if subagent_context is not None:
+                try:
+                    from apps.web.server.progress_hook import emit_subagent_tool
+                    args_preview = json.dumps(func_args, ensure_ascii=False)[:100]
+                    emit_subagent_tool(
+                        session_id=subagent_context["session_id"],
+                        subagent_type=subagent_context["subagent_type"],
+                        task_id=subagent_context["task_id"],
+                        tool_name=func_name,
+                        args_preview=args_preview,
+                    )
+                except Exception:
+                    pass  # 进度事件失败不影响主流程
+
             tool_elapsed = time.time() - tool_start
             print(f"  ← 结果: {result[:200]}{'...' if len(result) > 200 else ''}")
             if tool_elapsed >= 60:
@@ -1090,6 +1115,23 @@ def agent_loop(user_message: str, history: list = None, workflow_mode: str = Non
             else:
                 print(f"  (工具耗时: {tool_elapsed:.1f}s)")
             sys.stdout.flush()
+
+            # SubAgent 进度事件：每完成一次工具调用 emit 一次 progress
+            if subagent_context is not None:
+                try:
+                    from apps.web.server.progress_hook import emit_subagent_progress
+                    api_call_count += 1
+                    elapsed_ms = int((time.time() - subagent_context["start_time"]) * 1000)
+                    emit_subagent_progress(
+                        session_id=subagent_context["session_id"],
+                        subagent_type=subagent_context["subagent_type"],
+                        task_id=subagent_context["task_id"],
+                        step_count=api_call_count,
+                        elapsed_ms=elapsed_ms,
+                        model=subagent_context.get("model", ""),
+                    )
+                except Exception:
+                    pass  # 进度事件失败不影响主流程
 
             # 拦截 load_conventions：将规范内容注入上下文
             if func_name == "load_conventions":

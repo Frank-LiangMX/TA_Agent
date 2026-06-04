@@ -29,7 +29,7 @@ def mock_llm_no_tool_call(monkeypatch):
 
     直接 monkeypatch backend.agent_main.agent_loop，避免模拟 OpenAI 流式 client。
     """
-    def fake_agent_loop(*, user_message, history, workflow_mode, interrupt_event, context_cutoff):
+    def fake_agent_loop(*, user_message, history, workflow_mode, interrupt_event, context_cutoff, **kwargs):
         new_history = list(history or []) + [
             {"role": "user", "content": user_message},
             {"role": "assistant", "content": "[mocked LLM answer] no tool call"},
@@ -46,7 +46,7 @@ def mock_llm_with_tool_then_answer(monkeypatch):
     直接 monkeypatch agent_loop，避免模拟 OpenAI 流式 client。
     history 反映"调过工具"的状态（history 中有 tool 角色），让 total_steps > 0。
     """
-    def fake_agent_loop(*, user_message, history, workflow_mode, interrupt_event, context_cutoff):
+    def fake_agent_loop(*, user_message, history, workflow_mode, interrupt_event, context_cutoff, **kwargs):
         new_history = list(history or []) + [
             {"role": "user", "content": user_message},
             {"role": "assistant", "content": "", "tool_calls": [
