@@ -15,15 +15,16 @@ base_dir = os.path.dirname(os.path.abspath(SPEC))
 def _submodules(pkg_root: str) -> list[str]:
     """收集给定目录下的所有 Python 模块（不含 __init__），返回 'pkg.submodule' 列表"""
     modules = []
-    pkg_name = pkg_root.replace(os.sep, '.')  # e.g. 'packages/tools' -> 'packages.tools'
+    # 包名前缀（pkg_root 只能是 packages/tools、packages/tools/core 等）
+    prefix = pkg_root.replace('/', '.').replace('\\', '.')  # 'packages/tools' -> 'packages.tools'
     for pyfile in glob.glob(os.path.join(pkg_root, '*.py')):
-        name = os.path.basename(pyfile)[:-3]  # strip .py
+        name = os.path.basename(pyfile)[:-3]
         if name != '__init__':
-            modules.append(f'{pkg_name}.{name}')
+            modules.append(f'{prefix}.{name}')
     # 子包
     for subpkg in glob.glob(os.path.join(pkg_root, '*/__init__.py')):
         subname = os.path.basename(os.path.dirname(subpkg))
-        modules.append(f'{pkg_name}.{subname}')
+        modules.append(f'{prefix}.{subname}')
     return modules
 
 a = Analysis(
