@@ -970,6 +970,48 @@ SubAgent 是**模式门控的工具**——主 agent 在 general 模式下可以
 
 ### 14.10 已知 TODO（按优先级）
 
-- **P0**：让 `agent_loop` 在 tool 调用前后 emit `subagent_tool` 事件，让 UI 能看到子 agent 调过哪些工具
-- **P1**：SubAgentCard 视觉对齐 Proma 折叠行风格
-- **P2**：嵌套子工具用 `ToolResultRenderer` 渲染（需要补全 args 结构）
+- **P0 ✅ v0.29 已完成**：让 `agent_loop` 在 tool 调用前后 emit `subagent_tool` 事件，让 UI 能看到子 agent 调过哪些工具
+- **P1 ✅ v0.29 已完成**：SubAgentCard 视觉对齐 Proma 折叠行风格
+- **P2**：嵌套子工具用 `ToolResultRenderer` 渲染（需要补全 args 结构 — 后续）
+
+### 14.11 事件流（v0.29+）
+
+后端 → 前端的 SubAgent 事件流：
+
+```
+SubAgentOrchestrator._run_loop
+  └─ agent_loop(subagent_context={session_id, subagent_type, task_id, model, start_time})
+      ├─ 每调一次工具 → progress_hook.emit_subagent_tool(...)
+      └─ 每完成一次 step → progress_hook.emit_subagent_progress(...)
+                  ↓
+        apps/web/server/server.py 推送循环
+          └─ _forward_subagent_events(ws, current_session_id)
+              └─ send_event(ws, "subagent_tool" | "subagent_progress", payload)
+                  ↓
+        前端 WebSocket 客户端
+          └─ services/subagent-events.ts
+              └─ upsertSubAgentStateAtom(...) / updateSubAgentStateAtom(...)
+                  ↓
+        SubAgentCard 实时更新工具列表
+```
+
+事件 payload 格式：
+
+```json
+{
+  "type": "event",
+  "event": "subagent_tool" | "subagent_progress",
+  "payload": {
+    "task_id": "subagent-abc123",
+    "subagent_type": "explorer",
+    "tool_name": "workspace_list_dir",     // only on subagent_tool
+    "args_preview": "{\"path\": \"src\"}",  // only on subagent_tool
+    "step_count": 3,                       // only on subagent_progress
+    "elapsed_ms": 1234,                    // only on subagent_progress
+    "model": "glm-5"                       // only on subagent_progress
+  }
+}
+```
+
+过滤逻辑：`_forward_subagent_events` 只 forward `session_id == current_session_id` 的事件，
+避免不同会话的 subagent 事件串台。

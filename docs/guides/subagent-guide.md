@@ -115,7 +115,28 @@ SubAgent 是通用工作台（general mode）下的**任务委派工具**：主 
 }
 ```
 
-## 五、常见问题
+## 五、UI 展示
+
+SubAgent 任务在会话里以**单行折叠按钮**展示（对齐 Proma 风格，v0.29+）：
+
+- **折叠态**：
+  - 状态图标（运行中 spinner / 错误 X / 成功）
+  - 子 agent 角色图标（Compass / BookOpen / ClipboardCheck）
+  - 语义短语（"正在探索代码结构" / "正在审查代码" 等）
+  - 工具调用计数（"N 项工具调用"）
+  - 后台任务标记
+
+- **展开态**：
+  - 提示词（可单独折叠成单行）
+  - 子工具列表（每行一个工具名 + 参数预览）
+  - 最终输出（**Markdown 渲染**）
+  - 底部统计行（步数 / 耗时 / tokens）
+
+> 实现细节：v0.29 起，agent_loop 在子 agent 调工具时会 emit `subagent_tool` 事件，
+> server.py 转发到 WebSocket，前端实时更新 SubAgentCard 的工具列表。
+> 不再是"提交后看到完整结果"的盲盒。
+
+## 六、常见问题
 
 ### Q: 我看不到 "SubAgent · xxx" 卡片？
 
@@ -133,7 +154,7 @@ SubAgent 是通用工作台（general mode）下的**任务委派工具**：主 
 - 但 `subagent_runs.jsonl` 里**永远有记录**
 - 要拿历史结果，用 `TaskOutput(task_id="...")` 工具或查日志文件
 
-## 六、与 TA 资产流程的关系
+## 七、与 TA 资产流程的关系
 
 **SubAgent 是通用工作台的能力，TA 资产流程完全不变**：
 

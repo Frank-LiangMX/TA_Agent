@@ -1,6 +1,6 @@
 # 文档地图
 
-> 最后更新：2026-06-05（含通用模式 SubAgent）
+> 最后更新：2026-06-05（含 v0.29 SubAgent UI 改造）
 
 ## 文档结构
 
@@ -90,3 +90,4 @@ docs/
 - 2026-06-02：新增 `reference/local-runtime-connection.md`（整合连接方案与验收）
 - 2026-06-02：新增根目录 `AGENTS.md`（其他 Agent 协作入口）
 - 2026-06-05：新增 `decisions/subagent-architecture.md`、`plans/2026-06-04-subagent-design.md`、`plans/2026-06-04-subagent-impl-plan.md`、`guides/subagent-guide.md`、`release-notes/v0.28.md`（通用模式 SubAgent）
+- 2026-06-05：新增 `plans/2026-06-05-subagent-ui-promote.md`、`release-notes/v0.29.md`（SubAgent 工具事件流 + UI 改造）
