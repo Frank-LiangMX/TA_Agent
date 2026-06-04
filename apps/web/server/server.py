@@ -157,6 +157,37 @@ sessions: dict[str, Session] = {}
 
 # ===== WebSocket 事件发送辅助 =====
 
+async def _forward_subagent_events(ws: WebSocket, current_session_id: str) -> int:
+    """从 progress_hook 队列读取 subagent 事件，过滤后 forward 到 WebSocket。
+
+    Returns: 推送的事件数。
+    """
+    try:
+        from progress_hook import get_progress_events
+    except ImportError:
+        return 0
+
+    forwarded = 0
+    for evt in get_progress_events():
+        if evt.get("type") != "subagent_event":
+            continue
+        if evt.get("session_id") != current_session_id:
+            continue
+        event_type = evt.get("event_type", "tool")
+        ws_msg_event = f"subagent_{event_type}"
+        payload = {
+            "task_id": evt.get("task_id"),
+            "subagent_type": evt.get("subagent_type"),
+            **evt.get("payload", {}),
+        }
+        try:
+            await send_event(ws, ws_msg_event, payload)
+            forwarded += 1
+        except Exception:
+            pass
+    return forwarded
+
+
 async def send_event(ws: WebSocket, event: str, payload: dict):
     """发送事件到客户端"""
     try:
@@ -735,6 +766,8 @@ async def run_agent(
                         break
                     for evt in get_progress_events():
                         await send_event(ws, evt["type"], evt)
+                    # 转发 SubAgent 事件
+                    await _forward_subagent_events(ws, session.session_id)
                 else:
                     # 正常完成（未 break）
                     try:
@@ -748,6 +781,8 @@ async def run_agent(
                 # 最后一批进度事件
                 for evt in get_progress_events():
                     await send_event(ws, evt["type"], evt)
+                # 最后一批 SubAgent 事件
+                await _forward_subagent_events(ws, session.session_id)
 
                 # 推送工具结果
                 await send_event(ws, "tool_result", {
