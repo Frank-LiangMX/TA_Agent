@@ -1,6 +1,6 @@
 # 后端设计参考
 
-> 最后更新：2026-06-03
+> 最后更新：2026-06-05（新增第十四章 SubAgent）
 
 ---
 
@@ -847,3 +847,129 @@ WebSocket `/ws` 连接时读取当前 `agentMode`，在 `connected` 事件中返
 | `GET /api/tools` | 返回当前模式可用工具 + `tier_summary` 按模式统计 |
 | `GET /api/permissions` | 仅列出当前模式可用工具的权限 |
 | `GET /api/memory/profile` | 返回当前 namespace 的记忆数据 |
+
+---
+
+## 十四、SubAgent（通用模式任务委派）
+
+> 适用：`agent_mode == 'general'`，TA 模式不暴露。
+> 设计稿：`docs/plans/2026-06-04-subagent-design.md` · ADR：`docs/decisions/subagent-architecture.md`
+
+### 14.1 概念
+
+SubAgent 是**模式门控的工具**——主 agent 在 general 模式下可以调 `Agent` 工具委派任务给"专业子角色"。子角色拥有独立上下文、独立工具白名单、独立模型。
+
+**核心原则**：
+- 仅 general 模式注册 `Agent` / `TaskOutput` / `TaskStop` 三个工具
+- TA 模式不暴露（保持单 agent 架构）
+- 复用现有 `agent_loop()` / `registry` / MCP / 记忆基础设施
+- 不引入新框架（CrewAI / AutoGen / LangGraph）
+
+### 14.2 内置 SubAgent
+
+| 名字 | 显示名 | 用途 | model_tier |
+|------|-------|------|------------|
+| `explorer` | 代码探索 | 只读：扫目录、看文件、梳理调用关系 | haiku |
+| `researcher` | 技术调研 | 调研第三方库 / API / 最佳实践 | haiku |
+| `code-reviewer` | 代码评审 | 检查代码质量、bug、风格 | sonnet |
+
+定义在 `packages/tools/subagents.py` 的 `SUBAGENTS` 字典里。
+
+### 14.3 数据流
+
+```
+用户 → WebSocket → main agent_loop
+                          │
+                          ├─ LLM 决定调 Agent(subagent_type="explorer", prompt="...")
+                          │
+                          ▼
+                  SubAgentOrchestrator.run()
+                          │
+            ┌─────────────┴─────────────┐
+            │ 同步                       │ 后台 (run_in_background=True)
+            ▼                           ▼
+   agent_loop (独立 history)    background_tasks[task_id] = self
+   + 子 agent system prompt       threading.Thread(daemon=True)
+   + resolve_allowed_tools()             │
+   + get_subagent_model()                ▼
+            │                       _run_in_thread() →
+            ▼                       agent_loop (同上)
+   _finalize() 写 subagent_runs.jsonl
+            │
+            ▼
+   ToolResultRenderer / SubAgentCard 渲染
+```
+
+### 14.4 关键模块
+
+| 文件 | 作用 |
+|------|------|
+| `packages/tools/subagents.py` | `SubAgentSpec` dataclass + `SUBAGENTS` 字典 + `resolve_allowed_tools()`（处理 `mcp__*` 通配符） |
+| `packages/tools/agent_tool.py` | `SubAgentOrchestrator` + `SubAgentResult` + `AGENT_TOOL_SCHEMA` + `_agent_tool_function` + `TASKOUTPUT_TOOL_SCHEMA` + `TASKSTOP_TOOL_SCHEMA` |
+| `packages/tools/agent_logging.py` | `log_subagent_run()` → 写 `subagent_runs.jsonl` |
+| `backend/config.py` | `get_subagent_model()` — tier 默认 + 用户覆盖 + fallback |
+| `apps/web/server/progress_hook.py` | per-session cancel + `_cascade_cancel_subagents()` |
+
+### 14.5 模型路由
+
+`get_subagent_model(subagent_type)` 解析优先级：
+
+1. **user override**：从 `app-config.json` 的 `subagent_model_overrides[subagent_type]` 读
+2. **tier default**：`SUBAGENTS[name].model_tier` 映射到 `_TIER_DEFAULT_MODELS`
+3. **active model fallback**：调 `get_active_provider_model()`（兼容新结构 providers[]）
+4. 最终兜底 `"glm-5"`
+
+### 14.6 防递归
+
+`SUBAGENTS` 字典里**每个** spec 的 `allowed_tools` 都**不包含** `Agent` / `TaskOutput` / `TaskStop`。`resolve_allowed_tools()` 进一步确保解析后的工具集也不含。
+
+### 14.7 运行日志
+
+每次 `_run_loop()` 结束（无论 status），追加一行到 `<runtime>/subagent_runs.jsonl`：
+
+```json
+{
+  "ts": "2026-06-05T12:34:56.789Z",
+  "session_id": "xxx",
+  "subagent_type": "explorer",
+  "task_id": "subagent-abc123",
+  "model": "glm-4-flash",
+  "run_in_background": false,
+  "status": "completed",
+  "total_steps": 3,
+  "total_tokens_in": 0,
+  "total_tokens_out": 0,
+  "duration_ms": 1234,
+  "error": null
+}
+```
+
+### 14.8 后台任务生命周期
+
+`SubAgentOrchestrator.background_tasks: dict[str, SubAgentOrchestrator]` 是**类级别 registry**：
+
+- `run_in_background=True` → `run()` 立即返回 `task_id`，起 daemon 线程执行
+- 线程内 `_run_in_thread()` 调 `_run_loop()`，完成或异常都从 registry 移除
+- 父级取消（`progress_hook.cancel_session(session_id)`）→ `_cascade_cancel_subagents()` 遍历并移除该 session 的 in-flight 子 agent
+
+### 14.9 扩展：加新 SubAgent 类型
+
+1. 在 `packages/tools/subagents.py` 的 `SUBAGENTS` 字典加新 `SubAgentSpec`：
+   ```python
+   "my-agent": SubAgentSpec(
+       name="my-agent",
+       display_name="我的子角色",
+       description_for_parent="...",
+       system_prompt="...",
+       allowed_tools=["workspace_read_file", ...],
+       model_tier="haiku",
+   )
+   ```
+2. 跑 `python -m pytest packages/tools/tests/test_subagents.py -v` 验证（防递归 + 白名单等自动覆盖）
+3. 在用户指南 `docs/guides/subagent-guide.md` 加一行
+
+### 14.10 已知 TODO（按优先级）
+
+- **P0**：让 `agent_loop` 在 tool 调用前后 emit `subagent_tool` 事件，让 UI 能看到子 agent 调过哪些工具
+- **P1**：SubAgentCard 视觉对齐 Proma 折叠行风格
+- **P2**：嵌套子工具用 `ToolResultRenderer` 渲染（需要补全 args 结构）
