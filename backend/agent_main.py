@@ -664,6 +664,27 @@ def build_system_prompt(
 请优先遵循以上文档中的约定。
 """
 
+    # SubAgent 描述注入（仅 general 模式）
+    if runtime_mode == "general":
+        from packages.tools.subagents import SUBAGENTS
+        subagent_lines = ["\n## 可用的 SubAgent\n"]
+        subagent_lines.append(
+            "你可以用 `Agent` 工具委派任务给以下子角色。子 agent 拥有独立上下文和工具集，"
+            "适合拆解大型任务（如代码探索、技术调研、代码评审）。\n"
+        )
+        for name, spec in SUBAGENTS.items():
+            subagent_lines.append(
+                f"### {spec.display_name} (`{name}`)\n"
+                f"{spec.description_for_parent}\n"
+            )
+        subagent_lines.append(
+            "\n**调用示例**：\n"
+            '```\n'
+            "Agent(subagent_type=\"explorer\", prompt=\"...\", description=\"...\")\n"
+            '```\n'
+        )
+        prompt += "\n".join(subagent_lines)
+
     prompt = _append_memory_profile(prompt, runtime_mode)
 
     return prompt
