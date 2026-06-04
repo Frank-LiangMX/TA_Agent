@@ -24,9 +24,11 @@ interface ChatMessageProps {
   }
   onAssetClick?: (asset: Record<string, unknown>) => void
   onSetDivider?: () => void
+  onStopSubAgent?: (taskId: string) => void
+  onViewSubAgent?: (taskId: string) => void
 }
 
-export function ChatMessage({ message, onAssetClick, onSetDivider }: ChatMessageProps) {
+export function ChatMessage({ message, onAssetClick, onSetDivider, onStopSubAgent, onViewSubAgent }: ChatMessageProps) {
   const [copied, setCopied] = React.useState(false)
   const [toolExpanded, setToolExpanded] = React.useState(false)
   const [showArgs, setShowArgs] = React.useState(false)
@@ -195,7 +197,12 @@ export function ChatMessage({ message, onAssetClick, onSetDivider }: ChatMessage
           {message.subAgentTasks && message.subAgentTasks.length > 0 && (
             <div className="mt-2 space-y-1">
               {message.subAgentTasks.map((s) => (
-                <SubAgentCard key={s.task_id} state={s} />
+                <SubAgentCard
+                  key={s.task_id}
+                  state={s}
+                  onStop={onStopSubAgent}
+                  onViewDetails={onViewSubAgent}
+                />
               ))}
             </div>
           )}
