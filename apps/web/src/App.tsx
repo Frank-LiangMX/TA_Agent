@@ -143,6 +143,13 @@ export default function App() {
     connectInitialSession().catch(err => {
       console.error('[App] WebSocket 连接失败:', err)
     })
+
+    // 订阅 SubAgent 事件
+    import('./services/subagent-events').then(({ subscribeSubAgentEvents }) => {
+      const unsub = subscribeSubAgentEvents(tagentClient)
+      // 不需要 unsub — 全局只订阅一次；卸载时由 tagentClient 自然失效
+      void unsub
+    })
     return () => {
       cancelled = true
       if (connectGen === wsConnectGenRef.current) {
