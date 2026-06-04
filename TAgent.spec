@@ -7,6 +7,7 @@ TAgent PyInstaller 打包配置
 """
 
 import os
+from PyInstaller.utils.hooks import collect_submodules
 
 block_cipher = None
 base_dir = os.path.dirname(os.path.abspath(SPEC))
@@ -41,6 +42,13 @@ a = Analysis(
         'config',
         'session_manager',
         'tools',
+        # 自动收集 tools 包所有子模块（包括 server.py 函数体内懒加载的
+        # tools.danger_patterns / tools.permissions 等），避免 PyInstaller
+        # 静态分析扫不到动态 import 路径
+        *collect_submodules('tools'),
+        *collect_submodules('tools.core'),
+        *collect_submodules('tools.extensions'),
+        *collect_submodules('tools.plugins'),
         'uvicorn',
         'uvicorn.logging',
         'uvicorn.loops',
