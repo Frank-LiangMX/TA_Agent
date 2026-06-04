@@ -116,3 +116,60 @@ def patch_analyzer_progress():
         print("  [进度回调] run_ai_inference 已注入进度回调")
     except Exception as e:
         print(f"  [进度回调] 注入失败: {e}")
+
+
+# ===== SubAgent 进度事件 =====
+
+def emit_subagent_event(
+    session_id: str,
+    subagent_type: str,
+    task_id: str,
+    event_type: str,  # "tool" | "progress" | "done"
+    payload: dict,
+) -> None:
+    """emit SubAgent 进度事件到全局队列。
+
+    server.py 推送循环会读取并按 session_id 过滤后 forward 到 WebSocket。
+    """
+    event = {
+        "type": "subagent_event",
+        "session_id": session_id,
+        "subagent_type": subagent_type,
+        "task_id": task_id,
+        "event_type": event_type,
+        "payload": payload,
+    }
+    try:
+        _progress_queue.put(event)
+    except Exception:
+        pass
+
+
+def emit_subagent_tool(
+    session_id: str,
+    subagent_type: str,
+    task_id: str,
+    tool_name: str,
+    args_preview: str,
+) -> None:
+    """emit SubAgent 调工具事件。"""
+    emit_subagent_event(session_id, subagent_type, task_id, "tool", {
+        "tool_name": tool_name,
+        "args_preview": args_preview,
+    })
+
+
+def emit_subagent_progress(
+    session_id: str,
+    subagent_type: str,
+    task_id: str,
+    step_count: int,
+    elapsed_ms: int,
+    model: str,
+) -> None:
+    """emit SubAgent 进度事件。"""
+    emit_subagent_event(session_id, subagent_type, task_id, "progress", {
+        "step_count": step_count,
+        "elapsed_ms": elapsed_ms,
+        "model": model,
+    })
