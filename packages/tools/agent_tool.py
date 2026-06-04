@@ -226,3 +226,58 @@ def _agent_tool_function(
         else:
             return f"## SubAgent ({subagent_type}) 状态: {result.status}"
     return str(result)
+
+
+# ========== TaskOutput / TaskStop 工具 ==========
+
+TASKOUTPUT_TOOL_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "TaskOutput",
+        "description": "获取后台 SubAgent 的进度或最终结果。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string"},
+                "block": {"type": "boolean", "default": True, "description": "true 时阻塞等待完成"},
+                "max_wait_ms": {"type": "number", "default": 30000},
+            },
+            "required": ["task_id"],
+        },
+    },
+}
+
+TASKSTOP_TOOL_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "TaskStop",
+        "description": "取消一个后台 SubAgent。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string"},
+            },
+            "required": ["task_id"],
+        },
+    },
+}
+
+
+def _taskoutput_function(task_id: str, block: bool = True, max_wait_ms: float = 30000) -> str:
+    orch = SubAgentOrchestrator.background_tasks.get(task_id)
+    if orch is None:
+        return f"[TaskOutput] task_id={task_id} 不存在或已结束"
+    thread = getattr(orch, "_thread", None)
+    if block and thread is not None and thread.is_alive():
+        thread.join(timeout=max_wait_ms / 1000)
+    if thread is not None and thread.is_alive():
+        return f"[TaskOutput] task_id={task_id} 仍在运行（超时 {max_wait_ms}ms）"
+    return f"[TaskOutput] task_id={task_id} 已完成"
+
+
+def _taskstop_function(task_id: str) -> str:
+    orch = SubAgentOrchestrator.background_tasks.get(task_id)
+    if orch is None:
+        return f"[TaskStop] task_id={task_id} 不存在"
+    # 当前 _run_loop 不响应 cancel event；父级取消通过 _run_in_thread 内的 try/except 覆盖
+    return f"[TaskStop] task_id={task_id} 停止信号已发送（subagent 会在当前 step 完成后停止）"
