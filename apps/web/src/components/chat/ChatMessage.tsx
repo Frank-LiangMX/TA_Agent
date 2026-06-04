@@ -7,6 +7,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { User, Bot, Wrench, Copy, Check, ChevronDown, ChevronRight, Loader2, Scissors, Activity } from 'lucide-react'
 import { ToolResultRenderer } from '../tools/ToolResultRenderer'
+import { SubAgentCard } from '../agent/SubAgentCard'
 import type { ChatMessage as ChatMessageType, ToolCall } from '@/types'
 import {
   getTurnSegments,
@@ -188,6 +189,15 @@ export function ChatMessage({ message, onAssetClick, onSetDivider }: ChatMessage
                 </div>
               ) : null}
             </>
+          )}
+
+          {/* SubAgent 任务卡片（general mode 下 Agent 工具调用产生） */}
+          {message.subAgentTasks && message.subAgentTasks.length > 0 && (
+            <div className="mt-2 space-y-1">
+              {message.subAgentTasks.map((s) => (
+                <SubAgentCard key={s.task_id} state={s} />
+              ))}
+            </div>
           )}
         </div>
 

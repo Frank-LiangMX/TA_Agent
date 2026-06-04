@@ -161,6 +161,8 @@ export interface ChatMessage {
   toolResults?: ToolResult[]
   /** 关联的资产（用于展示资产卡片） */
   assetIds?: string[]
+  /** SubAgent 任务列表（general mode 下 Agent 工具调用产生） */
+  subAgentTasks?: Array<import('@/components/agent/SubAgentCard').SubAgentState>
 }
 
 // ===== 会话 =====
