@@ -3,7 +3,7 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Square, Loader2, CheckCircle2, FolderSearch, Brain, FileCheck, Package, MessageSquare, Bot, Paperclip } from 'lucide-react'
+import { Send, Square, Loader2, CheckCircle2, FolderSearch, Brain, FileCheck, Package, MessageSquare, Bot, Paperclip, PanelRight, PanelRightClose } from 'lucide-react'
 import { ChatMessage } from '../chat/ChatMessage'
 import { ContextDivider } from '../chat/ContextDivider'
 import { ScrollMinimap } from '../chat/ScrollMinimap'
@@ -13,6 +13,8 @@ import { AttachmentPreview, type Attachment } from './AttachmentPreview'
 import { SessionTabBar } from '../session/SessionTabBar'
 import { ThinkingDots, SkeletonBlock } from '../animations'
 import { tagentClient, type ConnectionStatus } from '@/services/websocket'
+import { PermissionDialog, type PermissionDecision } from '../ui/PermissionDialog'
+import { RightWorkspacePanel } from '../workspace/RightWorkspacePanel'
 import { getSessionMessages, getSession, updateSession, createSession, listSessions } from '@/services/sessions'
 import { fetchPipelineRunsForSession, type PipelineRun } from '@/services/pipeline'
 import type { ChatMessage as ChatMessageType, ToolCall } from '@/types'
@@ -93,6 +95,8 @@ export function MainPanel({ onAssetSelect, agentMode = 'ta' }: MainPanelProps) {
   })
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [pendingPermission, setPendingPermission] = useState<any | null>(null)
+  const [workspacePanelOpen, setWorkspacePanelOpen] = useState(false)
 
   // ===== 多标签会话管理 =====
   const [openTabIds, setOpenTabIds] = useState<string[]>(() => {
@@ -808,6 +812,10 @@ const loadTabHistory = useCallback(async (tabId: string) => {
       }
     })
 
+    const unsubPermission = tagentClient.on('tool_permission_request', (payload: any) => {
+      setPendingPermission(payload)
+    })
+
     return () => {
       unsubStatus()
       unsubConnected()
@@ -818,6 +826,7 @@ const loadTabHistory = useCallback(async (tabId: string) => {
       unsubToolResult()
       unsubDone()
       unsubError()
+      unsubPermission()
       // 不断开 WebSocket，由 App 层管理连接
     }
   }, [agentMode, loadTabHistory, setMessagesForTab])
@@ -1013,68 +1022,34 @@ const loadTabHistory = useCallback(async (tabId: string) => {
             onNewTab={handleNewTab}
           />
         }
-        trailing={<ConnectionBadge status={connectionStatus} />}
+        trailing={
+          <div className="flex items-center gap-1">
+            <ConnectionBadge status={connectionStatus} />
+            {agentMode === 'general' && (
+              <Tooltip content={workspacePanelOpen ? '关闭工作区面板' : '打开工作区面板'}>
+                <button
+                  type="button"
+                  onClick={() => setWorkspacePanelOpen(v => !v)}
+                  className={`p-1.5 rounded-md transition-colors ${
+                    workspacePanelOpen
+                      ? 'bg-accent text-foreground'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                  }`}
+                >
+                  {workspacePanelOpen ? <PanelRightClose size={16} /> : <PanelRight size={16} />}
+                </button>
+              </Tooltip>
+            )}
+          </div>
+        }
       />
-
-      {agentMode === 'general' && (
-        <div className="px-4 py-1 border-b border-border/30 bg-muted/15">
-          {!editingWorkspace ? (
-            <div className="flex items-center gap-2 min-w-0">
-              <span
-                className="text-[11px] text-muted-foreground truncate"
-                title={workspaceInfo?.path || '系统默认工作区目录'}
-              >
-                {workspaceInfo?.name || '默认工作区'}
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  setWorkspaceDraft(workspaceInfo?.path || '')
-                  setEditingWorkspace(true)
-                }}
-                className="shrink-0 text-[11px] px-1.5 py-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-              >
-                设置
-              </button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-1.5">
-              <input
-                value={workspaceDraft}
-                onChange={(e) => setWorkspaceDraft(e.target.value)}
-                placeholder="本地目录路径"
-                className="flex-1 min-w-0 text-[11px] px-2 py-0.5 rounded border border-border/60 bg-background text-foreground outline-none focus:ring-1 focus:ring-ring"
-              />
-              <button
-                type="button"
-                onClick={handlePickWorkspaceFolder}
-                className="shrink-0 text-[11px] px-1.5 py-0.5 rounded border border-border/60 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-              >
-                浏览
-              </button>
-              <button
-                type="button"
-                onClick={handleSetActiveWorkspace}
-                className="shrink-0 text-[11px] px-1.5 py-0.5 rounded border border-border/60 text-foreground hover:bg-accent transition-colors"
-              >
-                保存
-              </button>
-              <button
-                type="button"
-                onClick={() => setEditingWorkspace(false)}
-                className="shrink-0 text-[11px] px-1.5 py-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-              >
-                取消
-              </button>
-            </div>
-          )}
-        </div>
-      )}
 
       {agentMode === 'ta' ? <PipelineProgress sessionId={sessionId} /> : null}
 
-      {/* 消息列表 */}
-      <div className="flex-1 min-h-0 relative overflow-x-hidden flex flex-col">
+      {/* 主体：聊天 + 右侧工作区面板 */}
+      <div className="flex-1 min-h-0 flex">
+        {/* 消息列表 */}
+        <div className="flex-1 min-h-0 relative overflow-x-hidden flex flex-col min-w-0 transition-all duration-200 ease-out">
       {!activeTabId && openTabIds.length === 0 ? (
         <div className="flex-1 flex items-center justify-center overflow-hidden px-6">
           <div className="flex flex-col items-center text-center text-muted-foreground max-w-sm">
@@ -1212,10 +1187,9 @@ const loadTabHistory = useCallback(async (tabId: string) => {
       )}
       </>
       )}
-      </div>
 
       {/* 输入框 */}
-      <div className="p-4 overflow-x-hidden">
+      <div className="p-4 overflow-x-hidden transition-all duration-200 ease-out">
         {/* 建议卡片 */}
         {promptSuggestion && (
           <div className="flex items-center gap-2 mb-3 animate-msg-pop">
@@ -1237,7 +1211,7 @@ const loadTabHistory = useCallback(async (tabId: string) => {
             </button>
           </div>
         )}
-        <div className="composer-focus-shell relative rounded-xl border border-border/50 bg-card">
+        <div className="composer-focus-shell relative rounded-xl border border-foreground/10 bg-card transition-all duration-200 ease-out shadow-[0_8px_24px_-8px_rgb(0_0%_0/0.15),inset_0_1px_0_0_rgb(255_255_255/0.4)]">
           {/* 流式动画 */}
           {isActiveTabStreaming && (
             <div
@@ -1373,6 +1347,35 @@ const loadTabHistory = useCallback(async (tabId: string) => {
           </div>
         </div>
       </div>
+      </div>
+
+        <RightWorkspacePanel
+          open={workspacePanelOpen && agentMode === 'general'}
+          onClose={() => setWorkspacePanelOpen(false)}
+          sessionId={activeTabId}
+          onWorkspaceChange={() => setSessionRefreshKey((k) => k + 1)}
+        />
+      </div>
+
+      <PermissionDialog
+        open={pendingPermission != null}
+        toolName={pendingPermission?.toolName || ''}
+        arguments={(pendingPermission?.arguments as Record<string, unknown>) || {}}
+        classification={pendingPermission?.classification || 'dangerous'}
+        onRespond={(decision: PermissionDecision) => {
+          const payload = pendingPermission
+          setPendingPermission(null)
+          if (payload) {
+            tagentClient
+              .respondPermission(payload.requestId, decision, {
+                sessionId: payload.sessionId,
+                toolName: payload.toolName,
+                pattern: JSON.stringify(payload.arguments || {}),
+              })
+              .catch((err) => console.error('[Permission] 发送响应失败:', err))
+          }
+        }}
+      />
     </div>
   )
 }

@@ -268,6 +268,7 @@ def _save_providers(providers: list) -> None:
     with open(config_path, "w", encoding="utf-8") as f:
         json.dump(app_config, f, ensure_ascii=False, indent=2)
 
+
 def list_providers() -> list:
     """列出所有 Provider（不暴露 api_key）"""
     providers = _get_providers()
@@ -381,18 +382,12 @@ def set_provider_enabled(provider_id: str, enabled: bool) -> dict:
     return {"success": False, "error": "Provider 不存在"}
 
 def set_model_enabled(provider_id: str, model_id: str, enabled: bool) -> dict:
-    """启用/禁用 Provider 下的模型"""
+    """启用/禁用 Provider 下的模型（只改目标模型，不影响其他）"""
     providers = _get_providers()
     for i, p in enumerate(providers):
         if p.get("id") == provider_id:
             for j, m in enumerate(p.get("models", [])):
                 if m.get("id") == model_id:
-                    if enabled:
-                        # 启用时：所有 provider 下的所有模型全部禁用，保证只有一个模型活跃
-                        for pi, pp in enumerate(providers):
-                            for pmi, pm in enumerate(pp.get("models", [])):
-                                if pm.get("id") != model_id:
-                                    providers[pi]["models"][pmi]["enabled"] = False
                     providers[i]["models"][j]["enabled"] = enabled
                     _save_providers(providers)
                     return {"success": True}
@@ -400,8 +395,25 @@ def set_model_enabled(provider_id: str, model_id: str, enabled: bool) -> dict:
     return {"success": False, "error": "Provider 不存在"}
 
 def get_active_provider_model() -> dict | None:
-    """获取当前启用的 Provider 和模型"""
+    """获取当前选中的 Provider 和模型（优先返回 selected，否则返回第一个 enabled）"""
     providers = _get_providers()
+    # 先找有 selected 标记的
+    for p in providers:
+        if not p.get("enabled"):
+            continue
+        for m in p.get("models", []):
+            if m.get("selected"):
+                return {
+                    "provider_id": p["id"],
+                    "provider_name": p.get("name", ""),
+                    "base_url": p.get("base_url", ""),
+                    "api_key": p.get("api_key", ""),
+                    "protocol": p.get("protocol", "openai"),
+                    "extra_headers": p.get("extra_headers", {}),
+                    "model": m["id"],
+                    "model_name": m.get("name", m["id"]),
+                }
+    # 回退：返回第一个 enabled
     for p in providers:
         if not p.get("enabled"):
             continue
@@ -417,23 +429,27 @@ def get_active_provider_model() -> dict | None:
                     "model": m["id"],
                     "model_name": m.get("name", m["id"]),
                 }
+
+def set_active_model(provider_id: str, model_id: str) -> dict:
+    """设置当前选中的模型（清除其他 selected，设置目标）"""
+    providers = _get_providers()
+    for i, p in enumerate(providers):
+        for j, m in enumerate(p.get("models", [])):
+            providers[i]["models"][j].pop("selected", None)
+    for i, p in enumerate(providers):
+        if p.get("id") == provider_id:
+            for j, m in enumerate(p.get("models", [])):
+                if m.get("id") == model_id:
+                    providers[i]["models"][j]["selected"] = True
+                    providers[i]["models"][j]["enabled"] = True
+                    _save_providers(providers)
+                    return {"success": True}
+    return {"success": False, "error": "模型不存在"}
     return None
 
 def get_active_model() -> dict | None:
     """获取当前启用的模型（兼容旧接口）"""
     return get_active_provider_model()
-
-def set_active_model(model_id: str) -> dict:
-    """兼容旧接口：激活指定模型（通过 model_id 在所有 Provider 中查找）"""
-    providers = _get_providers()
-    for p in providers:
-        for m in p.get("models", []):
-            if m.get("id") == model_id:
-                # 禁用同 Provider 下其他模型，启用目标模型
-                for pm in p.get("models", []):
-                    pm["enabled"] = (pm["id"] == model_id)
-                _save_providers(providers)
-                return {"success": True}
     return {"success": False, "error": "模型不存在"}
 
 # ========== Blender 配置 ==========

@@ -182,7 +182,7 @@ export function SessionPopover({ currentSessionId, refreshKey = 0, onSelect, onN
       className="fixed inset-0 z-[110] flex items-start justify-center pt-16"
       onClick={handleBackdropClick}
     >
-      <div className="w-96 max-h-[70vh] bg-popover rounded-lg shadow-xl border border-border/30 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      <div className="w-96 max-h-[70vh] bg-popover border border-foreground/10 rounded-lg shadow-[0_20px_40px_-8px_rgb(0_0%_0/0.18),0_0_0_1px_rgb(255_255_255/0.05),inset_0_1px_0_0_rgb(255_255_255/0.5)] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         {/* 头部 */}
         <div className="px-4 pt-4 pb-2 space-y-3">
           <div className="flex items-center justify-between">

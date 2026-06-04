@@ -56,7 +56,7 @@ def _ensure_init():
 # ===== 会话 CRUD =====
 
 def _build_workspace_for_session(session_id: str, workspace_path: str = "") -> tuple[str, str]:
-    """为会话生成/标准化工作区路径与显示名。未指定时使用共享默认工作区。"""
+    """为会话生成/标准化工作区路径与显示名。未指定时使用系统默认工作区。"""
     raw = (workspace_path or "").strip()
     if raw:
         abs_path = os.path.abspath(raw)

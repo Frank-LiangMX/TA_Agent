@@ -392,6 +392,8 @@ async def run_agent(
             return
 
         llm_start_time = None
+        prompt_tokens_real = 0
+        completion_tokens_real = 0
         try:
             # 构建 LLM 请求参数
             llm_kwargs = {
@@ -401,6 +403,7 @@ async def run_agent(
                 "tool_choice": "auto",
                 "temperature": 0.1,
                 "stream": True,
+                "stream_options": {"include_usage": True},
             }
             # 思考模式：添加 reasoning_effort 参数
             if thinking:
@@ -415,6 +418,11 @@ async def run_agent(
                     print(f"[Server] API 不支持 reasoning_effort，去掉后重试")
                     llm_kwargs.pop("reasoning_effort", None)
                     stream = client.chat.completions.create(**llm_kwargs)
+                # 容错：如果 API 不支持 stream_options，去掉后重试
+                elif "stream_options" in str(api_err).lower():
+                    print(f"[Server] API 不支持 stream_options，去掉后重试")
+                    llm_kwargs.pop("stream_options", None)
+                    stream = client.chat.completions.create(**llm_kwargs)
                 else:
                     raise
             _usage_stats["llm_calls"] += 1
@@ -426,7 +434,9 @@ async def run_agent(
             collected_reasoning = ""
             # 按 index 收集工具调用块
             tool_call_chunks: dict[int, dict] = {}
-
+            # 真实 token 计数（从 stream usage 字段累计；fallback 用估算）
+            prompt_tokens_real = 0
+            completion_tokens_real = 0
             async def emit_thinking_delta(text: str):
                 if not text:
                     return
@@ -441,6 +451,14 @@ async def run_agent(
                 # 检查中断
                 if session.cancel_event.is_set():
                     break
+
+                # 抓取 usage（最后 chunk 携带，openai 兼容协议）
+                usage = getattr(chunk, "usage", None)
+                if usage:
+                    if getattr(usage, "prompt_tokens", None):
+                        prompt_tokens_real = usage.prompt_tokens
+                    if getattr(usage, "completion_tokens", None):
+                        completion_tokens_real = usage.completion_tokens
 
                 if not chunk.choices:
                     continue
@@ -480,7 +498,7 @@ async def run_agent(
             # 流式结束，检查是否被中断
             if session.cancel_event.is_set():
                 llm_duration = (time.time() - llm_start_time) * 1000
-                _log_llm_call(session.session_id, model, 0, 0, llm_duration, False, thinking, "中断")
+                _log_llm_call(session.session_id, model, prompt_tokens_real, completion_tokens_real, llm_duration, False, thinking, "中断")
                 await send_event(ws, "done", {
                     "sessionId": session.session_id,
                     "content": collected_content or "（已中断）",
@@ -490,8 +508,15 @@ async def run_agent(
 
             # 记录 LLM 调用日志
             llm_duration = (time.time() - llm_start_time) * 1000
-            output_tokens = len(collected_content) * 2  # 粗略估算
-            _log_llm_call(session.session_id, model, 0, output_tokens, llm_duration, True, thinking)
+            # 真实 token 优先；fallback 用粗略估算（中文约 2 token/字）
+            input_tokens_final = prompt_tokens_real or sum(len(str(m.get("content", ""))) for m in messages) * 2
+            output_tokens_final = completion_tokens_real or len(collected_content) * 2
+            # 同步写入累计估算（用真实值，更准确）
+            if prompt_tokens_real or completion_tokens_real:
+                # 减去之前粗略估算的部分，加上真实值
+                _usage_stats["total_tokens_estimate"] -= sum(len(str(m.get("content", ""))) for m in messages) * 2
+                _usage_stats["total_tokens_estimate"] += input_tokens_final + output_tokens_final
+            _log_llm_call(session.session_id, model, input_tokens_final, output_tokens_final, llm_duration, True, thinking)
 
             # 流式结束，判断是否有工具调用
             if not tool_call_chunks:
@@ -611,6 +636,67 @@ async def run_agent(
                         "arguments": func_args,
                     },
                 })
+
+                # 权限检查（通用模式才拦截；TA 模式保留现有行为）
+                if current_agent_mode == "general":
+                    from tools.danger_patterns import classify
+                    from tools.permissions import (
+                        is_session_whitelisted,
+                        is_permanently_whitelisted,
+                        request_permission_and_wait,
+                    )
+
+                    classification = classify(func_name, func_args)
+
+                    if classification == "hardline":
+                        result = json.dumps({
+                            "error": f"危险操作已被系统拦截（{func_name}）",
+                        }, ensure_ascii=False)
+                        await send_event(ws, "tool_result", {
+                            "sessionId": session.session_id,
+                            "toolCallId": tc["id"],
+                            "name": func_name,
+                            "result": result,
+                        })
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc["id"],
+                            "content": result,
+                        })
+                        last_tool_names.append(func_name)
+                        continue
+
+                    if classification == "dangerous":
+                        already_allowed = (
+                            is_session_whitelisted(session.session_id, func_name, func_args)
+                            or is_permanently_whitelisted(func_name, func_args)
+                        )
+                        if not already_allowed:
+                            approved = await request_permission_and_wait(
+                                ws,
+                                session.session_id,
+                                tc["id"],
+                                func_name,
+                                func_args,
+                                classification,
+                            )
+                            if not approved:
+                                result = json.dumps({
+                                    "error": "用户拒绝执行此操作",
+                                }, ensure_ascii=False)
+                                await send_event(ws, "tool_result", {
+                                    "sessionId": session.session_id,
+                                    "toolCallId": tc["id"],
+                                    "name": func_name,
+                                    "result": result,
+                                })
+                                messages.append({
+                                    "role": "tool",
+                                    "tool_call_id": tc["id"],
+                                    "content": result,
+                                })
+                                last_tool_names.append(func_name)
+                                continue
 
                 # 追踪工具调用
                 last_tool_names.append(func_name)
@@ -742,7 +828,10 @@ async def run_agent(
         except Exception as e:
             _usage_stats["llm_errors"] += 1
             llm_duration = (time.time() - llm_start_time) * 1000 if llm_start_time else 0
-            _log_llm_call(session.session_id, model, 0, 0, llm_duration, False, thinking, str(e)[:200])
+            # 错误路径：用估算值（真实 token 不可用）
+            err_input = prompt_tokens_real or sum(len(str(m.get("content", ""))) for m in messages) * 2
+            err_output = completion_tokens_real or 0
+            _log_llm_call(session.session_id, model, err_input, err_output, llm_duration, False, thinking, str(e)[:200])
             await send_event(ws, "error", {
                 "sessionId": session.session_id,
                 "error": f"LLM API 调用失败: {str(e)}",
@@ -955,6 +1044,13 @@ async def websocket_endpoint(ws: WebSocket):
                 # 中断当前 Agent 生成（不断开连接）
                 session.cancel_event.set()
                 await send_response(ws, request_id, {"status": "stopped"})
+
+            elif method == "respondPermission":
+                from tools.permissions import resolve_permission
+                req_id = params.get("requestId", "")
+                decision = params.get("decision", "deny")
+                ok = resolve_permission(req_id, decision)
+                await send_response(ws, request_id, {"success": ok})
 
             else:
                 await send_error(ws, request_id, f"未知方法: {method}")
@@ -1320,6 +1416,28 @@ async def add_model_to_provider(provider_id: str, payload: dict = Body(...)):
     if not model_id:
         return {"success": False, "error": "模型 id 不能为空"}
     return _add(provider_id, model_id, model_name)
+
+@app.post("/api/config/providers/{provider_id}/discover")
+async def discover_provider_models(provider_id: str):
+    """用存储的 API Key 发现模型"""
+    from config import get_provider
+    provider = get_provider(provider_id)
+    if not provider:
+        return {"success": False, "error": "Provider 不存在"}
+    base_url = provider.get("base_url", "").rstrip("/")
+    api_key = provider.get("api_key", "")
+    # 复用 discover_models 的逻辑
+    return await discover_models({"base_url": base_url, "api_key": api_key})
+
+@app.put("/api/config/active-model")
+async def set_active_model_endpoint(payload: dict = Body(...)):
+    """设置当前选中的模型"""
+    from config import set_active_model
+    provider_id = payload.get("provider_id", "")
+    model_id = payload.get("model_id", "")
+    if not provider_id or not model_id:
+        return {"success": False, "error": "provider_id 和 model_id 不能为空"}
+    return set_active_model(provider_id, model_id)
 
 @app.delete("/api/config/providers/{provider_id}/models/{model_id}")
 async def remove_model_from_provider(provider_id: str, model_id: str):
@@ -1819,6 +1937,29 @@ async def update_permissions(payload: dict = Body(...)):
             if name in allowed:
                 _permission_config["tool_permissions"][name] = perm
     return {"success": True, **_permissions_response()}
+
+
+@app.get("/api/permissions/whitelist")
+async def get_permanent_whitelist():
+    """获取永久白名单"""
+    from tools.permissions import list_permanent
+    return {"items": list_permanent()}
+
+
+@app.post("/api/permissions/whitelist")
+async def add_permanent_whitelist(payload: dict = Body(...)):
+    """添加永久白名单项"""
+    from tools.permissions import add_permanent
+    add_permanent(payload.get("tool", ""), payload.get("pattern", "*"))
+    return {"success": True}
+
+
+@app.delete("/api/permissions/whitelist")
+async def remove_permanent_whitelist(payload: dict = Body(...)):
+    """删除永久白名单项"""
+    from tools.permissions import remove_permanent
+    remove_permanent(payload.get("tool", ""), payload.get("pattern", "*"))
+    return {"success": True}
 
 
 # ===== REST 端点（MCP 服务器管理） =====

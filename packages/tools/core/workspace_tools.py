@@ -1,9 +1,11 @@
 """
-通用模式工作区文件工具（读写列目录，路径限制在当前会话工作区内）
+通用模式文件工具（读写列目录，路径无硬边界，行为参考 Proma）。
+
+绝对路径直接使用；相对路径基于工作区根目录解析。
 """
 import os
 
-from tools.workspace_context import get_workspace_path, resolve_in_workspace
+from tools.workspace_context import get_workspace_path
 
 MAX_READ_CHARS = 80_000
 MAX_WRITE_CHARS = 120_000
@@ -30,11 +32,25 @@ def _is_probably_text(path: str) -> bool:
         return False
 
 
+def _resolve_target(path: str) -> tuple[str | None, str | None]:
+    """解析路径：绝对路径直接用；相对路径基于工作区。"""
+    raw = (path or "").strip()
+    if not raw:
+        return None, "路径不能为空"
+    if os.path.isabs(raw):
+        return os.path.abspath(raw), None
+    ws = get_workspace_path()
+    if not ws:
+        # 相对路径但没工作区，回退到 cwd
+        return os.path.abspath(raw), None
+    return os.path.abspath(os.path.join(os.path.abspath(ws), raw)), None
+
+
 WORKSPACE_READ_FILE_DEF = {
     "type": "function",
     "function": {
         "name": "workspace_read_file",
-        "description": "读取当前工作区内的文本文件内容（路径可为相对工作区根目录或绝对路径，必须在已绑定的工作区内）。",
+        "description": "读取文本文件内容。绝对路径直接用；相对路径基于工作区根目录解析。没有『工作区内』的硬限制。",
         "parameters": {
             "type": "object",
             "properties": {
@@ -57,7 +73,7 @@ WORKSPACE_WRITE_FILE_DEF = {
     "type": "function",
     "function": {
         "name": "workspace_write_file",
-        "description": "写入或覆盖工作区内的文本文件。若目录不存在会自动创建父目录。",
+        "description": "写入或覆盖文本文件。绝对路径直接用；相对路径基于工作区根目录解析。没有『工作区内』的硬限制。",
         "parameters": {
             "type": "object",
             "properties": {
@@ -79,7 +95,7 @@ WORKSPACE_LIST_DIR_DEF = {
     "type": "function",
     "function": {
         "name": "workspace_list_dir",
-        "description": "列出工作区目录下的文件和子目录（默认列出工作区根目录）。",
+        "description": "列出目录下的文件和子目录。绝对路径直接用；相对路径基于工作区根目录解析。",
         "parameters": {
             "type": "object",
             "properties": {
@@ -101,7 +117,7 @@ WORKSPACE_LIST_DIR_DEF = {
 
 
 def workspace_read_file(path: str, max_chars: int = 12000) -> dict:
-    target, err = resolve_in_workspace(path)
+    target, err = _resolve_target(path)
     if err:
         return {"error": err}
     if not os.path.isfile(target):
@@ -127,7 +143,7 @@ def workspace_read_file(path: str, max_chars: int = 12000) -> dict:
 
 
 def workspace_write_file(path: str, content: str) -> dict:
-    target, err = resolve_in_workspace(path)
+    target, err = _resolve_target(path)
     if err:
         return {"error": err}
     text = content if content is not None else ""
@@ -150,7 +166,7 @@ def workspace_write_file(path: str, content: str) -> dict:
 
 
 def workspace_list_dir(path: str = ".", recursive: bool = False) -> dict:
-    target, err = resolve_in_workspace(path or ".")
+    target, err = _resolve_target(path or ".")
     if err:
         return {"error": err}
     if not os.path.isdir(target):

@@ -95,6 +95,30 @@ from tools.core.memory_llm_tools import (
 )
 from tools.core.renderer import SCHEMA as RENDERER_SCHEMA
 
+# ========== 工具输出截断 ==========
+# 参考 hermes-agent 的 max_result_size_chars=100_000
+MAX_TOOL_OUTPUT_BYTES = 100 * 1024  # 100KB
+
+
+def _truncate_tool_output(result) -> str:
+    """工具返回的 dict/list 转 JSON 字符串后超过 MAX 时截断。"""
+    encoded = json.dumps(result, ensure_ascii=False, indent=2).encode("utf-8")
+    if len(encoded) <= MAX_TOOL_OUTPUT_BYTES:
+        return result
+    truncated_bytes = encoded[:MAX_TOOL_OUTPUT_BYTES]
+    truncated_str = truncated_bytes.decode("utf-8", errors="ignore")
+    # 尝试在最后一个完整行结束
+    last_newline = truncated_str.rfind("\n")
+    if last_newline > MAX_TOOL_OUTPUT_BYTES * 0.9:
+        truncated_str = truncated_str[:last_newline]
+    return {
+        "_truncated": True,
+        "_original_bytes": len(encoded),
+        "_kept_bytes": MAX_TOOL_OUTPUT_BYTES,
+        "data": truncated_str,
+    }
+
+
 # ========== 工具层级分类 ==========
 # tier: core | extension | mcp(内置管理) | mcp_remote(外部服务器) | plugin
 # core+extension 启动即注册，mcp 从 mcp.json 加载，plugin 从 plugins/ 加载
@@ -117,26 +141,55 @@ def tag_mcp_remote_tools():
 # ========== Schema 注册 ==========
 
 # 通用模式允许的核心工具（不含动态 mcp__*）
-GENERAL_CORE_TOOL_NAMES = frozenset({
-    "workspace_read_file",
-    "workspace_write_file",
-    "workspace_list_dir",
-    "scan_directory",
-    "check_file_info",
-    "get_memory_stats",
-    "update_project_profile",
-    "append_profile_fact",
-    "memory_read_facts",
-    "memory_read_sop",
-    "discover_conventions",
-    "load_conventions",
-    "mcp_list_servers",
-    "mcp_add_server",
-    "mcp_remove_server",
-    "mcp_toggle_server",
-    "mcp_reload_servers",
-    "mcp_test_connection",
-})
+class Toolset:
+    """工具集：可注册的命名工具组。"""
+    def __init__(self, name: str, description: str, tool_names: set[str]):
+        self.name = name
+        self.description = description
+        self.tool_names = frozenset(tool_names)
+
+
+DEFAULT_TOOLSET = Toolset(
+    name="default",
+    description="通用模式默认工具集",
+    tool_names={
+        "workspace_read_file",
+        "workspace_write_file",
+        "workspace_list_dir",
+        "scan_directory",
+        "check_file_info",
+        "get_memory_stats",
+        "update_project_profile",
+        "append_profile_fact",
+        "memory_read_facts",
+        "memory_read_sop",
+        "discover_conventions",
+        "load_conventions",
+        "mcp_list_servers",
+        "mcp_add_server",
+        "mcp_remove_server",
+        "mcp_toggle_server",
+        "mcp_reload_servers",
+        "mcp_test_connection",
+    },
+)
+
+# 兼容旧 API
+GENERAL_CORE_TOOL_NAMES = DEFAULT_TOOLSET.tool_names
+
+# 全部已注册工具集（未来扩展点）
+_REGISTERED_TOOLSETS: dict[str, Toolset] = {
+    DEFAULT_TOOLSET.name: DEFAULT_TOOLSET,
+}
+
+
+def register_toolset(toolset: Toolset) -> None:
+    """注册一个工具集。"""
+    _REGISTERED_TOOLSETS[toolset.name] = toolset
+
+
+def get_toolset(name: str) -> Toolset | None:
+    return _REGISTERED_TOOLSETS.get(name)
 
 TOOLS = [
     WORKSPACE_READ_FILE_DEF,
@@ -323,7 +376,8 @@ def execute_tool(tool_name: str, arguments: dict, agent_mode: str | None = None)
 
     try:
         result = func(**normalize_tool_arguments(arguments))
-        return json.dumps(result, ensure_ascii=False, indent=2)
+        truncated = _truncate_tool_output(result)
+        return json.dumps(truncated, ensure_ascii=False, indent=2)
     except Exception as e:
         return json.dumps({"error": f"工具执行失败: {str(e)}"}, ensure_ascii=False)
 

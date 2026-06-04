@@ -4,8 +4,8 @@
 
 import React, { useState, useEffect } from 'react'
 import { Check } from 'lucide-react'
-import { SettingsSection, SettingsCard, SettingsSegmentedControl, SettingsRow } from './primitives'
-import { type ThemeMode, type ThemeVariant, loadTheme, saveTheme, applyTheme } from '@/atoms/theme'
+import { SettingsSection, SettingsCard, SettingsSegmentedControl, SettingsRow, SettingsToggle } from './primitives'
+import { type ThemeMode, type ThemeVariant, loadTheme, saveTheme, loadLayoutMode, saveLayoutMode } from '@/atoms/theme'
 
 // 主题模式选项
 const THEME_OPTIONS = [
@@ -37,6 +37,7 @@ export function AppearanceSettings() {
   const [mode, setMode] = useState<ThemeMode>('dark')
   const [variant, setVariant] = useState<ThemeVariant>('default')
   const [activeStyle, setActiveStyle] = useState<string>('')
+  const [layoutPreview, setLayoutPreview] = useState(false)
 
   useEffect(() => {
     const { mode: m, variant: v } = loadTheme()
@@ -49,6 +50,7 @@ export function AppearanceSettings() {
       const style = SPECIAL_STYLES.find((s) => s.id.includes(v))
       if (style) setActiveStyle(style.id)
     }
+    setLayoutPreview(loadLayoutMode() === 'macos26')
   }, [])
 
   const handleModeChange = (newMode: string) => {
@@ -75,6 +77,11 @@ export function AppearanceSettings() {
     setVariant(variant)
     setMode('special')
     saveTheme('special', variant, style.id)
+  }
+
+  const handleLayoutToggle = (checked: boolean) => {
+    setLayoutPreview(checked)
+    saveLayoutMode(checked ? 'macos26' : 'classic')
   }
 
   return (
@@ -132,6 +139,13 @@ export function AppearanceSettings() {
           <SettingsRow
             label="界面缩放"
             description="使用 Ctrl + / Ctrl - 来调整界面缩放比例"
+          />
+
+          <SettingsToggle
+            label="高级布局"
+            description="开启后左侧栏将悬浮在扩展的背景卡片上，可随时关闭恢复"
+            checked={layoutPreview}
+            onChange={handleLayoutToggle}
           />
         </SettingsCard>
       </SettingsSection>

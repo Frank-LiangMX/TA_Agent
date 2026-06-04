@@ -2,6 +2,20 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ===== macOS 26 elevation scale (基于 ui-ux-pro-max skill 推荐) ===== */
+:root {
+  --elevation-1: 0 1px 3px 0 rgb(0 0 0 / 0.08);
+  --elevation-2: 0 4px 8px -1px rgb(0 0  0 / 0.10);
+  --elevation-3: 0 10px 20px -4px rgb(0 0 0 / 0.12);
+  --elevation-4: 0 20px 40px -8px rgb(0 0 0 / 0.18);
+  --blur-amount: 12px;
+  /* macOS 26 玻璃径向高光（深色下用透明，浅色下用白色） */
+  --sidebar-glow: hsla(0, 0%, 100%, 0.30);
+}
+.dark {
+  --sidebar-glow: hsla(0, 0%, 100%, 0.06);
+}
+
 /* ===== 主题 CSS 变量（必须在 @layer 外，否则优先级低于 Tailwind 工具类） ===== */
 
 :root {
@@ -36,6 +50,9 @@
   --warning-foreground: 0 0% 98%;
   --shell-start: 0 0% 98%;
   --shell-end: 0 0% 96%;
+  /* macOS 26 浮岛 Sidebar：比 --card 亮一档，跟随主题色 */
+  --floating-panel: 0 0% 100%;       /* 浅色下纯白 */
+  --floating-panel-border: 0 0% 100% / 0.6;
 }
 
 .dark {
@@ -70,6 +87,9 @@
   --warning-foreground: 0 0% 98%;
   --shell-start: 0 0% 3%;
   --shell-end: 0 0% 7%;
+  /* macOS 26 浮岛 Sidebar：深色下 11% 亮度的深灰 */
+  --floating-panel: 0 0% 11%;
+  --floating-panel-border: 0 0% 100% / 0.15;
 }
 
 /* ===== 海洋主题 ===== */
@@ -106,6 +126,9 @@
   --warning-foreground: 0 0% 98%;
   --shell-start: 205 35% 88%;
   --shell-end: 205 30% 91%;
+  /* macOS 26 浮岛 Sidebar：海洋浅色，#f6fbff 极淡蓝白 */
+  --floating-panel: 205 50% 99%;
+  --floating-panel-border: 0 0% 100% / 0.6;
 }
 
 .theme-ocean-dark {
@@ -140,6 +163,9 @@
   --warning-foreground: 0 0% 98%;
   --shell-start: 210 45% 5%;
   --shell-end: 210 35% 7%;
+  /* macOS 26 浮岛 Sidebar：海洋深色，14% 亮度的偏蓝深灰 */
+  --floating-panel: 210 30% 14%;
+  --floating-panel-border: 0 0% 100% / 0.15;
 }
 
 /* ===== 森系主题 ===== */
@@ -176,6 +202,9 @@
   --warning-foreground: 0 0% 98%;
   --shell-start: 140 15% 90%;
   --shell-end: 140 15% 92%;
+  /* macOS 26 浮岛 Sidebar：森林浅色，略带绿调的近白 */
+  --floating-panel: 140 20% 99%;
+  --floating-panel-border: 0 0% 100% / 0.6;
 }
 
 .theme-forest-dark {
@@ -210,6 +239,9 @@
   --warning-foreground: 0 0% 98%;
   --shell-start: 150 20% 5%;
   --shell-end: 150 18% 7%;
+  /* macOS 26 浮岛 Sidebar：森林深色，14% 亮度的偏绿深灰 */
+  --floating-panel: 150 18% 14%;
+  --floating-panel-border: 0 0% 100% / 0.15;
 }
 
 /* ===== 莫兰迪主题 ===== */
@@ -246,6 +278,9 @@
   --warning-foreground: 0 0% 98%;
   --shell-start: 40 6% 84%;
   --shell-end: 40 6% 86%;
+  /* macOS 26 浮岛 Sidebar：莫兰迪浅色，#fcfbf9 极淡暖白 */
+  --floating-panel: 40 20% 99%;
+  --floating-panel-border: 0 0% 100% / 0.6;
 }
 
 .theme-slate-dark {
@@ -280,6 +315,9 @@
   --warning-foreground: 0 0% 98%;
   --shell-start: 270 10% 7%;
   --shell-end: 260 8% 9%;
+  /* macOS 26 浮岛 Sidebar：莫兰迪深色，14% 亮度的偏紫深灰 */
+  --floating-panel: 260 6% 16%;
+  --floating-panel-border: 0 0% 100% / 0.15;
 }
 
 /* ===== 基础样式 ===== */
@@ -335,6 +373,93 @@ pre code,
   box-shadow: none;
   border: 1px solid hsl(var(--border) / 0.3);
 }
+
+/* macOS 26 布局下：设置卡也融入玻璃，避免白色实心突兀 */
+[data-macos26-content] .settings-card {
+  background: hsl(var(--card) / 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid hsl(var(--border) / 0.4);
+}
+[data-macos26-content] .dark .settings-card {
+  background: hsl(var(--card) / 0.5);
+  border: 1px solid hsl(var(--border) / 0.2);
+}
+
+/* ===== macOS 26 布局：顶栏与 Layer 1 圆角融合 ===== */
+/* 顶栏原本是 bg-muted/50 满铺矩形，与 Layer 1 的 rounded-2xl 圆角硬碰硬。
+   这里把它换成：内层透明 + 顶部 1px 软分割，左右两端用 mask 渐隐到透明。 */
+[data-macos26-root] .titlebar-drag-region {
+  background: transparent !important;
+  position: relative;
+}
+/* 顶部贴边的 1px 渐变分割线（中间清晰，两端淡出） */
+[data-macos26-root] .titlebar-drag-region::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    hsl(var(--border) / 0.5) 8%,
+    hsl(var(--border) / 0.5) 92%,
+    transparent 100%
+  );
+  pointer-events: none;
+}
+/* 顶栏内容左右各 16px 软切入，让直角内容自然消融到 Layer 1 圆角里 */
+[data-macos26-root] .titlebar-drag-region > div {
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    #000 16px,
+    #000 calc(100% - 16px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    90deg,
+    transparent 0,
+    #000 16px,
+    #000 calc(100% - 16px),
+    transparent 100%
+  );
+}
+
+/* 输入框 / 搜索框：提亮浮起（仅对独立 input/select 生效，不破坏 composer-focus-shell 卡片整体性） */
+input[type="text"]:not([class*="bg-transparent"]):not([class*="bg-muted"]):not(.border-0),
+input[type="password"]:not([class*="bg-transparent"]):not([class*="bg-muted"]):not(.border-0),
+input[type="number"]:not([class*="bg-transparent"]):not([class*="bg-muted"]):not(.border-0),
+input[type="email"]:not([class*="bg-transparent"]):not([class*="bg-muted"]):not(.border-0),
+input[type="text"]:not([class*="bg-transparent"]):not([class*="bg-muted"]):not(.border-0),
+select:not([class*="bg-transparent"]):not([class*="bg-muted"]):not(.border-0) {
+  background-color: hsl(var(--background) / 0.85) !important;
+  border: 1px solid hsl(var(--border) / 0.6) !important;
+  box-shadow: inset 0 1px 2px 0 rgb(0 0 0 / 0.04);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+input[type="text"]:hover,
+input[type="password"]:hover,
+input[type="number"]:hover,
+input[type="email"]:hover,
+select:hover {
+  border-color: hsl(var(--border) / 0.9) !important;
+}
+input[type="text"]:focus,
+input[type="password"]:focus,
+input[type="number"]:focus,
+input[type="email"]:focus,
+select:focus {
+  background-color: hsl(var(--background)) !important;
+  border-color: hsl(var(--primary) / 0.5) !important;
+  box-shadow:
+    inset 0 1px 2px 0 rgb(0 0 0 / 0.04),
+    0 0 0 3px hsl(var(--primary) / 0.1);
+}
+
+/* textarea 默认透明（保持 composer-focus-shell 整体性），focus 仍由 .composer-focus-shell 处理 */
 
 /* 隐藏滚动条但保留滚动功能 */
 .scrollbar-none,

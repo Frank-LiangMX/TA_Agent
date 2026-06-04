@@ -114,7 +114,7 @@ export function SettingsToggle({ label, description, checked, onChange, disabled
         checked={checked}
         onCheckedChange={onChange}
         disabled={disabled}
-        className="w-9 h-5 bg-input rounded-full relative data-[state=checked]:bg-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-9 h-5 bg-input rounded-full relative data-[state=checked]:bg-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-[inset_0_1px_0_0_rgb(255_255_255/0.2),inset_0_-1px_0_0_rgb(0_0%_0/0.05)]"
       >
         <RadixSwitch.Thumb className="block w-4 h-4 bg-background rounded-full shadow transition-transform translate-x-0.5 data-[state=checked]:translate-x-[18px]" />
       </RadixSwitch.Root>

@@ -42,7 +42,7 @@ SCAN_DIRECTORY_SCHEMA = {
     "type": "function",
     "function": {
         "name": "scan_directory",
-        "description": "扫描指定目录，列出所有资产文件。用于批量检查。",
+        "description": "扫描指定目录，列出所有文件。默认只列资产类（.fbx/.png/.blend 等），传 include_all=True 可列全部。",
         "parameters": {
             "type": "object",
             "properties": {
@@ -54,6 +54,11 @@ SCAN_DIRECTORY_SCHEMA = {
                     "type": "boolean",
                     "description": "是否递归扫描子目录",
                     "default": True
+                },
+                "include_all": {
+                    "type": "boolean",
+                    "description": "是否包含非资产类文件（默认 False，只列资产）",
+                    "default": False
                 }
             },
             "required": ["dir_path"]
@@ -93,8 +98,8 @@ def check_file_info(file_path: str) -> dict:
     return result
 
 
-def scan_directory(dir_path: str, recursive: bool = True) -> dict:
-    """扫描目录中的资产文件，逐个验证命名规范"""
+def scan_directory(dir_path: str, recursive: bool = True, include_all: bool = False) -> dict:
+    """扫描目录中的文件，逐个验证命名规范（仅对资产类）"""
     if not os.path.exists(dir_path):
         return {"error": f"目录不存在: {dir_path}"}
 
@@ -106,7 +111,7 @@ def scan_directory(dir_path: str, recursive: bool = True) -> dict:
     for root, dirs, filenames in walker:
         for fname in filenames:
             ext = os.path.splitext(fname)[1].lower()
-            if ext not in ASSET_EXTENSIONS:
+            if not include_all and ext not in ASSET_EXTENSIONS:
                 continue
 
             full_path = os.path.join(root, fname) if recursive else os.path.join(dir_path, fname)
@@ -121,14 +126,15 @@ def scan_directory(dir_path: str, recursive: bool = True) -> dict:
             }
             files.append(file_entry)
 
-            # 逐个验证命名规范
-            naming_result = check_naming(fname)
-            if not naming_result["is_valid"]:
-                naming_issues.append({
-                    "filename": fname,
-                    "path": full_path,
-                    "issues": naming_result["issues"],
-                })
+            # 仅对资产类验证命名规范
+            if ext in ASSET_EXTENSIONS:
+                naming_result = check_naming(fname)
+                if not naming_result["is_valid"]:
+                    naming_issues.append({
+                        "filename": fname,
+                        "path": full_path,
+                        "issues": naming_result["issues"],
+                    })
 
     # 按扩展名统计
     ext_stats = {}

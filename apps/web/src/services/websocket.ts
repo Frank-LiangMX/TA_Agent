@@ -277,6 +277,19 @@ export class TAgentClient {
     await this.rpc('stopGeneration', {})
   }
 
+  /** 响应权限审批弹窗 */
+  async respondPermission(
+    requestId: string,
+    decision: 'allow-once' | 'allow-session' | 'allow-permanent' | 'deny',
+    extras: { sessionId?: string; toolName?: string; pattern?: string } = {},
+  ): Promise<{ success: boolean }> {
+    return (await this.rpc('respondPermission', {
+      requestId,
+      decision,
+      ...extras,
+    })) as { success: boolean }
+  }
+
   /** 设置工作流模式 */
   async setMode(mode: 'step_by_step' | 'auto'): Promise<void> {
     await this.rpc('setMode', { mode })

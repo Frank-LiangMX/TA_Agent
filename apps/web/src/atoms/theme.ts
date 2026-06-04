@@ -13,6 +13,9 @@ export interface ThemeAppearance {
 const STORAGE_KEY_MODE = 'tagent-theme-mode'
 const STORAGE_KEY_VARIANT = 'tagent-theme-variant'
 const STORAGE_KEY_STYLE = 'tagent-theme-style'
+export const STORAGE_KEY_LAYOUT = 'tagent-layout-mode'
+
+export type LayoutMode = 'classic' | 'macos26'
 
 function getSystemTheme(): ResolvedThemeMode {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
@@ -87,4 +90,13 @@ export function initTheme() {
       applyTheme(current.mode, current.variant)
     }
   })
+}
+
+export function loadLayoutMode(): LayoutMode {
+  return (localStorage.getItem(STORAGE_KEY_LAYOUT) as LayoutMode) || 'classic'
+}
+
+export function saveLayoutMode(mode: LayoutMode) {
+  localStorage.setItem(STORAGE_KEY_LAYOUT, mode)
+  window.dispatchEvent(new CustomEvent('tagent-layout-change', { detail: { layoutMode: mode } }))
 }
