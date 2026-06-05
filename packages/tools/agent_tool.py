@@ -117,7 +117,9 @@ class SubAgentOrchestrator:
         # 流式回流 callback：把 LLM 文本片段 emit 给 progress_hook
         def _on_stream_delta(delta: str) -> None:
             try:
-                from apps.web.server.progress_hook import emit_subagent_text
+                # 必须 import 顶层 progress_hook（与 server.py 内的引用一致），
+                # 否则 emit 进的是另一个模块对象的 _progress_queue，前端收不到。
+                from progress_hook import emit_subagent_text
                 emit_subagent_text(
                     session_id=self.parent_session_id,
                     subagent_type=self.subagent_type,

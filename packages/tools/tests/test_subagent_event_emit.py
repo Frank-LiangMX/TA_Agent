@@ -3,10 +3,17 @@
 验证 agent_loop 在 subagent_context 存在时，会通过 progress_hook emit 工具调用和进度事件。
 """
 import json
+import os
 import sys
 import time
 
 import pytest
+
+# 模块级先添加 apps/web/server 到 sys.path，确保能从顶层 import progress_hook
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+_SERVER_DIR = os.path.join(_PROJECT_ROOT, "apps", "web", "server")
+if _SERVER_DIR not in sys.path:
+    sys.path.insert(0, _SERVER_DIR)
 
 
 @pytest.fixture
@@ -14,7 +21,7 @@ def captured_emits(monkeypatch):
     """替换 emit_subagent_tool/progress，捕获调用。"""
     captured = {"tool": [], "progress": []}
 
-    from apps.web.server import progress_hook
+    import progress_hook
 
     def fake_emit_tool(*, session_id, subagent_type, task_id, tool_name, args_preview):
         captured["tool"].append({
@@ -50,7 +57,8 @@ def test_agent_loop_emits_tool_event_with_subagent_context(captured_emits):
 
     def fake_agent_loop_inner(*, user_message, history, workflow_mode, interrupt_event, context_cutoff, subagent_context=None):
         # 模拟 agent_loop 内部的工具调用路径：直接调 emit
-        from apps.web.server import progress_hook
+        # 必须用 顶层 progress_hook（与 fixture monkeypatch 同一模块）
+        import progress_hook
         import json
         # 工具调用
         progress_hook.emit_subagent_tool(
@@ -121,7 +129,7 @@ def test_orchestrator_passes_subagent_context_to_agent_loop(captured_emits, monk
 
 def test_emit_subagent_event_puts_in_queue():
     """验证 emit_subagent_event 写入 _progress_queue。"""
-    from apps.web.server import progress_hook
+    import progress_hook
     progress_hook._progress_queue = __import__("queue").Queue()
 
     progress_hook.emit_subagent_event(

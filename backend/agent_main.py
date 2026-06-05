@@ -1103,7 +1103,9 @@ def agent_loop(user_message: str, history: list = None, workflow_mode: str = Non
             # SubAgent 进度事件：emit 工具调用给 progress_hook（server.py 转发到 WS）
             if subagent_context is not None:
                 try:
-                    from apps.web.server.progress_hook import emit_subagent_tool
+                    # 必须 import 顶层 progress_hook（与 server.py 内的引用一致），
+                    # 否则 emit 进的是另一个模块对象的 _progress_queue，前端收不到。
+                    from progress_hook import emit_subagent_tool
                     args_preview = json.dumps(func_args, ensure_ascii=False)[:100]
                     emit_subagent_tool(
                         session_id=subagent_context["session_id"],
@@ -1128,7 +1130,7 @@ def agent_loop(user_message: str, history: list = None, workflow_mode: str = Non
             # SubAgent 进度事件：每完成一次工具调用 emit 一次 progress
             if subagent_context is not None:
                 try:
-                    from apps.web.server.progress_hook import emit_subagent_progress
+                    from progress_hook import emit_subagent_progress
                     api_call_count += 1
                     elapsed_ms = int((time.time() - subagent_context["start_time"]) * 1000)
                     emit_subagent_progress(

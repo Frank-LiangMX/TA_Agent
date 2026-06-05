@@ -5,6 +5,12 @@ import sys
 
 import pytest
 
+# 确保顶层 progress_hook 可被 import
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+_SERVER_DIR = os.path.join(_PROJECT_ROOT, "apps", "web", "server")
+if _SERVER_DIR not in sys.path:
+    sys.path.insert(0, _SERVER_DIR)
+
 pytestmark = pytest.mark.skipif(
     not os.environ.get("RUN_LLM_E2E"),
     reason="需要 RUN_LLM_E2E=1 才跑（默认跳过）",
@@ -21,7 +27,7 @@ def test_real_llm_subagent_streams_text_events(monkeypatch):
     sys.path.insert(0, "backend")
     sys.path.insert(0, "packages")
 
-    from apps.web.server import progress_hook
+    import progress_hook
     progress_hook._progress_queue = queue.Queue()
 
     captured = []
