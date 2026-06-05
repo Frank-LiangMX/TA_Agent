@@ -14,8 +14,8 @@ _progress_queue: queue.Queue = queue.Queue()
 # 当前活跃的 WebSocket 会话 ID
 _active_session_id: str | None = None
 
-# 取消信号（WebSocket 断开时设置）
-_cancel_event: threading.Event = threading.Event()
+# per-session 取消信号
+_cancel_events: dict[str, threading.Event] = {}
 
 
 def set_active_session(session_id: str | None):
@@ -29,15 +29,54 @@ def get_active_session() -> str | None:
     return _active_session_id
 
 
-def set_cancel_event(event: threading.Event):
-    """设置取消信号（由 server.py 在 WebSocket 连接时调用）"""
-    global _cancel_event
-    _cancel_event = event
+def get_or_create_cancel_event(session_id: str) -> threading.Event:
+    """获取或创建某个 session 的取消事件。"""
+    if session_id not in _cancel_events:
+        _cancel_events[session_id] = threading.Event()
+    return _cancel_events[session_id]
 
 
-def is_cancelled() -> bool:
-    """检查是否已取消（供工具内部调用）"""
-    return _cancel_event.is_set()
+def set_cancel_event(event: threading.Event | None) -> None:
+    """兼容旧 API：直接覆盖为某个 event（仍绑定 active session）。"""
+    if _active_session_id is None:
+        return
+    if event is None:
+        _cancel_events.pop(_active_session_id, None)
+    else:
+        _cancel_events[_active_session_id] = event
+
+
+def cancel_session(session_id: str) -> None:
+    """取消某个 session：设置其 event + 级联取消所有 in-flight subagent。"""
+    if ev := _cancel_events.get(session_id):
+        ev.set()
+    _cascade_cancel_subagents(session_id)
+
+
+def _cascade_cancel_subagents(session_id: str) -> None:
+    """父级取消时，遍历所有 in-flight subagent 并取消。"""
+    try:
+        from packages.tools.agent_tool import SubAgentOrchestrator
+        # 列表化避免迭代时修改 dict
+        for orch in list(SubAgentOrchestrator.background_tasks.values()):
+            if orch.parent_session_id == session_id:
+                SubAgentOrchestrator.background_tasks.pop(orch.task_id, None)
+    except ImportError:
+        pass
+
+
+def clear_cancel_event(session_id: str) -> None:
+    """会话结束时清理 event。"""
+    _cancel_events.pop(session_id, None)
+
+
+def is_cancelled(session_id: str | None = None) -> bool:
+    """检查是否已取消（供工具内部调用）。默认看 active session。"""
+    sid = session_id or _active_session_id
+    if not sid:
+        return False
+    ev = _cancel_events.get(sid)
+    return ev.is_set() if ev else False
 
 
 def emit_progress(phase: str, current: int, total: int, detail: str, elapsed: float = 0):
@@ -77,3 +116,77 @@ def patch_analyzer_progress():
         print("  [进度回调] run_ai_inference 已注入进度回调")
     except Exception as e:
         print(f"  [进度回调] 注入失败: {e}")
+
+
+# ===== SubAgent 进度事件 =====
+
+def emit_subagent_event(
+    session_id: str,
+    subagent_type: str,
+    task_id: str,
+    event_type: str,  # "tool" | "progress" | "done"
+    payload: dict,
+) -> None:
+    """emit SubAgent 进度事件到全局队列。
+
+    server.py 推送循环会读取并按 session_id 过滤后 forward 到 WebSocket。
+    """
+    event = {
+        "type": "subagent_event",
+        "session_id": session_id,
+        "subagent_type": subagent_type,
+        "task_id": task_id,
+        "event_type": event_type,
+        "payload": payload,
+    }
+    try:
+        _progress_queue.put(event)
+    except Exception:
+        pass
+
+
+def emit_subagent_tool(
+    session_id: str,
+    subagent_type: str,
+    task_id: str,
+    tool_name: str,
+    args_preview: str,
+) -> None:
+    """emit SubAgent 调工具事件。"""
+    emit_subagent_event(session_id, subagent_type, task_id, "tool", {
+        "tool_name": tool_name,
+        "args_preview": args_preview,
+    })
+
+
+def emit_subagent_progress(
+    session_id: str,
+    subagent_type: str,
+    task_id: str,
+    step_count: int,
+    elapsed_ms: int,
+    model: str,
+) -> None:
+    """emit SubAgent 进度事件。"""
+    emit_subagent_event(session_id, subagent_type, task_id, "progress", {
+        "step_count": step_count,
+        "elapsed_ms": elapsed_ms,
+        "model": model,
+    })
+
+
+def emit_subagent_text(
+    session_id: str,
+    subagent_type: str,
+    task_id: str,
+    delta: str,
+) -> None:
+    """emit SubAgent LLM 流式文本片段（每个 chunk 调一次）。
+
+    前端 SubAgentCard 用它做"实时打字"效果。
+    """
+    if not delta:
+        return
+    emit_subagent_event(session_id, subagent_type, task_id, "text", {
+        "delta": delta,
+    })

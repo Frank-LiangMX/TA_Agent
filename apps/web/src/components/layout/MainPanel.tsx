@@ -74,6 +74,7 @@ const closeOpenTurn = (msgs: ChatMessageType[]) =>
 interface MainPanelProps {
   onAssetSelect: (asset: Record<string, unknown>) => void
   agentMode?: 'ta' | 'general'
+  onViewSubAgent?: (taskId: string) => void
 }
 
 // Mock 消息（未连接后端时使用）
@@ -86,7 +87,7 @@ const MOCK_MESSAGES: ChatMessageType[] = [
   },
 ]
 
-export function MainPanel({ onAssetSelect, agentMode = 'ta' }: MainPanelProps) {
+export function MainPanel({ onAssetSelect, agentMode = 'ta', onViewSubAgent }: MainPanelProps) {
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(tagentClient.status)
@@ -1102,6 +1103,9 @@ const loadTabHistory = useCallback(async (tabId: string) => {
                   message={msg}
                   onAssetClick={onAssetSelect}
                   onSetDivider={() => setContextCutoff(globalIndex)}
+                  onStopSubAgent={(taskId) => tagentClient.rpc('TaskStop', { task_id: taskId })}
+                  onViewSubAgent={onViewSubAgent || (() => {})}
+                  currentSessionId={sessionId ?? undefined}
                 />
               </div>
             </React.Fragment>

@@ -1,13 +1,13 @@
 # 文档地图
 
-> 最后更新：2026-06-02（含 Agent 协作入口）
+> 最后更新：2026-06-05（含 v0.29 SubAgent UI 改造）
 
 ## 文档结构
 
 ```
 docs/
 ├── reference/                # 设计参考——改代码时查的 (稳定，编辑修改)
-│   ├── backend.md            # 后端架构、数据流、工具系统、集成方案
+│   ├── backend.md            # 后端架构、数据流、工具系统、集成方案（含 SubAgent 第十四章）
 │   ├── frontend.md           # 前端架构、WebSocket 协议、组件参考、设计规范
 │   ├── electron.md           # Electron 桌面应用架构、IPC、打包、Bridge 扩展
 │   ├── local-runtime-connection.md  # 本地 Runtime 连接（端口、双模式、排障、验收）
@@ -15,16 +15,26 @@ docs/
 ├── decisions/                # 架构决策记录——为什么这么做 (只追加，不修改)
 │   ├── user-auth-design.md   # 用户认证、权限管理、管理员分配
 │   ├── client-dual-mode-design.md  # 客户端双模式（本地/联机）
-│   └── distributed-architecture.md # 分布式架构设计
+│   ├── distributed-architecture.md # 分布式架构设计
+│   ├── general-mode-redesign.md  # 通用模式重新设计
+│   ├── memory-system.md      # 记忆系统设计
+│   ├── assets-identity-system.md  # 资产身份系统
+│   ├── file-polling-ue5.md   # UE5 文件轮询
+│   └── subagent-architecture.md   # 通用模式 SubAgent 架构（v0.28）
 ├── experiments/              # 实验/试错——过程记录 (追加，成功/失败都保留)
 │   ├── backend/
 │   │   ├── 2026-05-27-hidden-bugs-audit.md  # 隐藏问题排查报告
+│   │   ├── 2026-06-01-workbench-dual-mode-roadmap.md  # 工作台双模式实施台账
 │   │   └── 2026-06-02-deepseek-cache-optimization.md  # DeepSeek 前缀缓存命中率优化分析
 │   └── frontend/
 │       ├── 2026-05-21-prompt-suggestion.md  # 提示建议功能实验
 │       └── 2026-05-22-bug-report.md         # Bug 排查报告
+├── plans/                    # 设计稿 + 实施计划
+│   ├── 2026-06-04-subagent-design.md       # 通用模式 SubAgent 设计稿
+│   └── 2026-06-04-subagent-impl-plan.md     # SubAgent 实施计划（4 phase 24 任务）
 └── guides/                   # 使用指南——流程说明
     ├── workflow.md           # 单人/团队工作流、SVN 集成、推广策略
+    ├── subagent-guide.md     # 通用模式 SubAgent 用户使用指南
     └── ue-plugin-mcp-guide.md  # UE 插件 MCP 化指南（供项目组开发参考）
 ```
 
@@ -44,6 +54,9 @@ docs/
 | 了解项目全貌 | 根目录 `README.md` |
 | 美术操作指南 | `guides/artist-guide.md` |
 | UE 插件 MCP 化 | `guides/ue-plugin-mcp-guide.md` |
+| **通用模式 SubAgent 用户使用** | **`guides/subagent-guide.md`** |
+| **通用模式 SubAgent 架构** | **`decisions/subagent-architecture.md`** |
+| **通用模式 SubAgent 设计稿 + 实施计划** | `plans/2026-06-04-subagent-design.md` / `plans/2026-06-04-subagent-impl-plan.md` |
 | 分布式架构设计 | `decisions/distributed-architecture.md` |
 | 用户认证设计 | `decisions/user-auth-design.md` |
 | 客户端双模式设计 | `decisions/client-dual-mode-design.md` |
@@ -76,3 +89,5 @@ docs/
 - 2026-06-02：新增动态 Runtime 端口实施记录
 - 2026-06-02：新增 `reference/local-runtime-connection.md`（整合连接方案与验收）
 - 2026-06-02：新增根目录 `AGENTS.md`（其他 Agent 协作入口）
+- 2026-06-05：新增 `decisions/subagent-architecture.md`、`plans/2026-06-04-subagent-design.md`、`plans/2026-06-04-subagent-impl-plan.md`、`guides/subagent-guide.md`、`release-notes/v0.28.md`（通用模式 SubAgent）
+- 2026-06-05：新增 `plans/2026-06-05-subagent-ui-promote.md`、`release-notes/v0.29.md`（SubAgent 工具事件流 + UI 改造）

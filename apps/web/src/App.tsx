@@ -9,6 +9,9 @@ import { resetRuntimeEndpointCache } from './lib/api'
 import { waitForLocalRuntime } from './lib/runtime-ready'
 import { Sidebar, type ViewType } from './components/layout/Sidebar'
 import { MainPanel } from './components/layout/MainPanel'
+import { SubAgentSidePanel } from './components/agent/SubAgentSidePanel'
+import { useAtomValue } from 'jotai'
+import { subagentStatesAtom } from './atoms/subagent-store'
 import { AssetLibrary, type AssetLibraryFilterHints } from './components/asset/AssetLibrary'
 import { ReviewQueue } from './components/review/ReviewQueue'
 import { SearchView } from './components/search/SearchView'
@@ -49,6 +52,8 @@ export default function App() {
   const [reviewNavKey, setReviewNavKey] = useState(0)
   const [intakeInitialAssetIds, setIntakeInitialAssetIds] = useState<string[] | undefined>()
   const [intakeNavKey, setIntakeNavKey] = useState(0)
+  const [sidePanelTaskId, setSidePanelTaskId] = useState<string | null>(null)
+  const subagentStates = useAtomValue(subagentStatesAtom)
   const sidebarRef = useRef<HTMLDivElement>(null)
   const wsConnectGenRef = useRef(0)
 
@@ -142,6 +147,14 @@ export default function App() {
 
     connectInitialSession().catch(err => {
       console.error('[App] WebSocket 连接失败:', err)
+    })
+
+    // 订阅 SubAgent 事件（dynamic import，Vite HMR 失败时也能加载）
+    import('./services/subagent-events').then(({ subscribeSubAgentEvents }) => {
+      const unsub = subscribeSubAgentEvents(tagentClient)
+      void unsub
+    }).catch((err) => {
+      console.error('[App] 加载 subagent-events 失败:', err)
     })
     return () => {
       cancelled = true
@@ -320,7 +333,11 @@ export default function App() {
           <div className="flex-1 flex min-w-0 overflow-hidden">
             {/* 会话视图 */}
             <div className={`flex-1 flex flex-col min-w-0 h-full ${activeView === 'chat' ? '' : 'hidden'}`}>
-              <MainPanel onAssetSelect={handleAssetSelect} agentMode={agentMode} />
+              <MainPanel
+                onAssetSelect={handleAssetSelect}
+                agentMode={agentMode}
+                onViewSubAgent={setSidePanelTaskId}
+              />
             </div>
             <div className={`flex-1 flex flex-col min-w-0 h-full ${agentMode === 'general' && activeView === 'workspace' ? '' : 'hidden'}`}>
               <GeneralWorkspaceView sessionId={tagentClient.sessionId} />
@@ -424,7 +441,11 @@ export default function App() {
         <div className="flex-1 flex min-w-0 overflow-hidden">
           {/* 会话视图 */}
           <div className={`flex-1 flex flex-col min-w-0 h-full ${activeView === 'chat' ? '' : 'hidden'}`}>
-            <MainPanel onAssetSelect={handleAssetSelect} agentMode={agentMode} />
+            <MainPanel
+              onAssetSelect={handleAssetSelect}
+              agentMode={agentMode}
+              onViewSubAgent={setSidePanelTaskId}
+            />
           </div>
           <div className={`flex-1 flex flex-col min-w-0 h-full ${agentMode === 'general' && activeView === 'workspace' ? '' : 'hidden'}`}>
             <GeneralWorkspaceView sessionId={tagentClient.sessionId} />
@@ -498,6 +519,10 @@ export default function App() {
         <Toaster position="top-right" theme="dark" />
         <TourGuide />
         <UpdateDialog />
+        <SubAgentSidePanel
+          state={sidePanelTaskId ? subagentStates[sidePanelTaskId] : null}
+          onClose={() => setSidePanelTaskId(null)}
+        />
       </div>
     </SettingsNavProvider>
   )

@@ -7,6 +7,7 @@ import { SettingsSection, SettingsCard, SettingsSelect, SettingsToggle, Settings
 import { tagentClient } from '@/services/websocket'
 import { API_BASE } from '@/lib/api'
 import { FileText, Loader2, Zap, Archive, Workflow, Sparkles, AlertTriangle } from 'lucide-react'
+import { SubAgentSettings } from './SubAgentSettings'
 
 export function AgentSettings() {
   const [workflowMode, setWorkflowMode] = useState<'step_by_step' | 'auto'>('step_by_step')
@@ -16,6 +17,38 @@ export function AgentSettings() {
   const [promptLength, setPromptLength] = useState(0)
   const [promptLoading, setPromptLoading] = useState(true)
   const [promptExpanded, setPromptExpanded] = useState(false)
+  const [subagentOverrides, setSubagentOverrides] = useState<Record<string, string>>({})
+  const [subagentAvailableModels, setSubagentAvailableModels] = useState<string[]>([])
+
+  useEffect(() => {
+    // 加载 app-config.json，提取 subagent_model_overrides 和可用模型列表
+    fetch(`${API_BASE}/api/config/app`)
+      .then((r) => r.json())
+      .then((cfg: any) => {
+        setSubagentOverrides(cfg?.subagent_model_overrides || {})
+      })
+      .catch(() => {})
+    fetch(`${API_BASE}/api/models`)
+      .then((r) => r.json())
+      .then((data: any) => {
+        const list: string[] = Array.isArray(data) ? data : (data?.models || [])
+        setSubagentAvailableModels(list)
+      })
+      .catch(() => setSubagentAvailableModels([]))
+  }, [])
+
+  const handleSubAgentOverridesChange = async (next: Record<string, string>) => {
+    setSubagentOverrides(next)
+    try {
+      await fetch(`${API_BASE}/api/config/app`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subagent_model_overrides: next }),
+      })
+    } catch (e) {
+      console.error('保存 SubAgent 模型覆盖失败', e)
+    }
+  }
 
   useEffect(() => {
     tagentClient.getStatus().then((status: Record<string, unknown>) => {
@@ -171,6 +204,16 @@ export function AgentSettings() {
               </div>
             </>
           )}
+        </SettingsCard>
+      </SettingsSection>
+
+      <SettingsSection title="SubAgent 模型覆盖" description="按子 agent 单独覆盖默认模型（仅 general 模式生效）">
+        <SettingsCard>
+          <SubAgentSettings
+            overrides={subagentOverrides}
+            availableModels={subagentAvailableModels}
+            onChange={handleSubAgentOverridesChange}
+          />
         </SettingsCard>
       </SettingsSection>
     </div>

@@ -101,6 +101,57 @@ export interface ToolResult {
 
 export type MessageRole = 'user' | 'assistant' | 'tool' | 'system'
 
+// ===== SubAgent 事件类型 =====
+
+export type SubAgentType = 'explorer' | 'researcher' | 'code-reviewer'
+export type SubAgentStatus = 'running' | 'completed' | 'error' | 'stopped'
+
+export interface SubAgentStartEvent {
+  type: 'subagent_start'
+  subagent_type: SubAgentType
+  task_id: string
+  description: string
+  run_in_background: boolean
+}
+
+export interface SubAgentToolEvent {
+  type: 'subagent_tool'
+  task_id: string
+  tool_name: string
+  args_preview: string
+}
+
+export interface SubAgentProgressEvent {
+  type: 'subagent_progress'
+  task_id: string
+  step_count: number
+  elapsed_ms: number
+  model: string
+}
+
+export interface SubAgentDoneEvent {
+  type: 'subagent_done'
+  task_id: string
+  status: SubAgentStatus
+  result_preview: string
+  total_steps: number
+  total_tokens: number
+}
+
+export interface SubAgentLogEvent {
+  type: 'subagent_log'
+  task_id: string
+  level: 'info' | 'warn' | 'error'
+  message: string
+}
+
+export type SubAgentEvent =
+  | SubAgentStartEvent
+  | SubAgentToolEvent
+  | SubAgentProgressEvent
+  | SubAgentDoneEvent
+  | SubAgentLogEvent
+
 export interface ChatMessage {
   id: string
   role: MessageRole
@@ -110,6 +161,8 @@ export interface ChatMessage {
   toolResults?: ToolResult[]
   /** 关联的资产（用于展示资产卡片） */
   assetIds?: string[]
+  /** SubAgent 任务列表（general mode 下 Agent 工具调用产生） */
+  subAgentTasks?: Array<import('@/components/agent/SubAgentCard').SubAgentState>
 }
 
 // ===== 会话 =====

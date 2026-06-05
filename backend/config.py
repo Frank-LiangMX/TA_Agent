@@ -676,3 +676,51 @@ def ensure_directories():
 
 # 模块加载时自动初始化
 ensure_directories()
+
+
+# ========== SubAgent 模型路由 ==========
+
+# tier -> 默认模型
+_TIER_DEFAULT_MODELS: dict[str, str] = {
+    "haiku": "glm-4-flash",
+    "sonnet": "glm-5",
+    "opus": "glm-5",
+}
+
+
+def get_subagent_model(subagent_type: str) -> str:
+    """解析 SubAgent 实际使用的模型。优先级：user override > tier default > active model。
+
+    注：app-config.json 可能用老结构（顶层 active_model）或新结构（providers[].active）。
+    优先用 get_active_provider_model()，回退到 cfg["active_model"]。
+    """
+    from packages.tools.subagents import get_subagent_spec
+
+    # 1. 加载 runtime config
+    try:
+        cfg = _get_runtime_app_config()
+    except Exception:
+        cfg = {}
+
+    # 2. user override
+    overrides = cfg.get("subagent_model_overrides", {}) or {}
+    if subagent_type in overrides:
+        return overrides[subagent_type]
+
+    # 3. fallback：实际活跃模型（兼容老/新两种结构）
+    def _fallback_active_model() -> str:
+        try:
+            m = get_active_provider_model()
+            if m and m.get("model"):
+                return m["model"]
+        except Exception:
+            pass
+        return cfg.get("active_model") or "glm-5"
+
+    # 4. tier default
+    spec = get_subagent_spec(subagent_type)
+    if spec is not None:
+        return _TIER_DEFAULT_MODELS.get(spec.model_tier, _fallback_active_model())
+
+    # 5. unknown type：直接用 active
+    return _fallback_active_model()
