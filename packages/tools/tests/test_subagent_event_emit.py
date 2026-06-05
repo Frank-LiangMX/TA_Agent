@@ -95,7 +95,7 @@ def test_orchestrator_passes_subagent_context_to_agent_loop(captured_emits, monk
 
     captured = {}
 
-    def fake_agent_loop(*, user_message, history, workflow_mode, interrupt_event, context_cutoff, subagent_context=None):
+    def fake_agent_loop(*, user_message, history, workflow_mode, interrupt_event, context_cutoff, subagent_context=None, **kwargs):
         captured["subagent_context"] = subagent_context
         return "ok", []
 

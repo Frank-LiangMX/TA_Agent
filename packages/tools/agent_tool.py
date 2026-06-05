@@ -114,6 +114,19 @@ class SubAgentOrchestrator:
             "start_time": start,
         }
 
+        # 流式回流 callback：把 LLM 文本片段 emit 给 progress_hook
+        def _on_stream_delta(delta: str) -> None:
+            try:
+                from apps.web.server.progress_hook import emit_subagent_text
+                emit_subagent_text(
+                    session_id=self.parent_session_id,
+                    subagent_type=self.subagent_type,
+                    task_id=self.task_id,
+                    delta=delta,
+                )
+            except Exception:
+                pass  # 流式回流失败不影响主流程
+
         try:
             final_text, history = agent_loop(
                 user_message=self.prompt,
@@ -122,6 +135,7 @@ class SubAgentOrchestrator:
                 interrupt_event=interrupt,
                 context_cutoff=0,
                 subagent_context=subagent_ctx,
+                stream_callback=_on_stream_delta,
             )
         except Exception as e:
             return _finalize(SubAgentResult(

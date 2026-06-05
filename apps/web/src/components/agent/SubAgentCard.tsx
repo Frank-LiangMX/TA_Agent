@@ -25,6 +25,8 @@ export type SubAgentState = {
   step_count: number
   tools: { name: string; args_preview: string }[]
   result_preview?: string
+  /** SubAgent LLM 实时流式输出的累计文本（Proma 风格"打字机"效果） */
+  streaming_text?: string
   total_steps?: number
   total_tokens?: number
   error?: string
@@ -131,12 +133,27 @@ export function SubAgentCard({ state, onStop, onViewDetails }: SubAgentCardProps
         )}
       </button>
 
+      {/* 实时流式文本（Proma 风格"打字机"）— 即使折叠也显示 */}
+      {state.status === 'running' && state.streaming_text && (
+        <div className="mt-1 text-[12px] text-foreground/70 leading-relaxed pl-5 max-h-32 overflow-y-auto whitespace-pre-wrap">
+          {state.streaming_text}
+          <span className="inline-block w-1.5 h-3 ml-0.5 bg-foreground/60 animate-pulse" />
+        </div>
+      )}
+
       {expanded && (
         <div className="pl-5 mt-1 space-y-1.5 border-l-2 border-primary/20 ml-[5px]">
           {state.description && <PromptRow prompt={state.description} />}
           {state.tools.map((t, i) => (
             <SubToolRow key={i} name={t.name} args_preview={t.args_preview} />
           ))}
+          {/* 展开时也持续显示流式文本（折叠+展开 两处都可见） */}
+          {state.status === 'running' && state.streaming_text && (
+            <div className="text-[12px] text-foreground/75 leading-relaxed whitespace-pre-wrap max-h-48 overflow-y-auto rounded bg-muted/20 p-2">
+              {state.streaming_text}
+              <span className="inline-block w-1.5 h-3 ml-0.5 bg-foreground/60 animate-pulse" />
+            </div>
+          )}
           {state.status === 'completed' && state.result_preview && (
             <div className="text-[13px] text-foreground/85 leading-relaxed prose prose-sm dark:prose-invert max-w-none prose-p:my-1.5 prose-pre:my-2 prose-code:text-primary max-h-96 overflow-y-auto rounded-md bg-muted/30 p-3">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>

@@ -9,6 +9,7 @@ import {
   upsertSubAgentStateAtom,
   updateSubAgentStateAtom,
   pushSubAgentToolAtom,
+  appendSubAgentTextAtom,
 } from '@/atoms/subagent-store'
 import { getDefaultStore } from 'jotai'
 
@@ -46,6 +47,15 @@ export function subscribeSubAgentEvents(client: TAgentClient): () => void {
     })
   })
 
+  const offText = client.on('subagent_text', (payload: any) => {
+    // Proma 风格：实时把 LLM 文本片段累加到 streaming_text，前端 SubAgentCard 打字机显示
+    if (!payload?.delta) return
+    store.set(appendSubAgentTextAtom, {
+      taskId: payload.task_id,
+      delta: payload.delta,
+    })
+  })
+
   const offDone = client.on('subagent_done', (payload: any) => {
     store.set(updateSubAgentStateAtom, {
       taskId: payload.task_id,
@@ -59,7 +69,6 @@ export function subscribeSubAgentEvents(client: TAgentClient): () => void {
   })
 
   const offLog = client.on('subagent_log', (payload: any) => {
-    // 日志事件：当前仅 console 打印，后续可加 UI 折叠展示
     // eslint-disable-next-line no-console
     console.log(`[SubAgent ${payload.task_id} ${payload.level}]`, payload.message)
   })
@@ -68,6 +77,7 @@ export function subscribeSubAgentEvents(client: TAgentClient): () => void {
     offStart()
     offTool()
     offProgress()
+    offText()
     offDone()
     offLog()
   }

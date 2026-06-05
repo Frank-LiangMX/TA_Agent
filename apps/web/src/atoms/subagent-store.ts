@@ -43,3 +43,20 @@ export const pushSubAgentToolAtom = atom(
     })
   },
 )
+
+/** append streaming text: 追加子 agent LLM 实时流式输出片段（Proma 风格"打字机"） */
+export const appendSubAgentTextAtom = atom(
+  null,
+  (get, set, payload: { taskId: string; delta: string }) => {
+    const cur = get(subagentStatesAtom)
+    const existing = cur[payload.taskId]
+    if (!existing) return
+    const prev = existing.streaming_text ?? ''
+    // 限制累计长度，避免内存爆
+    const next = (prev + payload.delta).slice(-4000)
+    set(subagentStatesAtom, {
+      ...cur,
+      [payload.taskId]: { ...existing, streaming_text: next },
+    })
+  },
+)

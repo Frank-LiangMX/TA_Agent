@@ -820,7 +820,7 @@ def _compress_history(history: list, keep_recent: int = 12) -> list:
 
 
 def agent_loop(user_message: str, history: list = None, workflow_mode: str = None, interrupt_event=None, context_cutoff: int = 0,
-               *, subagent_context: dict | None = None):
+               *, subagent_context: dict | None = None, stream_callback=None):
     """
     Agent 主循环
     接收用户消息，调用 LLM，处理工具调用，返回最终结果
@@ -834,6 +834,9 @@ def agent_loop(user_message: str, history: list = None, workflow_mode: str = Non
         subagent_context: 仅 SubAgent 委派时传入。dict 含 keys:
             - session_id: str
             - subagent_type: str
+        stream_callback: 可选回调函数，被 SubAgent 委派时用于把 LLM 流式输出片段回流到父 agent。
+            函数签名: stream_callback(delta_text: str) -> None
+            默认 None（不影响现有调用方）。
             - task_id: str
             - model: str
             - start_time: float
@@ -948,6 +951,12 @@ def agent_loop(user_message: str, history: list = None, workflow_mode: str = Non
                     content_buffer += delta.content
                     # 实时打印（不换行，最后统一渲染 markdown）
                     print(delta.content, end="", flush=True)
+                    # SubAgent 流式回流：把片段通过 callback 发回父 agent
+                    if stream_callback is not None:
+                        try:
+                            stream_callback(delta.content)
+                        except Exception:
+                            pass  # 回调失败不影响主循环
 
                 # 工具调用累积
                 if delta.tool_calls:

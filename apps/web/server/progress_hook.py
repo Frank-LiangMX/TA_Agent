@@ -173,3 +173,20 @@ def emit_subagent_progress(
         "elapsed_ms": elapsed_ms,
         "model": model,
     })
+
+
+def emit_subagent_text(
+    session_id: str,
+    subagent_type: str,
+    task_id: str,
+    delta: str,
+) -> None:
+    """emit SubAgent LLM 流式文本片段（每个 chunk 调一次）。
+
+    前端 SubAgentCard 用它做"实时打字"效果。
+    """
+    if not delta:
+        return
+    emit_subagent_event(session_id, subagent_type, task_id, "text", {
+        "delta": delta,
+    })
