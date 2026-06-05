@@ -750,10 +750,15 @@ async def run_agent(
 
                 from functools import partial
 
+                # 注入 session_id 到 Agent 工具调用（让 SubAgentCard 能按会话过滤）
+                effective_args = dict(func_args) if func_name == "Agent" else func_args
+                if func_name == "Agent":
+                    effective_args.setdefault("session_id", session.session_id)
+
                 loop = asyncio.get_event_loop()
                 tool_task = loop.run_in_executor(
                     None,
-                    partial(execute_tool, func_name, func_args, current_agent_mode),
+                    partial(execute_tool, func_name, effective_args, current_agent_mode),
                 )
 
                 # 轮询进度事件，直到工具执行完成或取消

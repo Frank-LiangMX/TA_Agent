@@ -194,6 +194,13 @@ AGENT_TOOL_SCHEMA = {
                         "之后用 TaskOutput 取结果。"
                     ),
                 },
+                "session_id": {
+                    "type": "string",
+                    "description": (
+                        "调用方会话 ID（前端在调 Agent 工具时自动注入，"
+                        "用于按会话过滤 SubAgentCard）。"
+                    ),
+                },
             },
             "required": ["subagent_type", "prompt", "description"],
         },
@@ -206,10 +213,14 @@ def _agent_tool_function(
     prompt: str,
     description: str = "",
     run_in_background: bool = False,
+    session_id: str = "parent",
 ) -> str:
-    """Agent 工具的实际执行入口 — 启动 SubAgentOrchestrator 并返回结果。"""
-    # parent_session_id 当前不可用（execute_tool 不传），占位
-    parent_session_id = "parent"
+    """Agent 工具的实际执行入口 — 启动 SubAgentOrchestrator 并返回结果。
+
+    session_id 由前端在调用 Agent 工具时通过 arguments 传入（见 AGENT_TOOL_SCHEMA），
+    用于前端按会话过滤 SubAgentCard 显示。
+    """
+    parent_session_id = session_id
 
     orch = SubAgentOrchestrator(
         subagent_type=subagent_type,

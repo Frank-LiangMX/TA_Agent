@@ -1105,6 +1105,7 @@ const loadTabHistory = useCallback(async (tabId: string) => {
                   onSetDivider={() => setContextCutoff(globalIndex)}
                   onStopSubAgent={(taskId) => tagentClient.rpc('TaskStop', { task_id: taskId })}
                   onViewSubAgent={onViewSubAgent || (() => {})}
+                  currentSessionId={sessionId ?? undefined}
                 />
               </div>
             </React.Fragment>

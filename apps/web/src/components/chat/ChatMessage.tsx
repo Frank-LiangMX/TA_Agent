@@ -5,9 +5,11 @@
 import React from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { useAtomValue } from 'jotai'
 import { User, Bot, Wrench, Copy, Check, ChevronDown, ChevronRight, Loader2, Scissors, Activity } from 'lucide-react'
 import { ToolResultRenderer } from '../tools/ToolResultRenderer'
 import { SubAgentCard } from '../agent/SubAgentCard'
+import { subagentStatesAtom } from '@/atoms/subagent-store'
 import type { ChatMessage as ChatMessageType, ToolCall } from '@/types'
 import {
   getTurnSegments,
@@ -26,9 +28,20 @@ interface ChatMessageProps {
   onSetDivider?: () => void
   onStopSubAgent?: (taskId: string) => void
   onViewSubAgent?: (taskId: string) => void
+  /** 当前会话 ID — 用于从 subagent jotai store 过滤本会话的 subagent 任务 */
+  currentSessionId?: string
 }
 
-export function ChatMessage({ message, onAssetClick, onSetDivider, onStopSubAgent, onViewSubAgent }: ChatMessageProps) {
+export function ChatMessage({ message, onAssetClick, onSetDivider, onStopSubAgent, onViewSubAgent, currentSessionId }: ChatMessageProps) {
+  // 从 jotai store 读本会话的 subagent 状态
+  const allSubagents = useAtomValue(subagentStatesAtom)
+  const mySubagents = React.useMemo(() => {
+    if (!currentSessionId) return []
+    return Object.values(allSubagents).filter(
+      (s: any) => s.parent_session_id === currentSessionId
+    )
+  }, [allSubagents, currentSessionId])
+
   const [copied, setCopied] = React.useState(false)
   const [toolExpanded, setToolExpanded] = React.useState(false)
   const [showArgs, setShowArgs] = React.useState(false)
@@ -194,9 +207,9 @@ export function ChatMessage({ message, onAssetClick, onSetDivider, onStopSubAgen
           )}
 
           {/* SubAgent 任务卡片（general mode 下 Agent 工具调用产生） */}
-          {message.subAgentTasks && message.subAgentTasks.length > 0 && (
+          {mySubagents.length > 0 && (
             <div className="mt-2 space-y-1">
-              {message.subAgentTasks.map((s) => (
+              {mySubagents.map((s: any) => (
                 <SubAgentCard
                   key={s.task_id}
                   state={s}

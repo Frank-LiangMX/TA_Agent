@@ -138,9 +138,9 @@ export function SubAgentCard({ state, onStop, onViewDetails }: SubAgentCardProps
             <SubToolRow key={i} name={t.name} args_preview={t.args_preview} />
           ))}
           {state.status === 'completed' && state.result_preview && (
-            <div className="text-[13px] text-foreground/80 leading-relaxed prose prose-sm dark:prose-invert max-w-none prose-p:my-1 prose-pre:my-2 prose-code:text-primary">
+            <div className="text-[13px] text-foreground/85 leading-relaxed prose prose-sm dark:prose-invert max-w-none prose-p:my-1.5 prose-pre:my-2 prose-code:text-primary max-h-96 overflow-y-auto rounded-md bg-muted/30 p-3">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {state.result_preview}
+                {state.result_preview.slice(0, 4000) + (state.result_preview.length > 4000 ? '\n\n_... 内容已截断 ..._' : '')}
               </ReactMarkdown>
             </div>
           )}
